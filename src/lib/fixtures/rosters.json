@@ -1,0 +1,14 @@
+[
+  { "roster_id": 1, "owner_id": "189140835533586432", "wins": 7, "losses": 6, "fpts": 1776 },
+  { "roster_id": 2, "owner_id": "457511950237696", "wins": 6, "losses": 7, "fpts": 1736 },
+  { "roster_id": 3, "owner_id": "667279356739584", "wins": 10, "losses": 3, "fpts": 1731 },
+  { "roster_id": 4, "owner_id": "61960473868124160", "wins": 5, "losses": 8, "fpts": 1736 },
+  { "roster_id": 5, "owner_id": "720638189125632", "wins": 8, "losses": 5, "fpts": 1635 },
+  { "roster_id": 6, "owner_id": "313952381563858944", "wins": 11, "losses": 2, "fpts": 1899 },
+  { "roster_id": 7, "owner_id": "314278749690396672", "wins": 6, "losses": 7, "fpts": 1704 },
+  { "roster_id": 8, "owner_id": "31161755661385728", "wins": 4, "losses": 9, "fpts": 1538 },
+  { "roster_id": 9, "owner_id": "228297280283734016", "wins": 5, "losses": 8, "fpts": 1664 },
+  { "roster_id": 10, "owner_id": "76888557872365568", "wins": 8, "losses": 5, "fpts": 1805 },
+  { "roster_id": 11, "owner_id": "521611313037312", "wins": 2, "losses": 11, "fpts": 1374 },
+  { "roster_id": 12, "owner_id": "3975968863961088", "wins": 6, "losses": 7, "fpts": 1706 }
+]
