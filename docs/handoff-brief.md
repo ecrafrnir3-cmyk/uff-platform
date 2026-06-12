@@ -46,11 +46,18 @@ There's also a test league ("Draft Test 2026") with 2 members, factions assigned
 2. League creation flow: even-team enforcement, faction picker/randomizer, 16-round draft lock — DB supports this, UI doesn't exist yet
 3. ~~Faction Roster Bonus weekly scoring calc~~ — DONE as a SQL function (`calculate_faction_roster_bonus`), not yet called from the app
 4. Draft tool (powers hook in here) — DB has draft state/picks tables and test data, no UI yet
+   - **Planned data source for ADP**: Fantasy Football Calculator free REST API — `https://fantasyfootballcalculator.com/api/v1/adp/{format}?teams=12&year=2026` (format = standard/ppr/half-ppr/2qb/dynasty). No auth, free for personal/commercial use, just attribute. Sleeper's own API has no clean ADP endpoint — use this instead for suggested pick order / value flags during the draft. (Logged 2026-06-12.)
 5. Faction Control Map UI
 6. Weekly token award/redemption UI
 7. Scoring pipeline engine (Section 7 of the design doc)
 
 **Suggested next session focus:** pick one of the app-side gaps above (league creation flow with faction picker is a natural starting point since it's the first thing a user touches) and build the UI to match what the database already supports.
+
+## To-do: Vercel GitHub auto-deploy
+
+Discovered 2026-06-12: all Vercel production deploys so far were done manually via `vercel deploy` from Nate's machine — the GitHub repo is NOT connected to Vercel, so `git push` does NOT trigger a deploy. Today's league creation flow had to be pushed (GitHub) AND separately deployed (`vercel deploy --prod`) to go live.
+
+**Fix later**: In Vercel project settings (Settings → Git), connect the `ecrafrnir3-cmyk/uff-platform` GitHub repo so pushes to `main` auto-deploy. This is an account-settings change, so do it with Nate present/approving.
 
 ## Loose ends to revisit
 

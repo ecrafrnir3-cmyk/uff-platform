@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { createLeague, joinLeague, signOut, LEAGUE_SIZE_OPTIONS } from "./actions";
+import { createLeague, joinLeague, signOut } from "./actions";
+import { LEAGUE_SIZE_OPTIONS } from "./constants";
 
 interface LeagueRow {
   team_name: string;
