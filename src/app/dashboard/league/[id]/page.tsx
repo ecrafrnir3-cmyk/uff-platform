@@ -103,6 +103,13 @@ export default async function LeagueDetailPage({
             Season {league.season} &middot; {memberList.length} / {league.max_teams} teams &middot; 16-round draft
             (locked) &middot; Draft: {league.draft_status.replace("_", " ")}
           </p>
+          <Link
+            href={`/dashboard/league/${league.id}/roster`}
+            className="mt-1 inline-flex w-fit items-center rounded-md px-4 py-2 text-sm font-semibold"
+            style={{ background: "#0057FF", color: "#f4f4f8" }}
+          >
+            My Team
+          </Link>
         </header>
 
         {error && (

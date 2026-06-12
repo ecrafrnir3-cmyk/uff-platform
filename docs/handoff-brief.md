@@ -4,6 +4,14 @@
 
 This is the "start here" doc for any new Cowork session on Ultimate Fantasy Football. Pin it alongside the master prompt in the project instructions.
 
+## 🎯 Product Vision & Launch Goal
+
+**The bar:** ship a fully functional, bug-free fantasy platform that feels as polished as Yahoo Fantasy — the major-platform UX Nate likes best (clean roster/lineup management, live scoring, and especially Yahoo's **trade comparison tool**, now on the feature backlog — see Pre-Launch Punch List below).
+
+**Target distribution:** Google Play + other app stores, on top of the web app. Plan: PWA-first (manifest already in place), Android via Trusted Web Activity (TWA/Bubblewrap wraps a PWA for the Play Store with minimal extra code) once the app is feature-complete; iOS App Store needs a Capacitor/native shell — bigger lift, deferred.
+
+**What "done" means for launch:** every Section 9 build item working end-to-end with real data, no known bugs, RLS/perf hardening complete (see punch list), and a UX pass so the app *feels* like Yahoo/ESPN-tier, not a prototype.
+
 ## 🆕 Big update found 2026-06-12
 
 Nate did a LOT of direct database work overnight (migrations timestamped 2026-06-11 ~11:48pm through 2026-06-12 ~12:59am) that wasn't written down anywhere. The Supabase database is now WAY ahead of this doc and the app code. Section 9 items 1–4 are basically done at the database level:
@@ -58,6 +66,32 @@ There's also a test league ("Draft Test 2026") with 2 members, factions assigned
 Discovered 2026-06-12: all Vercel production deploys so far were done manually via `vercel deploy` from Nate's machine — the GitHub repo is NOT connected to Vercel, so `git push` does NOT trigger a deploy. Today's league creation flow had to be pushed (GitHub) AND separately deployed (`vercel deploy --prod`) to go live.
 
 **Fix later**: In Vercel project settings (Settings → Git), connect the `ecrafrnir3-cmyk/uff-platform` GitHub repo so pushes to `main` auto-deploy. This is an account-settings change, so do it with Nate present/approving.
+
+## 🔍 Pre-Launch Punch List (Deep Review 2026-06-12)
+
+A full review of the codebase + live Supabase schema + Vercel project surfaced the items below. None are blocking today's work, but all should be cleared before launch.
+
+**Done today:**
+- Added missing indexes on unindexed foreign keys (`draft_power_assignments`, `league_members`, `power_restore_chips`, `uff_draft_picks`, `uff_leagues`, `uff_roster_players`, `weekly_token_assignments`) — flagged by Supabase's performance advisor, cheap/safe to add now before data volume grows.
+
+**Needs a dedicated session (touches RLS — do carefully, not rushed):**
+- ~20 RLS policies across `profiles`, `uff_leagues`, `league_members`, `draft_power_assignments`, `weekly_token_assignments`, `uff_roster_players`, `uff_draft_picks`, `team_active_powers` re-evaluate `auth.uid()` per row instead of `(select auth.uid())` — a known Supabase perf gotcha that gets slow under real draft-night load. Fix is mechanical but must be tested per-table to avoid breaking access control.
+- Several tables (`draft_power_assignments`, `team_active_powers`, `uff_draft_picks`, `uff_roster_players`, `league_members`) have overlapping/duplicate permissive RLS policies for the same action — consolidate for clarity and a small perf win.
+
+**Cleanup (low priority, no rush):**
+- Dead prototype code from the very first proof-of-concept: `/demo` route, `src/lib/{data,oracle,sleeper,db}.ts`, `src/lib/fixtures/*`. Also the old demo DB tables (`leagues`, `matchups`, `rosters`, `sleeper_users`, `oracle_recaps`) — separate from the real `uff_leagues`/`league_members` schema, safe to drop once confirmed unused.
+- `/demo` is currently a publicly-reachable route with fake data — not a security issue, but looks unfinished.
+
+**Deploy pipeline (already logged above, reconfirmed):** Vercel project still has no GitHub link — `git push` does not auto-deploy. Confirmed again via Vercel API today.
+
+**Missing piece / current focus:** there's no "My Team / roster" page yet — `uff_roster_players` has test data but nothing renders it. This blocks the Faction Roster Bonus display, the draft tool, and weekly token UI, so it's the natural next build (in progress now).
+
+**New feature backlog (from Nate, 2026-06-12):**
+- **Trade comparison tool**, Yahoo-style — compare two rosters/players for trade fairness. Needs a player valuation source; the Fantasy Football Calculator ADP API (already logged under Draft tool) could seed this, or build off nflverse projections later.
+
+**Scaling/app-store notes:**
+- Live-game features (Faction Control Map, weekly token reveals, live scoring) will feel much more "pro" with Supabase Realtime subscriptions instead of polling — worth designing in from the start of the scoring pipeline build (Section 9 item 7).
+- Custom domain (vs. `*.vercel.app`) would help the "professional platform" feel for app store listings — optional, revisit closer to launch.
 
 ## Loose ends to revisit
 
