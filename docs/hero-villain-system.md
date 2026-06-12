@@ -1,6 +1,6 @@
 # UFF Hero vs Villain System — Design Doc v1
 
-Status: DRAFT for Nate's review. Power lists below are candidates, not final.
+Status: FINALIZED, build-ready (as of 2026-06-11). Section 9 is the implementation punch list.
 
 ## 1. Faction Setup
 
