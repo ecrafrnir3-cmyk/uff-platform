@@ -14,6 +14,15 @@ function generateJoinCode(): string {
   return code;
 }
 
+// Even-numbered league sizes only (Section 9 #2: even-team enforcement).
+export const LEAGUE_SIZE_OPTIONS = [4, 6, 8, 10, 12, 14, 16] as const;
+
+type Faction = "hero" | "villain";
+
+function parseFaction(value: FormDataEntryValue | null): Faction | null {
+  return value === "hero" || value === "villain" ? value : null;
+}
+
 export async function createLeague(formData: FormData) {
   const supabase = await createClient();
   const {
@@ -23,8 +32,15 @@ export async function createLeague(formData: FormData) {
 
   const name = (formData.get("name") as string)?.trim();
   const teamName = (formData.get("teamName") as string)?.trim();
+  const maxTeams = parseInt(formData.get("maxTeams") as string, 10);
+  const faction = parseFaction(formData.get("faction"));
+
   if (!name || !teamName) {
     redirect("/dashboard?error=" + encodeURIComponent("League name and team name are required."));
+  }
+
+  if (!Number.isInteger(maxTeams) || maxTeams < 2 || maxTeams % 2 !== 0) {
+    redirect("/dashboard?error=" + encodeURIComponent("League size must be an even number of teams."));
   }
 
   // Generate a unique 6-character join code (retry on the rare collision).
@@ -41,7 +57,7 @@ export async function createLeague(formData: FormData) {
 
   const { data: league, error: leagueError } = await supabase
     .from("uff_leagues")
-    .insert({ name, commissioner_id: user.id, join_code: joinCode })
+    .insert({ name, commissioner_id: user.id, join_code: joinCode, max_teams: maxTeams })
     .select("id")
     .single();
 
@@ -54,6 +70,7 @@ export async function createLeague(formData: FormData) {
     user_id: user.id,
     team_name: teamName,
     is_commissioner: true,
+    faction,
   });
 
   if (memberError) {
@@ -61,7 +78,7 @@ export async function createLeague(formData: FormData) {
   }
 
   revalidatePath("/dashboard");
-  redirect("/dashboard");
+  redirect(`/dashboard/league/${league.id}`);
 }
 
 export async function joinLeague(formData: FormData) {
@@ -73,6 +90,7 @@ export async function joinLeague(formData: FormData) {
 
   const joinCode = (formData.get("joinCode") as string)?.trim().toUpperCase();
   const teamName = (formData.get("teamName") as string)?.trim();
+  const faction = parseFaction(formData.get("faction"));
   if (!joinCode || !teamName) {
     redirect("/dashboard?error=" + encodeURIComponent("Join code and team name are required."));
   }
@@ -87,13 +105,26 @@ export async function joinLeague(formData: FormData) {
     redirect("/dashboard?error=" + encodeURIComponent("No league found with that join code."));
   }
 
-  const { count } = await supabase
+  const { data: members } = await supabase
     .from("league_members")
-    .select("id", { count: "exact", head: true })
+    .select("id, faction")
     .eq("league_id", league.id);
 
-  if (typeof count === "number" && count >= league.max_teams) {
+  const memberCount = members?.length ?? 0;
+  if (memberCount >= league.max_teams) {
     redirect("/dashboard?error=" + encodeURIComponent("That league is already full."));
+  }
+
+  if (faction) {
+    const capacity = league.max_teams / 2;
+    const currentInFaction = members?.filter((m) => m.faction === faction).length ?? 0;
+    if (currentInFaction >= capacity) {
+      const label = faction === "hero" ? "Hero" : "Villain";
+      redirect(
+        "/dashboard?error=" +
+          encodeURIComponent(`The ${label} side is already full for that league. Pick the other side or "Decide later".`)
+      );
+    }
   }
 
   const { error: memberError } = await supabase.from("league_members").insert({
@@ -101,6 +132,7 @@ export async function joinLeague(formData: FormData) {
     user_id: user.id,
     team_name: teamName,
     is_commissioner: false,
+    faction,
   });
 
   if (memberError) {
@@ -109,7 +141,7 @@ export async function joinLeague(formData: FormData) {
   }
 
   revalidatePath("/dashboard");
-  redirect("/dashboard");
+  redirect(`/dashboard/league/${league.id}`);
 }
 
 export async function signOut() {

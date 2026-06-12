@@ -55,6 +55,7 @@ There's also a test league ("Draft Test 2026") with 2 members, factions assigned
 ## Loose ends to revisit
 
 - Original roadmap items not yet started: real team rosters, scoring engine pulling live nflverse stats, draft tool itself
-- **This file (`handoff-brief.md`) was never pushed to GitHub** — it's sitting on this computer only. Needs `git add`/`commit`/`push` so the home computer has it too.
+- ~~This file (`handoff-brief.md`) was never pushed to GitHub~~ — pushed 2026-06-12.
 - ~~Supabase "Leaked Password Protection"~~ — checked 2026-06-12, this requires a Pro plan ($25/mo). Skipping per bootstrap-only rule. Not a free win after all.
-- No dedicated email-confirmation landing page yet — worth a quick real signup test now that Site URL is fixed, to confirm the confirmation link actually signs the user in.
+- ~~No dedicated email-confirmation landing page yet~~ — real signup tested 2026-06-12, confirmation email received successfully.
+- No dedicated email-confirmation landing page still doesn't exist — worth building if confirmation links don't land users somewhere sensible (revisit if it becomes an issue).

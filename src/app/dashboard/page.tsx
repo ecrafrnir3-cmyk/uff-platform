@@ -1,10 +1,12 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { createLeague, joinLeague, signOut } from "./actions";
+import { createLeague, joinLeague, signOut, LEAGUE_SIZE_OPTIONS } from "./actions";
 
 interface LeagueRow {
   team_name: string;
   is_commissioner: boolean;
+  faction: "hero" | "villain" | null;
   uff_leagues: {
     id: string;
     name: string;
@@ -13,6 +15,19 @@ interface LeagueRow {
     status: string;
     max_teams: number;
   } | null;
+}
+
+const HERO_COLOR = "#0057FF";
+const VILLAIN_COLOR = "#CC0000";
+
+function FactionTag({ faction }: { faction: "hero" | "villain" | null }) {
+  if (faction === "hero") {
+    return <span style={{ color: HERO_COLOR }}>Hero</span>;
+  }
+  if (faction === "villain") {
+    return <span style={{ color: VILLAIN_COLOR }}>Villain</span>;
+  }
+  return <span className="text-zinc-500">No faction yet</span>;
 }
 
 export default async function DashboardPage({
@@ -36,7 +51,7 @@ export default async function DashboardPage({
 
   const { data: memberships } = await supabase
     .from("league_members")
-    .select("team_name, is_commissioner, uff_leagues(id, name, season, join_code, status, max_teams)")
+    .select("team_name, is_commissioner, faction, uff_leagues(id, name, season, join_code, status, max_teams)")
     .eq("user_id", user.id)
     .returns<LeagueRow[]>();
 
@@ -89,9 +104,10 @@ export default async function DashboardPage({
           ) : (
             <div className="flex flex-col gap-3">
               {leagues.map((m) => (
-                <div
+                <Link
                   key={m.uff_leagues?.id}
-                  className="flex items-center justify-between rounded-lg border px-4 py-3"
+                  href={`/dashboard/league/${m.uff_leagues?.id}`}
+                  className="flex items-center justify-between rounded-lg border px-4 py-3 transition hover:border-zinc-500"
                   style={{ borderColor: "#2a2a40" }}
                 >
                   <div>
@@ -105,7 +121,7 @@ export default async function DashboardPage({
                     </p>
                     <p className="text-sm text-zinc-400">
                       Team: {m.team_name} &middot; Season {m.uff_leagues?.season} &middot;{" "}
-                      {m.uff_leagues?.status}
+                      {m.uff_leagues?.status} &middot; <FactionTag faction={m.faction} />
                     </p>
                   </div>
                   {m.is_commissioner && (
@@ -116,7 +132,7 @@ export default async function DashboardPage({
                       </p>
                     </div>
                   )}
-                </div>
+                </Link>
               ))}
             </div>
           )}
@@ -147,6 +163,40 @@ export default async function DashboardPage({
                 className="rounded-md border px-3 py-2 text-sm"
                 style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
               />
+              <div className="flex flex-col gap-1">
+                <label htmlFor="maxTeams" className="text-xs uppercase tracking-wide text-zinc-400">
+                  League size (must be even &mdash; split Hero/Villain)
+                </label>
+                <select
+                  id="maxTeams"
+                  name="maxTeams"
+                  defaultValue="12"
+                  className="rounded-md border px-3 py-2 text-sm"
+                  style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
+                >
+                  {LEAGUE_SIZE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n} teams
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="faction" className="text-xs uppercase tracking-wide text-zinc-400">
+                  Your faction
+                </label>
+                <select
+                  id="faction"
+                  name="faction"
+                  defaultValue=""
+                  className="rounded-md border px-3 py-2 text-sm"
+                  style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
+                >
+                  <option value="">Decide later</option>
+                  <option value="hero">Hero (AFC)</option>
+                  <option value="villain">Villain (NFC)</option>
+                </select>
+              </div>
               <button
                 type="submit"
                 className="rounded-md px-4 py-2 text-sm font-semibold"
@@ -181,6 +231,22 @@ export default async function DashboardPage({
                 className="rounded-md border px-3 py-2 text-sm"
                 style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
               />
+              <div className="flex flex-col gap-1">
+                <label htmlFor="joinFaction" className="text-xs uppercase tracking-wide text-zinc-400">
+                  Your faction
+                </label>
+                <select
+                  id="joinFaction"
+                  name="faction"
+                  defaultValue=""
+                  className="rounded-md border px-3 py-2 text-sm"
+                  style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
+                >
+                  <option value="">Decide later</option>
+                  <option value="hero">Hero (AFC)</option>
+                  <option value="villain">Villain (NFC)</option>
+                </select>
+              </div>
               <button
                 type="submit"
                 className="rounded-md px-4 py-2 text-sm font-semibold"
