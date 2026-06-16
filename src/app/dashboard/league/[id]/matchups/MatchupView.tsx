@@ -14,6 +14,7 @@ interface MatchupRow {
   week: number;
   member_id: string;
   points: number;
+  projected: number | null;
   is_complete: boolean;
   league_members: { team_name: string; faction: "hero" | "villain" | null } | null;
 }
@@ -45,7 +46,7 @@ function ScoreCard({
       }}
     >
       <p className="text-xs uppercase tracking-wide" style={{ color }}>
-        {row.league_members?.faction ?? "—"}
+        {row.league_members?.faction ?? "?"}
       </p>
       <p className="text-sm font-semibold text-center" style={{ color: isMe ? "#FFD700" : "#f4f4f8" }}>
         {row.league_members?.team_name ?? "Unknown"}
@@ -57,6 +58,11 @@ function ScoreCard({
       >
         {row.points.toFixed(2)}
       </p>
+      {row.projected != null && !row.is_complete && (
+        <p className="text-xs tabular-nums" style={{ color: "#8a8a9a" }}>
+          proj {row.projected.toFixed(2)}
+        </p>
+      )}
       {isWinner && row.is_complete && (
         <p className="text-xs font-semibold uppercase tracking-wide" style={{ color }}>
           Winner
@@ -80,7 +86,6 @@ export default function MatchupView({
   const [pairs, setPairs] = useState<MatchupPair[]>(initialPairs);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  // ── Supabase Realtime subscription ───────────────────────────────────
   useEffect(() => {
     const channel = supabase
       .channel(`matchups-${leagueId}-week${week}`)
@@ -97,7 +102,12 @@ export default function MatchupView({
             prev.map((pair) =>
               pair.map((row) => {
                 if (row.id !== payload.new.id) return row;
-                return { ...row, points: payload.new.points, is_complete: payload.new.is_complete };
+                return {
+                  ...row,
+                  points: payload.new.points,
+                  projected: payload.new.projected ?? row.projected,
+                  is_complete: payload.new.is_complete,
+                };
               })
             )
           );
@@ -127,11 +137,11 @@ export default function MatchupView({
         </h2>
         {lastUpdated && (
           <p className="text-xs text-zinc-600">
-            Live · updated {lastUpdated.toLocaleTimeString()}
+            Live &middot; updated {lastUpdated.toLocaleTimeString()}
           </p>
         )}
         {!lastUpdated && (
-          <p className="text-xs text-zinc-600">Live · scores update every ~5 min during games</p>
+          <p className="text-xs text-zinc-600">Live &middot; scores update every ~5 min during games</p>
         )}
       </div>
 

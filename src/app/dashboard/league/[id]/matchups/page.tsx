@@ -10,6 +10,7 @@ interface MatchupRow {
   week: number;
   member_id: string;
   points: number;
+  projected: number | null;
   is_complete: boolean;
   league_members: { team_name: string; faction: "hero" | "villain" | null } | null;
 }
@@ -59,7 +60,7 @@ export default async function MatchupsPage({
 
   const { data: matchupRows } = await supabase
     .from("uff_matchups")
-    .select("id, matchup_id, week, member_id, points, is_complete, league_members(team_name, faction)")
+    .select("id, matchup_id, week, member_id, points, projected, is_complete, league_members(team_name, faction)")
     .eq("league_id", leagueId)
     .eq("week", viewWeek)
     .order("matchup_id")

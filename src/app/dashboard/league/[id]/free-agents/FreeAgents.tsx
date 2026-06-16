@@ -77,15 +77,6 @@ export default function FreeAgents({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, posFilter]);
 
-  // Load default view on mount (all positions, sorted by projected/adp)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setPosFilter((prev) => prev); // trigger the effect above
-    }, 0);
-    return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   async function handleAdd(playerId: string) {
     setSubmitting(playerId);
     const fd = new FormData();
