@@ -1,5 +1,34 @@
 # 🚀 UFF Handoff Brief
 
+## Session update -- 2026-06-16 (evening: NTFS corruption cleanup)
+
+**Shipped this session:**
+
+All NTFS-truncated files reconstructed and deployed. Build is green.
+
+**Root cause:** The Write/Edit file tools and bash heredocs truncate files on the Windows NTFS mount. Every file written since the lineup management session was silently corrupted in git. Fix: always use Python `open(path, 'w').write(content)` via bash for file writes on this project.
+
+**Files reconstructed:**
+- `matchups/page.tsx` -- missing `)}` closing the `!hasSchedule` block; appended missing week selector + MatchupView + Finalize button JSX.
+- `free-agents/page.tsx` -- 36 null bytes stripped.
+- `actions.ts` -- 722 null bytes stripped.
+- `DraftRoom.tsx` -- 10 closing JSX lines deleted by a prior commit; reconstructed from `d41f371` base with valid changes from `84c605c` applied cleanly (supabase singleton, DEF position label).
+- `[id]/page.tsx` -- every version since `7f3e18b` was truncated at 11044b; fully rewritten from scratch tracing 4 commits of diffs.
+- `settings/page.tsx` -- truncated mid-input element; missing input attributes + all closing structure appended.
+
+**Bug fixes on top:**
+- `DraftRoom.tsx:90` -- `data as Pick[]` -> `data as unknown as Pick[]` (TS strict cast).
+- `matchups/page.tsx:128` -- missing `)}` after `!hasSchedule` div.
+
+**NTFS write rule (CRITICAL for all future sessions):**
+Never use the Edit/Write tools or bash `cat >` heredocs to write files in this project. Always use:
+```bash
+python3 -c "open('path', 'w').write('''...content...''')"
+```
+or a Python script via bash.
+
+*Last updated: 2026-06-16 (evening)*
+
 
 ## ✅ Session update — 2026-06-16 (lineup management + nav bar)
 
