@@ -136,16 +136,20 @@ Deno.serve(async (req) => {
   for (const lg of (leagues ?? [])) settingsMap[lg.id] = lg.scoring_settings ?? {};
 
   // Fetch all player draft powers for active leagues
+  // restored_at: if set, Power Negation penalty has been lifted via a Restore Chip
   const { data: powerRows } = await supabase
     .from('player_draft_powers')
-    .select('league_id, player_id, power')
+    .select('league_id, player_id, power, restored_at')
     .in('league_id', leagueIds);
 
-  // powerMap[leagueId][playerId] = power
-  const powerMap: Record<string, Record<string, string>> = {};
+  // powerMap[leagueId][playerId] = { power, restored }
+  const powerMap: Record<string, Record<string, { power: string; restored: boolean }>> = {};
   for (const row of (powerRows ?? [])) {
     if (!powerMap[row.league_id]) powerMap[row.league_id] = {};
-    powerMap[row.league_id][row.player_id] = row.power;
+    powerMap[row.league_id][row.player_id] = {
+      power: row.power,
+      restored: row.restored_at != null,
+    };
   }
 
   const memberIds = [...new Set(matchupRows.map((m: any) => m.member_id))];
@@ -193,11 +197,12 @@ Deno.serve(async (req) => {
       let pts  = Object.keys(playerStats).length ? calcScore(playerStats, settings) : 0;
       let proj = Object.keys(playerProj).length  ? calcScore(playerProj,  settings) : 0;
 
-      // Apply tied-to-pick draft power if this player has one in this league
-      const power = leaguePowers[pid];
-      if (power) {
-        pts  += applyDraftPower(power, playerStats, pts,  settings);
-        proj += applyDraftPower(power, playerProj,  proj, settings);
+      // Apply tied-to-pick draft power if this player has one in this league.
+      // Skip Power Negation if the manager has spent a Restore Chip on this player.
+      const entry = leaguePowers[pid];
+      if (entry && !(entry.power === 'power_negation' && entry.restored)) {
+        pts  += applyDraftPower(entry.power, playerStats, pts,  settings);
+        proj += applyDraftPower(entry.power, playerProj,  proj, settings);
       }
 
       totalPoints    += pts;
@@ -210,18 +215,4 @@ Deno.serve(async (req) => {
     totalPoints += bonus ?? 0;
 
     totalPoints    = Math.round(totalPoints    * 100) / 100;
-    totalProjected = Math.round(totalProjected * 100) / 100;
-
-    await supabase
-      .from('uff_matchups')
-      .update({ points: totalPoints, projected: totalProjected })
-      .eq('id', matchup.id);
-
-    updated++;
-  }
-
-  return new Response(
-    JSON.stringify({ updated, week, season }),
-    { status: 200, headers: { 'Content-Type': 'application/json' } }
-  );
-});
+    totalProje
