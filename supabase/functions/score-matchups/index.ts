@@ -32,8 +32,8 @@ function calcScore(
  * Iron Defense, Red Zone Menace, Goal Line Hammer, Seam Buster, Sniper, Power Negation.
  *
  * NOT handled here (separate systems):
- *   - Time Stone: requires injury tracking + frozen-score lookup
- *   - Vampire Bite: siphon across rosters, applied at team-score level
+ *   - Time Stone: requires injury tracking + frozen-score lookup (frozen_score col on player_draft_powers)
+ *   - Vampire Bite: handled separately at the team-score level after all player scores are computed
  */
 function applyDraftPower(
   power: string,
@@ -55,8 +55,8 @@ function applyDraftPower(
       return (stats['rec'] ?? 0) * 0.5;
 
     case 'iron_defense':
-      // D/ST score doubled — add baseScore again
-      return baseScore;
+      // D/ST score doubled — floor at 0 first so bad weeks can't be made worse, only good weeks amplified
+      return Math.max(0, baseScore);
 
     case 'red_zone_menace':
       // WR: +1 pt per receiving TD
@@ -71,11 +71,13 @@ function applyDraftPower(
       return (stats['rec_td'] ?? 0) * 1;
 
     case 'sniper':
-      // K: 50+ yard FGs worth double — add the league's fgm_50p value once more per make
+      // K: 50+ yard FGs worth double — add the league's fgm_50p multiplier once more per make
+      // NOTE: returns 0 if league scoring_settings lacks fgm_50p as a separate distance-based key
       return (stats['fgm_50p'] ?? 0) * (settings['fgm_50p'] ?? 0);
 
     case 'power_negation':
       // Player's score halved — subtract half of base (net = 0.5x)
+      // Caller skips this case if restored_at is set (Restore Chip used)
       return -(baseScore / 2);
 
     default:
@@ -135,12 +137,17 @@ Deno.serve(async (req) => {
   const settingsMap: Record<string, Record<string, number>> = {};
   for (const lg of (leagues ?? [])) settingsMap[lg.id] = lg.scoring_settings ?? {};
 
-  // Fetch all player draft powers for active leagues
-  // restored_at: if set, Power Negation penalty has been lifted via a Restore Chip
-  const { data: powerRows } = await supabase
-    .from('player_draft_powers')
-    .select('league_id, player_id, power, restored_at')
-    .in('league_id', leagueIds);
+  // Fetch player draft powers and vampire bites in parallel
+  const [{ data: powerRows }, { data: biteRows }] = await Promise.all([
+    supabase
+      .from('player_draft_powers')
+      .select('league_id, player_id, power, restored_at')
+      .in('league_id', leagueIds),
+    supabase
+      .from('vampire_bites')
+      .select('league_id, biting_member_id, target_player_id')
+      .in('league_id', leagueIds),
+  ]);
 
   // powerMap[leagueId][playerId] = { power, restored }
   const powerMap: Record<string, Record<string, { power: string; restored: boolean }>> = {};
@@ -150,6 +157,14 @@ Deno.serve(async (req) => {
       power: row.power,
       restored: row.restored_at != null,
     };
+  }
+
+  // biteMap[leagueId][targetPlayerId] = biting_member_id
+  // Used after per-player scoring to siphon 10% from target's owner to biter
+  const biteMap: Record<string, Record<string, string>> = {};
+  for (const row of (biteRows ?? [])) {
+    if (!biteMap[row.league_id]) biteMap[row.league_id] = {};
+    biteMap[row.league_id][row.target_player_id] = row.biting_member_id;
   }
 
   const memberIds = [...new Set(matchupRows.map((m: any) => m.member_id))];
@@ -179,7 +194,11 @@ Deno.serve(async (req) => {
     lineupMap[l.member_id].add(l.player_id);
   }
 
-  let updated = 0;
+  // First pass: compute raw per-player scores for all members.
+  // This is needed before Vampire Bite siphon can run (bite reads the target's scored value).
+  // playerScoreCache[memberId][playerId] = { pts, proj }
+  const playerScoreCache: Record<string, Record<string, { pts: number; proj: number }>> = {};
+
   for (const matchup of matchupRows as any[]) {
     const settings     = settingsMap[matchup.league_id] ?? {};
     const leaguePowers = powerMap[matchup.league_id]    ?? {};
@@ -187,32 +206,4 @@ Deno.serve(async (req) => {
     const lineupSet    = lineupMap[matchup.member_id];
     const scoringIds   = lineupSet ? [...lineupSet] : activeIds;
 
-    let totalPoints    = 0;
-    let totalProjected = 0;
-
-    for (const pid of scoringIds) {
-      const playerStats = allStats[pid] ?? {};
-      const playerProj  = allProj[pid]  ?? {};
-
-      let pts  = Object.keys(playerStats).length ? calcScore(playerStats, settings) : 0;
-      let proj = Object.keys(playerProj).length  ? calcScore(playerProj,  settings) : 0;
-
-      // Apply tied-to-pick draft power if this player has one in this league.
-      // Skip Power Negation if the manager has spent a Restore Chip on this player.
-      const entry = leaguePowers[pid];
-      if (entry && !(entry.power === 'power_negation' && entry.restored)) {
-        pts  += applyDraftPower(entry.power, playerStats, pts,  settings);
-        proj += applyDraftPower(entry.power, playerProj,  proj, settings);
-      }
-
-      totalPoints    += pts;
-      totalProjected += proj;
-    }
-
-    const { data: bonus } = await supabase.rpc('calculate_faction_roster_bonus', {
-      p_member_id: matchup.member_id,
-    });
-    totalPoints += bonus ?? 0;
-
-    totalPoints    = Math.round(totalPoints    * 100) / 100;
-    totalProje
+  
