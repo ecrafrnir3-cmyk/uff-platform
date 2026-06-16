@@ -126,6 +126,7 @@ export default async function MatchupsPage({
               "The commissioner needs to generate the schedule."
             )}
           </div>
+        )}
         {hasSchedule && (
           <>
             {/* Week selector */}
