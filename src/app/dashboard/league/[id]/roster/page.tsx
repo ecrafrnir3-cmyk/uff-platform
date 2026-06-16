@@ -165,7 +165,14 @@ export default async function RosterPage({
 
   if (!me) redirect("/dashboard?error=" + encodeURIComponent("You're not a member of that league."));
 
-  const [{ data: roster }, { data: teams }, { data: bonus }, { data: powers }, { data: picks }, news] = await Promise.all([
+  const [
+    { data: roster },
+    { data: teams },
+    { data: bonus, error: bonusError },
+    { data: powers },
+    { data: picks },
+    news,
+  ] = await Promise.all([
     supabase
       .from("uff_roster_players")
       .select("id, added_at, player_id, players(id, full_name, position, team, status)")
@@ -199,6 +206,7 @@ export default async function RosterPage({
     return (a.players?.full_name ?? "").localeCompare(b.players?.full_name ?? "");
   });
 
+  if (bonusError) console.error("[roster] calculate_faction_roster_bonus failed:", bonusError.message);
   const bonusPoints = typeof bonus === "number" ? bonus : Number(bonus ?? 0);
   const matchingCount = rosterList.filter((r) => {
     const f = r.players?.team ? teamFaction.get(r.players.team) : null;
