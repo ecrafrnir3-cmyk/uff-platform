@@ -68,7 +68,9 @@ export async function setMyFaction(formData: FormData) {
   redirect(`/dashboard/league/${leagueId}`);
 }
 
-/** Commissioner-only: auto-balance any unassigned members to an even Hero/Villain split. */
+/** Commissioner-only: auto-balance any unassigned members to an even Hero/Villain split.
+ *  Uses a single atomic Postgres RPC so a partial failure can never leave the
+ *  league in a broken half-assigned state. */
 export async function randomizeFactions(formData: FormData) {
   const supabase = await createClient();
   const {
@@ -78,53 +80,13 @@ export async function randomizeFactions(formData: FormData) {
 
   const leagueId = formData.get("leagueId") as string;
 
-  const { data: league } = await supabase
-    .from("uff_leagues")
-    .select("commissioner_id, draft_status")
-    .eq("id", leagueId)
-    .maybeSingle();
+  const { error } = await supabase.rpc("randomize_unassigned_factions", {
+    p_league_id: leagueId,
+    p_user_id: user.id,
+  });
 
-  if (!league) {
-    redirect("/dashboard?error=" + encodeURIComponent("League not found."));
-  }
-
-  if (league.commissioner_id !== user.id) {
-    redirect(`/dashboard/league/${leagueId}?error=` + encodeURIComponent("Only the commissioner can randomize factions."));
-  }
-
-  if (league.draft_status !== "not_started") {
-    redirect(`/dashboard/league/${leagueId}?error=` + encodeURIComponent("Factions are locked once the draft starts."));
-  }
-
-  const { data: members, error: membersError } = await supabase
-    .from("league_members")
-    .select("id, faction")
-    .eq("league_id", leagueId);
-
-  if (membersError || !members) {
-    redirect(`/dashboard/league/${leagueId}?error=` + encodeURIComponent(membersError?.message ?? "Could not load members."));
-  }
-
-  let heroCount = members.filter((m) => m.faction === "hero").length;
-  let villainCount = members.filter((m) => m.faction === "villain").length;
-  const unassigned = members.filter((m) => !m.faction);
-
-  // Fisher-Yates shuffle so the assignment order isn't predictable.
-  for (let i = unassigned.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [unassigned[i], unassigned[j]] = [unassigned[j], unassigned[i]];
-  }
-
-  for (const member of unassigned) {
-    const faction: Faction = heroCount <= villainCount ? "hero" : "villain";
-    if (faction === "hero") heroCount++;
-    else villainCount++;
-
-    const { error } = await supabase.from("league_members").update({ faction }).eq("id", member.id);
-
-    if (error) {
-      redirect(`/dashboard/league/${leagueId}?error=` + encodeURIComponent(error.message));
-    }
+  if (error) {
+    redirect(`/dashboard/league/${leagueId}?error=` + encodeURIComponent(error.message));
   }
 
   revalidatePath(`/dashboard/league/${leagueId}`);

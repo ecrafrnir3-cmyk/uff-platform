@@ -1,8 +1,32 @@
 # 🚀 UFF Handoff Brief
 
-*Last updated: 2026-06-12*
+*Last updated: 2026-06-12 (evening session)*
 
 This is the "start here" doc for any new Cowork session on Ultimate Fantasy Football. Pin it alongside the master prompt in the project instructions.
+
+## ✅ Session update — 2026-06-12 (evening, work computer)
+
+**Shipped this session:**
+- **My Team / roster page** (`/dashboard/league/[id]/roster`) — built and deployed live. 3-column layout:
+  - Left: "Your Powers" — draft power assignments per round with status badges (Active/Fizzled/Negated/Restored/Pending).
+  - Center: Faction Roster Bonus calc + full roster list (sorted QB/RB/WR/TE/K/DEF, faction-match highlighting).
+  - Right: "League Activity" (recent draft picks feed) + "NFL News" (ESPN free RSS headlines, no-auth).
+  - Added "My Team" nav link from the league page.
+  - Deployed via `vercel deploy --prod` — confirmed live ("✓ Ready in 44s").
+- **Player news research** (Nate's ask: "pull individual player news in real time like the major apps") — researched free vs. paid real-time player/injury news APIs. See findings below. **No code built yet — holding for go-ahead.**
+
+**Player news API research findings:**
+- **Best free lead**: ESPN's undocumented per-player news endpoint — `site.api.espn.com/apis/fantasy/v2/games/ffl/news/players?limit=50&playerId={ESPN_ID}` (also `site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{id}/news`). Same ESPN API family already powering the working NFL News RSS panel — zero cost, fits bootstrap rule. Source: community-documented gist (gist.github.com/nntrn/ee26cb2a0716de0947a0a4e9a157bc1c). **Caveat**: undocumented/unsupported, could change without notice. Couldn't live-test from the sandbox (network allowlist blocks `site.api.espn.com`, unlike `www.espn.com`) — needs testing from a deployed route or local dev.
+- **Paid options checked, no public pricing found for any**:
+  - SportsDataIO — free trial returns scrambled/demo data only; real pricing requires sales contact.
+  - RotoWire — real-time injury/news feed exists (GTD→OUT transitions, ~250 notes/day NFL season), but pricing is sales-negotiated, not public.
+  - Also identified but not deep-dived: Tank01 (RapidAPI), BALLDONTLIE, MySportsFeeds, Goalserve, Fantasy Nerds.
+- **Recommendation**: try the free ESPN per-player endpoint first (build a small test on a deployed route since sandbox can't reach it). Only explore paid options if it proves unreliable.
+- **Next step**: Nate to decide — build/test the free ESPN per-player endpoint, or hold. Not started.
+
+## 📒 Journal
+
+Day-by-day work log now lives in `docs/journal.md` — check there for what happened in past sessions.
 
 ## 🎯 Product Vision & Launch Goal
 
@@ -52,14 +76,17 @@ There's also a test league ("Draft Test 2026") with 2 members, factions assigned
 
 1. ~~Schema: power tables, faction assignment, player conference tags~~ — DONE in database (see "Big update" above), app code not yet using it
 2. League creation flow: even-team enforcement, faction picker/randomizer, 16-round draft lock — DB supports this, UI doesn't exist yet
-3. ~~Faction Roster Bonus weekly scoring calc~~ — DONE as a SQL function (`calculate_faction_roster_bonus`), not yet called from the app
+3. ~~Faction Roster Bonus weekly scoring calc~~ — DONE as a SQL function (`calculate_faction_roster_bonus`) AND now displayed live on the roster page (2026-06-12)
 4. Draft tool (powers hook in here) — DB has draft state/picks tables and test data, no UI yet
    - **Planned data source for ADP**: Fantasy Football Calculator free REST API — `https://fantasyfootballcalculator.com/api/v1/adp/{format}?teams=12&year=2026` (format = standard/ppr/half-ppr/2qb/dynasty). No auth, free for personal/commercial use, just attribute. Sleeper's own API has no clean ADP endpoint — use this instead for suggested pick order / value flags during the draft. (Logged 2026-06-12.)
 5. Faction Control Map UI
 6. Weekly token award/redemption UI
 7. Scoring pipeline engine (Section 7 of the design doc)
 
-**Suggested next session focus:** pick one of the app-side gaps above (league creation flow with faction picker is a natural starting point since it's the first thing a user touches) and build the UI to match what the database already supports.
+**Suggested next session focus (from home computer):**
+1. Decide on player news (see Session Update above) — if go, build/test the free ESPN per-player endpoint.
+2. Draft tool UI (item 4 above) — biggest remaining gap, DB/test data already exist.
+3. Faction Control Map UI (item 5).
 
 ## To-do: Vercel GitHub auto-deploy
 
@@ -84,7 +111,7 @@ A full review of the codebase + live Supabase schema + Vercel project surfaced t
 
 **Deploy pipeline (already logged above, reconfirmed):** Vercel project still has no GitHub link — `git push` does not auto-deploy. Confirmed again via Vercel API today.
 
-**Missing piece / current focus:** there's no "My Team / roster" page yet — `uff_roster_players` has test data but nothing renders it. This blocks the Faction Roster Bonus display, the draft tool, and weekly token UI, so it's the natural next build (in progress now).
+**Missing piece / current focus:** ~~there's no "My Team / roster" page yet~~ — DONE 2026-06-12 evening, see Session Update above. Faction Roster Bonus now displays live. Draft tool and weekly token UI are still the next big builds.
 
 **New feature backlog (from Nate, 2026-06-12):**
 - **Trade comparison tool**, Yahoo-style — compare two rosters/players for trade fairness. Needs a player valuation source; the Fantasy Football Calculator ADP API (already logged under Draft tool) could seed this, or build off nflverse projections later.

@@ -101,7 +101,7 @@ export default async function LeagueDetailPage({
           </h1>
           <p className="text-sm text-zinc-400">
             Season {league.season} &middot; {memberList.length} / {league.max_teams} teams &middot; 16-round draft
-            (locked) &middot; Draft: {league.draft_status.replace("_", " ")}
+            (locked) &middot; Draft: {league.draft_status.replaceAll("_", " ")}
           </p>
           <Link
             href={`/dashboard/league/${league.id}/roster`}
@@ -263,7 +263,7 @@ export default async function LeagueDetailPage({
 
         <section className="rounded-lg border p-5 text-sm text-zinc-400" style={{ borderColor: "#2a2a40" }}>
           Draft tool, powers, and the Faction Control Map are coming up next &mdash; this league&rsquo;s draft is fixed
-          at 16 rounds and currently <strong>{league.draft_status.replace("_", " ")}</strong>.
+          at 16 rounds and currently <strong>{league.draft_status.replaceAll("_", " ")}</strong>.
         </section>
       </main>
     </div>

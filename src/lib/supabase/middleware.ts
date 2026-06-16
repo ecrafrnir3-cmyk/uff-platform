@@ -3,14 +3,21 @@ import { NextResponse, type NextRequest } from "next/server";
 
 // Refreshes the Supabase auth session on every request so server
 // components always see a valid (non-expired) session.
+// Also enforces that /dashboard/** requires an authenticated user.
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  // If Supabase isn't configured (e.g. local fixtures-only dev), skip auth.
+  const { pathname } = request.nextUrl;
+  const isProtected = pathname.startsWith("/dashboard");
+
+  // If Supabase isn't configured, block protected routes entirely.
   if (!supabaseUrl || !supabaseAnonKey) {
+    if (isProtected) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
     return supabaseResponse;
   }
 
@@ -29,8 +36,13 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  // Touch the session so expired tokens get refreshed via the cookies above.
-  await supabase.auth.getUser();
+  // Refresh the session token via cookies.
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // Redirect unauthenticated users away from protected routes.
+  if (!user && isProtected) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
 
   return supabaseResponse;
 }

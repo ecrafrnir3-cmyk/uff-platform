@@ -1,13 +1,25 @@
 import type { Metadata } from "next";
+import { Bangers, Roboto_Condensed } from "next/font/google";
 import "./globals.css";
 
-// NOTE: Brand fonts (Bangers / Roboto Condensed) will be wired in via
-// next/font/google once we're building on Vercel (this sandbox can't
-// reach fonts.googleapis.com). System font stack for now.
+const bangers = Bangers({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-display",
+  display: "swap",
+});
+
+const robotoCondensed = Roboto_Condensed({
+  weight: ["300", "400", "600", "700"],
+  subsets: ["latin"],
+  variable: "--font-body",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Ultimate Fantasy Football",
-  description: "The Oracle's Calls — AI-powered weekly recaps for your fantasy league.",
+  description: "Hero vs. villain fantasy football leagues with superpowers. Pick your side.",
+  themeColor: "#0d0d1a",
 };
 
 export default function RootLayout({
@@ -16,7 +28,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full antialiased">
+    <html lang="en" className={`h-full antialiased ${bangers.variable} ${robotoCondensed.variable}`}>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );
