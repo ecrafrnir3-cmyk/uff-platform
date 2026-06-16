@@ -102,13 +102,31 @@ export default async function LeagueDetailPage({
           <p className="text-sm text-zinc-400">
             Season {league.season} &middot; {memberList.length} / {league.max_teams} teams &middot; 16-round snake draft &middot; Draft: {league.draft_status.replaceAll("_", " ")}
           </p>
-          <Link
-            href={`/dashboard/league/${league.id}/roster`}
-            className="mt-1 inline-flex w-fit items-center rounded-md px-4 py-2 text-sm font-semibold"
-            style={{ background: "#0057FF", color: "#f4f4f8" }}
-          >
-            My Team
-          </Link>
+          <div className="mt-1 flex flex-wrap gap-2">
+            <Link
+              href={`/dashboard/league/${league.id}/roster`}
+              className="inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold"
+              style={{ background: "#0057FF", color: "#f4f4f8" }}
+            >
+              My Team
+            </Link>
+            <Link
+              href={`/dashboard/league/${league.id}/matchups`}
+              className="inline-flex items-center rounded-md border px-4 py-2 text-sm font-semibold"
+              style={{ borderColor: "#2a2a40", color: "#f4f4f8" }}
+            >
+              Matchups
+            </Link>
+            {isCommissioner && (
+              <Link
+                href={`/dashboard/league/${league.id}/settings`}
+                className="inline-flex items-center rounded-md border px-4 py-2 text-sm font-semibold"
+                style={{ borderColor: "#2a2a40", color: "#FFD700" }}
+              >
+                ⚙ Settings
+              </Link>
+            )}
+          </div>
         </header>
 
         {error && (
@@ -250,21 +268,4 @@ export default async function LeagueDetailPage({
                         Commissioner
                       </span>
                     )}
-                    {m.user_id === user.id && <span className="ml-1 text-xs text-zinc-500">(you)</span>}
-                  </p>
-                  <p className="text-sm text-zinc-400">{m.profiles?.display_name ?? m.profiles?.username}</p>
-                </div>
-                <FactionBadge faction={m.faction} />
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="flex flex-col gap-4 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>
-          <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Draft</h2>
-
-          {league.draft_status === "not_started" && (
-            <>
-              {isCommissioner ? (
-                unassignedCount === 0 ? (
-                  <div className="
+           
