@@ -87,7 +87,7 @@ export default function DraftRoom({
       .select("id, round, pick_no, member_id, player_id, picked_at, players(full_name, position, team)")
       .eq("league_id", leagueId)
       .order("pick_no", { ascending: true });
-    if (data) setPicks(data as Pick[]);
+    if (data) setPicks(data as unknown as Pick[]);
 
     const { data: leagueRow } = await supabase
       .from("uff_leagues")
