@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -17,6 +18,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  // Read ?error= from URL (set by auth callback on failure)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlError = params.get("error");
+    if (urlError) setError(decodeURIComponent(urlError));
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -126,6 +134,14 @@ export default function LoginPage() {
               style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
             />
           </div>
+
+          {mode === "sign-in" && (
+            <div className="flex justify-end -mt-2">
+              <Link href="/forgot-password" className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+                Forgot password?
+              </Link>
+            </div>
+          )}
 
           {error && (
             <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#CC0000", color: "#ff8a8a", background: "#1a0e16" }}>

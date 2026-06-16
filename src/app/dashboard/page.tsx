@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { createLeague, joinLeague, signOut } from "./actions";
+import { createLeague, joinLeague } from "./actions";
 import { LEAGUE_SIZE_OPTIONS } from "./constants";
 
 interface LeagueRow {
@@ -64,27 +64,13 @@ export default async function DashboardPage({
       style={{ background: "#0d0d1a", color: "#f4f4f8" }}
     >
       <main className="mx-auto flex max-w-3xl flex-col gap-8">
-        <header className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm uppercase tracking-[0.3em]" style={{ color: "#FFD700" }}>
-              Ultimate Fantasy Football
-            </p>
-            <h1
-              className="mt-1 text-3xl sm:text-4xl"
-              style={{ fontFamily: "var(--font-display, sans-serif)", color: "#0057FF" }}
-            >
-              Welcome, {profile?.display_name ?? profile?.username ?? user.email}
-            </h1>
-          </div>
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="rounded-md border px-3 py-2 text-sm"
-              style={{ borderColor: "#2a2a40", color: "#f4f4f8" }}
-            >
-              Sign out
-            </button>
-          </form>
+        <header>
+          <h1
+            className="text-3xl sm:text-4xl"
+            style={{ fontFamily: "var(--font-display, sans-serif)", color: "#0057FF" }}
+          >
+            Welcome, {profile?.display_name ?? profile?.username ?? user.email}
+          </h1>
         </header>
 
         {error && (
