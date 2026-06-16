@@ -109,40 +109,4 @@ export async function joinLeague(formData: FormData) {
 
   const memberCount = members?.length ?? 0;
   if (memberCount >= league.max_teams) {
-    redirect("/dashboard?error=" + encodeURIComponent("That league is already full."));
-  }
-
-  if (faction) {
-    const capacity = league.max_teams / 2;
-    const currentInFaction = members?.filter((m) => m.faction === faction).length ?? 0;
-    if (currentInFaction >= capacity) {
-      const label = faction === "hero" ? "Hero" : "Villain";
-      redirect(
-        "/dashboard?error=" +
-          encodeURIComponent(`The ${label} side is already full for that league. Pick the other side or "Decide later".`)
-      );
-    }
-  }
-
-  const { error: memberError } = await supabase.from("league_members").insert({
-    league_id: league.id,
-    user_id: user.id,
-    team_name: teamName,
-    is_commissioner: false,
-    faction,
-  });
-
-  if (memberError) {
-    const message = memberError.code === "23505" ? "You're already in that league." : memberError.message;
-    redirect("/dashboard?error=" + encodeURIComponent(message));
-  }
-
-  revalidatePath("/dashboard");
-  redirect(`/dashboard/league/${league.id}`);
-}
-
-export async function signOut() {
-  const supabase = await createClient();
-  await supabase.auth.signOut();
-  redirect("/login");
-}
+    redirect("/dashboard?error=" + encodeURIComponent("That league

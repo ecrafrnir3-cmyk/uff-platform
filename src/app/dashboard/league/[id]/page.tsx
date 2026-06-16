@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { randomizeFactions, setMyFaction } from "./actions";
+import { randomizeFactions, setMyFaction, startDraft } from "./actions";
 
 interface MemberRow {
   id: string;
@@ -100,8 +100,7 @@ export default async function LeagueDetailPage({
             {league.name}
           </h1>
           <p className="text-sm text-zinc-400">
-            Season {league.season} &middot; {memberList.length} / {league.max_teams} teams &middot; 16-round draft
-            (locked) &middot; Draft: {league.draft_status.replaceAll("_", " ")}
+            Season {league.season} &middot; {memberList.length} / {league.max_teams} teams &middot; 16-round snake draft &middot; Draft: {league.draft_status.replaceAll("_", " ")}
           </p>
           <Link
             href={`/dashboard/league/${league.id}/roster`}
@@ -261,11 +260,11 @@ export default async function LeagueDetailPage({
           </div>
         </section>
 
-        <section className="rounded-lg border p-5 text-sm text-zinc-400" style={{ borderColor: "#2a2a40" }}>
-          Draft tool, powers, and the Faction Control Map are coming up next &mdash; this league&rsquo;s draft is fixed
-          at 16 rounds and currently <strong>{league.draft_status.replaceAll("_", " ")}</strong>.
-        </section>
-      </main>
-    </div>
-  );
-}
+        <section className="flex flex-col gap-4 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>
+          <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Draft</h2>
+
+          {league.draft_status === "not_started" && (
+            <>
+              {isCommissioner ? (
+                unassignedCount === 0 ? (
+                  <div className="

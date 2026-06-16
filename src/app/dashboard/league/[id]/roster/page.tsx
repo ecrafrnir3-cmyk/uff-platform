@@ -382,13 +382,4 @@ export default async function RosterPage({
                       {item.title}
                     </a>
                   ))}
-                  <p className="text-xs text-zinc-500">Source: ESPN NFL headlines</p>
-                </div>
-              )}
-            </section>
-          </aside>
-        </div>
-      </main>
-    </div>
-  );
-}
+                  <p className="text-xs text-zinc-500">Source: 

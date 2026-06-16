@@ -29,20 +29,4 @@ export async function updateSession(request: NextRequest) {
       setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
         supabaseResponse = NextResponse.next({ request });
-        cookiesToSet.forEach(({ name, value, options }) =>
-          supabaseResponse.cookies.set(name, value, options)
-        );
-      },
-    },
-  });
-
-  // Refresh the session token via cookies.
-  const { data: { user } } = await supabase.auth.getUser();
-
-  // Redirect unauthenticated users away from protected routes.
-  if (!user && isProtected) {
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
-
-  return supabaseResponse;
-}
+        cookiesToSet.forEach(({ name, val

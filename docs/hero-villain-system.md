@@ -131,4 +131,4 @@ With this many overlapping effects, every weekly score is computed in this fixed
 4. Draft tool itself (separate big build — powers hook into it)
 5. Faction Control Map UI
 6. Weekly token award + redemption UI
-7. Scoring pipeline engine (Section 7) — implements the 6-step order of operations across both managers in a matchup
+7. Scoring pipeline engine (Section 7) — implements the 6-step order of operations across both manag

@@ -1,0 +1,94 @@
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import DraftRoom from "./DraftRoom";
+
+interface MemberRow {
+  id: string;
+  team_name: string;
+  faction: "hero" | "villain" | null;
+  user_id: string;
+  profiles: { display_name: string | null; username: string } | null;
+}
+
+interface PickRow {
+  id: string;
+  round: number;
+  pick_no: number;
+  member_id: string;
+  player_id: string;
+  picked_at: string;
+  players: { full_name: string; position: string | null; team: string | null } | null;
+}
+
+interface PowerRow {
+  round: number;
+  draft_powers: { id: number; name: string; category: string | null; description: string } | null;
+}
+
+export default async function DraftPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id: leagueId } = await params;
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: league } = await supabase
+    .from("uff_leagues")
+    .select("id, name, season, draft_status, draft_order, max_teams, draft_rounds, commissioner_id")
+    .eq("id", leagueId)
+    .maybeSingle();
+
+  if (!league) redirect("/dashboard?error=" + encodeURIComponent("League not found."));
+
+  if (league.draft_status === "not_started") {
+    redirect(`/dashboard/league/${leagueId}?error=` + encodeURIComponent("The draft hasn't started yet."));
+  }
+
+  const { data: members } = await supabase
+    .from("league_members")
+    .select("id, team_name, faction, user_id, profiles(display_name, username)")
+    .eq("league_id", leagueId)
+    .order("joined_at", { ascending: true })
+    .returns<MemberRow[]>();
+
+  const me = (members ?? []).find((m) => m.user_id === user.id);
+  if (!me) redirect("/dashboard?error=" + encodeURIComponent("You're not a member of that league."));
+
+  const [{ data: picks }, { data: myPowers }] = await Promise.all([
+    supabase
+      .from("uff_draft_picks")
+      .select("id, round, pick_no, member_id, player_id, picked_at, players(full_name, position, team)")
+      .eq("league_id", leagueId)
+      .order("pick_no", { ascending: true })
+      .returns<PickRow[]>(),
+    supabase
+      .from("draft_power_assignments")
+      .select("round, draft_powers(id, name, category, description)")
+      .eq("member_id", me.id)
+      .order("round", { ascending: true })
+      .returns<PowerRow[]>(),
+  ]);
+
+  return (
+    <DraftRoom
+      league={{
+        id: league.id,
+        name: league.name,
+        draft_status: league.draft_status,
+        draft_order: (league.draft_order as string[]) ?? [],
+        max_teams: league.max_teams,
+        draft_rounds: league.draft_rounds,
+      }}
+      members={members ?? []}
+      myMemberId={me.id}
+      initialPicks={picks ?? []}
+      myPowers={myPowers ?? []}
+    />
+  );
+}
