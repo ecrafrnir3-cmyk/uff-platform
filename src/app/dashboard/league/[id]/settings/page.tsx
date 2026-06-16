@@ -227,4 +227,28 @@ export default async function SettingsPage({
                       <input
                         id={key}
                         name={key}
-             
+                        type="number"
+                        step="any"
+                        defaultValue={settings[key] ?? ""}
+                        className="w-24 rounded border px-2 py-1 text-right text-sm tabular-nums"
+                        style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <button
+              type="submit"
+              className="self-start rounded-md px-4 py-2 text-sm font-semibold"
+              style={{ background: "#0057FF", color: "#f4f4f8" }}
+            >
+              Save Scoring Settings
+            </button>
+          </form>
+        </section>
+      </main>
+    </div>
+  );
+}

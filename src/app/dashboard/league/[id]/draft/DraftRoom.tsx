@@ -5,7 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { makeDraftPick } from "./actions";
 
-// Module-level singleton — avoids recreating the client on every render
+// Module-level singleton -- avoids recreating the client on every render
 const supabase = createClient();
 
 interface Player {
@@ -389,4 +389,13 @@ export default function DraftRoom({
                       {pick.players?.position ?? "?"} &middot; {pick.players?.team ?? "FA"} &rarr;{" "}
                       {m?.team_name ?? "?"}
                     </p>
-         
+                  </div>
+                );
+              })}
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}
