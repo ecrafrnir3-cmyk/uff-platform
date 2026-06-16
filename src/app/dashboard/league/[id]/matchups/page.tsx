@@ -126,3 +126,48 @@ export default async function MatchupsPage({
               "The commissioner needs to generate the schedule."
             )}
           </div>
+        {hasSchedule && (
+          <>
+            {/* Week selector */}
+            <div className="flex flex-wrap gap-2">
+              {availableWeeks.map((w) => (
+                <Link
+                  key={w}
+                  href={`/dashboard/league/${leagueId}/matchups?week=${w}`}
+                  className="rounded px-3 py-1.5 text-xs font-semibold"
+                  style={{
+                    background: w === viewWeek ? "#0057FF" : "#1c1c2b",
+                    color: w === viewWeek ? "#f4f4f8" : "#8a8a9a",
+                  }}
+                >
+                  Week {w}
+                </Link>
+              ))}
+            </div>
+
+            <MatchupView
+              leagueId={leagueId}
+              week={viewWeek}
+              matchupPairs={matchupPairs}
+              myMemberId={me.id}
+            />
+
+            {isCommissioner && !weekIsFinalized && (
+              <form action={finalizeWeek}>
+                <input type="hidden" name="leagueId" value={leagueId} />
+                <input type="hidden" name="week" value={viewWeek} />
+                <button
+                  type="submit"
+                  className="rounded-md px-4 py-2 text-sm font-semibold"
+                  style={{ background: "#1c1c2b", color: "#8a8a9a", border: "1px solid #2a2a40" }}
+                >
+                  Finalize Week {viewWeek}
+                </button>
+              </form>
+            )}
+          </>
+        )}
+      </main>
+    </div>
+  );
+}
