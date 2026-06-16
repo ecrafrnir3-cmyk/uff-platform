@@ -1,6 +1,42 @@
 # 🚀 UFF Handoff Brief
 
-*Last updated: 2026-06-12 (evening session)*
+
+## ✅ Session update — 2026-06-16 (lineup management + nav bar)
+
+**Shipped this session:**
+
+**Critical bug fixes (6 from prior audit):**
+- `add_player` RPC: was inserting NULL league_id -- fixed to pass `p_league_id` explicitly.
+- UNIQUE constraint blocked re-adding dropped players -- replaced with partial index `WHERE dropped_at IS NULL`.
+- FreeAgents.tsx blank on load -- removed broken `setPosFilter(prev => prev)` no-op useEffect.
+- `allRostered` query in free-agents/page.tsx -- PostgREST join filter was unreliable, switched to direct `.eq("league_id", leagueId)` on the `uff_roster_players` table.
+- Projected pts not showing in matchups -- added `projected` field to interface, query, MatchupView.tsx, and Realtime handler.
+- RLS: `uff_roster_players` had an ALL policy; split into proper SELECT-only policies.
+
+**Lineup management system (full stack):**
+- DB migration: `uff_lineups` table (member_id, week, slot, player_id) + `lineup_slots` JSONB on `uff_leagues` (default: QB×1, RB×2, WR×2, TE×1, FLEX×1, K×1, DEF×1 = 9 starters).
+- `set_lineup` SECURITY DEFINER RPC: validates player on active roster, validates position eligibility (FLEX accepts RB/WR/TE), atomically replaces the week's lineup.
+- `score-matchups` Edge Function v5: scores only starters when lineup is set; falls back to all active players if no lineup submitted yet.
+- `lineup-actions.ts` server action: calls the RPC and redirects with success/error flash.
+- `LineupManager.tsx` client component: slot dropdowns with position filtering (auto-updates assignment state), bench display, Save Lineup button.
+- `roster/page.tsx` updated: queries `lineup_slots` + `uff_lineups` for current week, expands slots, renders LineupManager above roster, shows S/B (starter/bench) badge per player row.
+
+**Shared league nav bar:**
+- `LeagueNav.tsx`: sticky nav with UFF wordmark + tabs (League, Roster, Matchups, Standings, Free Agents, Settings), active tab highlighted gold with bottom border, uses `usePathname`.
+- `layout.tsx` for `/dashboard/league/[id]/`: verifies membership once for all child routes, renders nav above every page.
+
+**Git log (local, awaiting `git push` from Nate):**
+```
+72faa99 fix: lineup-actions import path
+f2bc5fa feat: shared league layout with sticky nav bar
+1f97071 feat: lineup management - set starters vs bench per week
+811cd05 fix: critical waiver wire bugs + projected pts display
+11f2a42 fix: critical waiver wire bugs + audit fixes
+```
+
+**IMPORTANT -- Nate needs to `git push` from CMD to send these to GitHub.**
+
+*Last updated: 2026-06-16*
 
 This is the "start here" doc for any new Cowork session on Ultimate Fantasy Football. Pin it alongside the master prompt in the project instructions.
 

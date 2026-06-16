@@ -63,3 +63,41 @@ Dated work log for Ultimate Fantasy Football. Newest entries at the top. Compani
 ## Earlier history (pre-2026-06-11)
 
 Initial build: Next.js app scaffolded and deployed to Vercel; Supabase backend (profiles, uff_leagues, league_members + RLS, plus an early demo schema); Supabase Auth wired in (`@supabase/ssr`); login/signup pages; dashboard with list/create/join leagues. Build verified, signup/create/join flow smoke-tested. Full detail not journaled at the time — see git history (`Initial commit`, `Update docs: hero-villain doc finalized...`) for the record.
+
+## 2026-06-16
+
+**Session focus:** Critical bug fixes + lineup management + shared nav
+
+### Bugs fixed
+- `add_player` RPC was inserting NULL `league_id` -- fixed with correct parameter passing.
+- UNIQUE constraint on `uff_roster_players` blocked re-adding dropped players -- replaced with partial unique index `WHERE dropped_at IS NULL`.
+- FreeAgents.tsx initial load was blank -- `setPosFilter(prev => prev)` is a React no-op (bails on unchanged state). Removed the broken useEffect; the existing `[search, posFilter]` effect fires on mount.
+- `allRostered` query used an unreliable PostgREST join filter -- switched to direct `.eq("league_id", leagueId)`.
+- Projected pts not displaying in matchups -- added `projected` field throughout (interface, query, component, Realtime handler).
+- `uff_roster_players` RLS had a dangerously broad ALL policy -- split into proper SELECT-only policies.
+
+### Features shipped
+**Lineup management (full stack):**
+- `uff_lineups` table + `lineup_slots` on `uff_leagues` (Supabase migration applied directly)
+- `set_lineup` SECURITY DEFINER RPC with position validation + FLEX eligibility (RB/WR/TE)
+- `score-matchups` Edge Function v5 -- starters-only scoring when lineup is set
+- `lineup-actions.ts` server action + `LineupManager.tsx` client component
+- `roster/page.tsx` wired up: slot expansion, current lineup query, S/B badges, flash message
+
+**Shared nav bar:**
+- `LeagueNav.tsx` -- sticky tab nav (League / Roster / Matchups / Standings / Free Agents / Settings)
+- `layout.tsx` for `/dashboard/league/[id]/` -- membership gate + nav for all league pages
+
+### Technical notes
+- NTFS mount still truncates files if Edit/Write tools are used. ALL file writes done via `bash` + Python `open().write()` to avoid this.
+- Non-ASCII bytes (em dashes from Python heredoc) caught and replaced with `--` before committing.
+- Import path bug: `LineupManager.tsx` is in `roster/`, so `lineup-actions.ts` (one level up) needs `"../lineup-actions"` -- caught in post-commit audit and fixed.
+
+### Commits (need `git push`)
+```
+72faa99 fix: lineup-actions import path
+f2bc5fa feat: shared league layout with sticky nav bar
+1f97071 feat: lineup management - set starters vs bench per week
+811cd05 fix: critical waiver wire bugs + projected pts display
+11f2a42 fix: critical waiver wire bugs + audit fixes
+```
