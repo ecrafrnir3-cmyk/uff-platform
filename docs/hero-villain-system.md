@@ -31,7 +31,7 @@ Status: FINALIZED, build-ready (as of 2026-06-11). Section 9 is the implementati
 
 ### Powers Nate has already locked in:
 
-1. **Foresight Coin** — Instead of taking this round's dealt power, the holder looks ahead at THEIR OWN next-two-rounds' powers (rounds N+1, N+2 in their personal order) and picks one to receive now instead. The power left behind shifts later in their order.
+1. **Foresight Coin** — Instead of taking this round's dealt power, the holder looks ahead at THEIR OWN next-two-rounds' powers (rounds N+1, N+2 in their personal order) and picks one to receive now instead. Foresight Coin is then **consumed (one-time use only)**. To maintain the 16-powers-for-16-rounds math, FC physically swaps into the vacated slot (the slot the chosen power just left), but it is flagged as spent. If FC surfaces again in that later round, it does nothing — the manager gets a null round with no power effect. **Edge cases:** At round 15, only one round ahead exists (round 16) — FC still works but the peek window is one power instead of two. At round 16, FC is fully wasted — no rounds ahead to peek at, null effect.
 2. **Reception Specialist** — Tied to this round's pick: if the player drafted this round is a pass-catcher (WR, RB, or TE), that player gets +0.5 PPR on top of the league's existing PPR, season-long. If the pick is a QB, K, or D/ST, the power fizzles.
 3. **Draft Heist** — Steal another manager's draft pick slot for this round only (swap positions). Confirmed scope: **just the ONE pick this round** — not any other remaining picks that manager has.
 4. **Hero's Shield** *(paired with Draft Heist)* — Every time ANY manager's personal shuffle deals them Draft Heist, the system ALSO grants Hero's Shield to one random Hero manager for that same round. If that Hero is the heist target, the steal is auto-blocked. Since (in the personal-shuffle model) everyone eventually draws Draft Heist at some round, this pairing fires once per manager, at a different round each time.
@@ -125,10 +125,4 @@ With this many overlapping effects, every weekly score is computed in this fixed
 
 ## 9. Build Sequencing (once mechanics are locked)
 
-1. Schema: faction assignment on `league_members`, player conference tags, power tables (draft pool, weekly pool, active effects per team)
-2. League creation flow: even-team enforcement + faction picker / randomizer + draft length locked at 16 rounds (no override)
-3. Faction Roster Bonus: weekly scoring calc
-4. Draft tool itself (separate big build — powers hook into it)
-5. Faction Control Map UI
-6. Weekly token award + redemption UI
-7. Scoring pipeline engine (Section 7) — implements the 6-step order of operations across both manag
+1. Schema: faction assignment on `league_members`, pla
