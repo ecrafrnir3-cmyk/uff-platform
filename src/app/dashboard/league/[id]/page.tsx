@@ -124,6 +124,13 @@ export default async function LeagueDetailPage({
             >
               Standings
             </Link>
+            <Link
+              href={`/dashboard/league/${league.id}/free-agents`}
+              className="inline-flex items-center rounded-md border px-4 py-2 text-sm font-semibold"
+              style={{ borderColor: "#2a2a40", color: "#f4f4f8" }}
+            >
+              Free Agents
+            </Link>
             {isCommissioner && (
               <Link
                 href={`/dashboard/league/${league.id}/settings`}
@@ -260,12 +267,4 @@ export default async function LeagueDetailPage({
           <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>
             Managers
           </h2>
-          <div className="flex flex-col gap-2">
-            {memberList.map((m) => (
-              <div
-                key={m.id}
-                className="flex items-center justify-between rounded-lg border px-4 py-3"
-                style={{ borderColor: "#2a2a40" }}
-              >
-                <div>
-                  <p className=
+          <div className="fle
