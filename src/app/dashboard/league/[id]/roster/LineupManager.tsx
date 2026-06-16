@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { setLineup } from "./lineup-actions";
+import { setLineup } from "../lineup-actions";
 
 interface RosterPlayer {
   player_id: string;
