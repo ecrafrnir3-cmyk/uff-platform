@@ -117,6 +117,13 @@ export default async function LeagueDetailPage({
             >
               Matchups
             </Link>
+            <Link
+              href={`/dashboard/league/${league.id}/standings`}
+              className="inline-flex items-center rounded-md border px-4 py-2 text-sm font-semibold"
+              style={{ borderColor: "#2a2a40", color: "#f4f4f8" }}
+            >
+              Standings
+            </Link>
             {isCommissioner && (
               <Link
                 href={`/dashboard/league/${league.id}/settings`}
@@ -261,11 +268,4 @@ export default async function LeagueDetailPage({
                 style={{ borderColor: "#2a2a40" }}
               >
                 <div>
-                  <p className="font-semibold">
-                    {m.team_name}{" "}
-                    {m.is_commissioner && (
-                      <span className="ml-1 text-xs uppercase tracking-wide" style={{ color: "#FFD700" }}>
-                        Commissioner
-                      </span>
-                    )}
-           
+                  <p className=

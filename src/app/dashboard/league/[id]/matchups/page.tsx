@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import MatchupView from "./MatchupView";
+import { finalizeWeek } from "./actions";
 
 interface MatchupRow {
   id: string;
@@ -26,10 +27,10 @@ export default async function MatchupsPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ week?: string }>;
+  searchParams: Promise<{ week?: string; error?: string; saved?: string }>;
 }) {
   const { id: leagueId } = await params;
-  const { week: weekParam } = await searchParams;
+  const { week: weekParam, error: pageError, saved: pageSaved } = await searchParams;
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -81,6 +82,11 @@ export default async function MatchupsPage({
   const availableWeeks = [...new Set((weekRows ?? []).map((r) => r.week))];
 
   const hasSchedule = availableWeeks.length > 0;
+  const isCommissioner = league.commissioner_id === user.id;
+  // Check if current week is already finalized (all matchup rows is_complete)
+  const weekIsFinalized =
+    matchupPairs.length > 0 &&
+    matchupPairs.every((pair) => pair.every((row) => row.is_complete));
 
   return (
     <div className="min-h-screen px-6 py-12 sm:px-12" style={{ background: "#0d0d1a", color: "#f4f4f8" }}>
@@ -97,6 +103,17 @@ export default async function MatchupsPage({
           </h1>
         </header>
 
+        {pageError && (
+          <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#CC0000", color: "#ff8a8a", background: "#1a0e16" }}>
+            {decodeURIComponent(pageError)}
+          </p>
+        )}
+        {pageSaved && (
+          <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#3DDC84", color: "#3DDC84", background: "#0e1a12" }}>
+            Week {viewWeek} finalized — winners locked in.
+          </p>
+        )}
+
         {!hasSchedule && (
           <div className="rounded-lg border p-5 text-sm text-zinc-400" style={{ borderColor: "#2a2a40" }}>
             No schedule yet.{" "}
@@ -108,36 +125,3 @@ export default async function MatchupsPage({
               "The commissioner needs to generate the schedule."
             )}
           </div>
-        )}
-
-        {hasSchedule && (
-          <>
-            {/* Week nav */}
-            <div className="flex flex-wrap gap-1">
-              {availableWeeks.map((w) => (
-                <Link
-                  key={w}
-                  href={`?week=${w}`}
-                  className="rounded px-3 py-1.5 text-xs font-semibold"
-                  style={{
-                    background: w === viewWeek ? "#0057FF" : "#1c1c2b",
-                    color: w === viewWeek ? "#f4f4f8" : "#8a8a9a",
-                  }}
-                >
-                  Wk {w}
-                </Link>
-              ))}
-            </div>
-
-            <MatchupView
-              leagueId={leagueId}
-              week={viewWeek}
-              matchupPairs={matchupPairs}
-              myMemberId={me.id}
-            />
-          </>
-        )}
-      </main>
-    </div>
-  );
-}

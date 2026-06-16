@@ -89,10 +89,10 @@ export default async function SettingsPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; saved?: string }>;
+  searchParams: Promise<{ error?: string; saved?: string; preset?: string }>;
 }) {
   const { id: leagueId } = await params;
-  const { error, saved } = await searchParams;
+  const { error, saved, preset } = await searchParams;
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -116,7 +116,16 @@ export default async function SettingsPage({
     .limit(1);
 
   const scheduleExists = (scheduleCheck?.length ?? 0) > 0;
-  const settings: Record<string, number> = league.scoring_settings ?? {};
+  const savedSettings: Record<string, number> = league.scoring_settings ?? {};
+
+  // Apply preset if requested via ?preset= query param
+  const validPreset = preset === "Full PPR" || preset === "Half PPR" || preset === "Standard" ? preset : null;
+  const presetValues: Record<string, number> = validPreset
+    ? { ...PRESETS["Full PPR"], ...(PRESETS[validPreset] ?? {}) }
+    : {};
+  const settings: Record<string, number> = validPreset
+    ? { ...savedSettings, ...presetValues }
+    : savedSettings;
 
   return (
     <div className="min-h-screen px-6 py-12 sm:px-12" style={{ background: "#0d0d1a", color: "#f4f4f8" }}>
@@ -141,6 +150,11 @@ export default async function SettingsPage({
         {saved && (
           <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#3DDC84", color: "#3DDC84", background: "#0e1a12" }}>
             Saved successfully.
+          </p>
+        )}
+        {validPreset && !saved && (
+          <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#FFD700", color: "#FFD700", background: "#1a1500" }}>
+            Previewing <strong>{validPreset}</strong> preset — hit &ldquo;Save Scoring Settings&rdquo; below to apply it.
           </p>
         )}
 
@@ -213,28 +227,4 @@ export default async function SettingsPage({
                       <input
                         id={key}
                         name={key}
-                        type="number"
-                        step="0.01"
-                        defaultValue={settings[key] ?? 0}
-                        className="w-20 rounded-md border px-2 py-1 text-sm text-right"
-                        style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-
-            <button
-              type="submit"
-              className="rounded-md px-5 py-2 text-sm font-semibold self-start"
-              style={{ background: "#0057FF", color: "#f4f4f8" }}
-            >
-              Save Scoring Settings
-            </button>
-          </form>
-        </section>
-      </main>
-    </div>
-  );
-}
+             
