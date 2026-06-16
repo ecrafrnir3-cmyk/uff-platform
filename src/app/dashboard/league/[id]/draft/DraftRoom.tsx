@@ -5,6 +5,9 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { makeDraftPick } from "./actions";
 
+// Module-level singleton — avoids recreating the client on every render
+const supabase = createClient();
+
 interface Player {
   id: string;
   full_name: string;
@@ -45,7 +48,8 @@ interface PowerRow {
   draft_powers: { id: number; name: string; category: string | null; description: string } | null;
 }
 
-const POSITIONS = ["ALL", "QB", "RB", "WR", "TE", "K", "DST"];
+// "DEF" is the actual position value in the players table (not "DST")
+const POSITIONS = ["ALL", "QB", "RB", "WR", "TE", "K", "DEF"];
 
 function snakeDraftSlot(pickNo: number, maxTeams: number): number {
   const round = Math.ceil(pickNo / maxTeams);
@@ -66,7 +70,6 @@ export default function DraftRoom({
   initialPicks: Pick[];
   myPowers: PowerRow[];
 }) {
-  const supabase = createClient();
   const [picks, setPicks] = useState<Pick[]>(initialPicks);
   const [players, setPlayers] = useState<Player[]>([]);
   const [search, setSearch] = useState("");
@@ -386,14 +389,4 @@ export default function DraftRoom({
                       {pick.players?.position ?? "?"} &middot; {pick.players?.team ?? "FA"} &rarr;{" "}
                       {m?.team_name ?? "?"}
                     </p>
-                  </div>
-                );
-              })}
-            </div>
-          </aside>
-        </div>
-      </div>
-    </div>
-  );
-}
-        
+         
