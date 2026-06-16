@@ -32,8 +32,8 @@ function calcScore(
  * Iron Defense, Red Zone Menace, Goal Line Hammer, Seam Buster, Sniper, Power Negation.
  *
  * NOT handled here (separate systems):
- *   - Time Stone: requires injury tracking + frozen-score lookup (frozen_score col on player_draft_powers)
- *   - Vampire Bite: handled separately at the team-score level after all player scores are computed
+ *   - Time Stone: requires injury tracking + frozen-score lookup (deferred to nightly player sync build)
+ *   - Vampire Bite: handled separately after all per-player scores are computed (second pass)
  */
 function applyDraftPower(
   power: string,
@@ -55,7 +55,8 @@ function applyDraftPower(
       return (stats['rec'] ?? 0) * 0.5;
 
     case 'iron_defense':
-      // D/ST score doubled — floor at 0 first so bad weeks can't be made worse, only good weeks amplified
+      // D/ST score doubled — bonus is floored at 0 so a bad week isn't amplified negatively
+      // If baseScore > 0 → bonus = baseScore → total doubles. If ≤ 0 → bonus = 0 → no change.
       return Math.max(0, baseScore);
 
     case 'red_zone_menace':
@@ -72,7 +73,6 @@ function applyDraftPower(
 
     case 'sniper':
       // K: 50+ yard FGs worth double — add the league's fgm_50p multiplier once more per make
-      // NOTE: returns 0 if league scoring_settings lacks fgm_50p as a separate distance-based key
       return (stats['fgm_50p'] ?? 0) * (settings['fgm_50p'] ?? 0);
 
     case 'power_negation':
@@ -129,6 +129,8 @@ Deno.serve(async (req) => {
   }
 
   const leagueIds = [...new Set(matchupRows.map((m: any) => m.league_id))];
+  const memberIds = [...new Set(matchupRows.map((m: any) => m.member_id))];
+
   const { data: leagues } = await supabase
     .from('uff_leagues')
     .select('id, scoring_settings')
@@ -137,16 +139,61 @@ Deno.serve(async (req) => {
   const settingsMap: Record<string, Record<string, number>> = {};
   for (const lg of (leagues ?? [])) settingsMap[lg.id] = lg.scoring_settings ?? {};
 
-  // Fetch player draft powers and vampire bites in parallel
-  const [{ data: powerRows }, { data: biteRows }] = await Promise.all([
+  // Fetch all data needed in parallel
+  const [
+    { data: powerRows },
+    { data: biteRows },
+    { data: rosterRows },
+    { data: lineupRows },
+    { data: memberFactionRows },
+    { data: rosterWithTeamRows },
+    { data: nflTeamRows },
+  ] = await Promise.all([
+    // Draft powers attached to players
     supabase
       .from('player_draft_powers')
       .select('league_id, player_id, power, restored_at')
       .in('league_id', leagueIds),
+
+    // Vampire bite registrations
     supabase
       .from('vampire_bites')
       .select('league_id, biting_member_id, target_player_id')
       .in('league_id', leagueIds),
+
+    // Active (non-dropped) roster players — used when no explicit lineup is set
+    supabase
+      .from('uff_roster_players')
+      .select('member_id, player_id')
+      .in('member_id', memberIds)
+      .is('dropped_at', null)
+      .eq('slot', 'active'),
+
+    // Explicit lineup for this week
+    supabase
+      .from('uff_lineups')
+      .select('member_id, player_id')
+      .in('member_id', memberIds)
+      .eq('week', week),
+
+    // Member factions (for faction roster bonus)
+    supabase
+      .from('league_members')
+      .select('id, faction')
+      .in('id', memberIds),
+
+    // Active roster players with their NFL team (for faction bonus calculation)
+    supabase
+      .from('uff_roster_players')
+      .select('member_id, players(team)')
+      .in('member_id', memberIds)
+      .is('dropped_at', null)
+      .eq('slot', 'active'),
+
+    // NFL team → faction mapping
+    supabase
+      .from('nfl_teams')
+      .select('abbr, faction'),
   ]);
 
   // powerMap[leagueId][playerId] = { power, restored }
@@ -160,50 +207,19 @@ Deno.serve(async (req) => {
   }
 
   // biteMap[leagueId][targetPlayerId] = biting_member_id
-  // Used after per-player scoring to siphon 10% from target's owner to biter
   const biteMap: Record<string, Record<string, string>> = {};
   for (const row of (biteRows ?? [])) {
     if (!biteMap[row.league_id]) biteMap[row.league_id] = {};
     biteMap[row.league_id][row.target_player_id] = row.biting_member_id;
   }
 
-  const memberIds = [...new Set(matchupRows.map((m: any) => m.member_id))];
-
-  const { data: rosterRows } = await supabase
-    .from('uff_roster_players')
-    .select('member_id, player_id')
-    .in('member_id', memberIds)
-    .is('dropped_at', null)
-    .eq('slot', 'active');
-
+  // rosterMap[memberId] = [playerId, ...]
   const rosterMap: Record<string, string[]> = {};
   for (const r of (rosterRows ?? [])) {
     if (!rosterMap[r.member_id]) rosterMap[r.member_id] = [];
     rosterMap[r.member_id].push(r.player_id);
   }
 
-  const { data: lineupRows } = await supabase
-    .from('uff_lineups')
-    .select('member_id, player_id')
-    .in('member_id', memberIds)
-    .eq('week', week);
-
+  // lineupMap[memberId] = Set<playerId>
   const lineupMap: Record<string, Set<string>> = {};
-  for (const l of (lineupRows ?? [])) {
-    if (!lineupMap[l.member_id]) lineupMap[l.member_id] = new Set();
-    lineupMap[l.member_id].add(l.player_id);
-  }
-
-  // First pass: compute raw per-player scores for all members.
-  // This is needed before Vampire Bite siphon can run (bite reads the target's scored value).
-  // playerScoreCache[memberId][playerId] = { pts, proj }
-  const playerScoreCache: Record<string, Record<string, { pts: number; proj: number }>> = {};
-
-  for (const matchup of matchupRows as any[]) {
-    const settings     = settingsMap[matchup.league_id] ?? {};
-    const leaguePowers = powerMap[matchup.league_id]    ?? {};
-    const activeIds    = rosterMap[matchup.member_id]   ?? [];
-    const lineupSet    = lineupMap[matchup.member_id];
-    const scoringIds   = lineupSet ? [...lineupSet] : activeIds;
-
-  
+  for (const l of (lineupRows ?? []

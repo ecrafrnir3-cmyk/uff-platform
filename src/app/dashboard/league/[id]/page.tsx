@@ -261,7 +261,7 @@ export default async function LeagueDetailPage({
             </div>
           )}
 
-          {league.draft_status === "complete" && (
+          {league.draft_status === "completed" && (
             <p className="text-sm text-zinc-400">The draft is complete. Good luck this season!</p>
           )}
         </section>
