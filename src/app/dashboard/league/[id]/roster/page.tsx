@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { dropPlayer, moveToIR, moveFromIR } from "../player-actions";
+import LineupManager from "./LineupManager";
 
 interface RosterRow {
   id: string;
@@ -91,6 +92,24 @@ async function getNflNews(): Promise<NewsItem[]> {
   } catch { return []; }
 }
 
+function getCurrentNFLWeek(): number {
+  const seasonStart = new Date("2026-09-03");
+  const now = new Date();
+  const diff = Math.floor((now.getTime() - seasonStart.getTime()) / (7 * 24 * 60 * 60 * 1000));
+  return Math.min(Math.max(diff + 1, 1), 18);
+}
+
+function expandSlots(config: Record<string, number>): string[] {
+  const order = ["QB", "RB", "WR", "TE", "FLEX", "K", "DEF"];
+  const result: string[] = [];
+  for (const pos of order) {
+    const count = config[pos] ?? 0;
+    if (count === 1) result.push(pos);
+    else for (let i = 1; i <= count; i++) result.push(`${pos}_${i}`);
+  }
+  return result;
+}
+
 function FactionBadge({ faction }: { faction: "hero" | "villain" | null }) {
   if (faction === "hero") return (
     <span className="rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide"
@@ -117,10 +136,10 @@ export default async function RosterPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; dropped?: string; ir?: string }>;
+  searchParams: Promise<{ error?: string; dropped?: string; ir?: string; lineup?: string }>;
 }) {
   const { id: leagueId } = await params;
-  const { error, dropped, ir } = await searchParams;
+  const { error, dropped, ir, lineup: lineupSaved } = await searchParams;
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -128,7 +147,7 @@ export default async function RosterPage({
 
   const { data: league } = await supabase
     .from("uff_leagues")
-    .select("id, name, season, draft_rounds, ir_spots")
+    .select("id, name, season, draft_rounds, ir_spots, lineup_slots")
     .eq("id", leagueId)
     .maybeSingle();
 
@@ -143,12 +162,15 @@ export default async function RosterPage({
 
   if (!me) redirect("/dashboard?error=" + encodeURIComponent("You're not a member of that league."));
 
+  const week = getCurrentNFLWeek();
+
   const [
     { data: roster },
     { data: teams },
     { data: bonus, error: bonusError },
     { data: powers },
     { data: picks },
+    { data: lineupRows },
     news,
   ] = await Promise.all([
     supabase
@@ -173,6 +195,11 @@ export default async function RosterPage({
       .order("picked_at", { ascending: false })
       .limit(8)
       .returns<DraftPickRow[]>(),
+    supabase
+      .from("uff_lineups")
+      .select("slot, player_id")
+      .eq("member_id", me.id)
+      .eq("week", week),
     getNflNews(),
   ]);
 
@@ -199,6 +226,24 @@ export default async function RosterPage({
   const powerList = powers ?? [];
   const pickList  = picks  ?? [];
 
+  // Lineup management data
+  const slotsConfig: Record<string, number> = (league.lineup_slots as Record<string, number>) ??
+    { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DEF: 1 };
+  const expandedSlots = expandSlots(slotsConfig);
+
+  const currentLineup: Record<string, string> = {};
+  for (const entry of (lineupRows ?? [])) {
+    currentLineup[entry.slot] = entry.player_id;
+  }
+
+  const activeRosterForLineup = activeRoster
+    .filter((r) => r.players?.position)
+    .map((r) => ({
+      player_id: r.player_id,
+      full_name: r.players!.full_name,
+      position: r.players!.position!,
+    }));
+
   return (
     <div className="min-h-screen px-6 py-12 sm:px-12" style={{ background: "#0d0d1a", color: "#f4f4f8" }}>
       <main className="mx-auto flex max-w-6xl flex-col gap-8">
@@ -219,7 +264,7 @@ export default async function RosterPage({
             <span>&middot;</span>
             <Link href={`/dashboard/league/${leagueId}/free-agents`}
               className="font-semibold underline" style={{ color: "#FFD700" }}>
-              Free Agents →
+              Free Agents &rarr;
             </Link>
           </div>
         </header>
@@ -238,6 +283,22 @@ export default async function RosterPage({
           <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#0057FF", color: "#6fa3ff", background: "#0a0e1a" }}>
             Player moved to IR.
           </p>
+        )}
+        {lineupSaved && (
+          <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#3DDC84", color: "#3DDC84", background: "#0e1a12" }}>
+            Lineup saved for Week {week}.
+          </p>
+        )}
+
+        {/* Lineup Manager */}
+        {activeRosterForLineup.length > 0 && (
+          <LineupManager
+            leagueId={leagueId}
+            week={week}
+            slots={expandedSlots}
+            activeRoster={activeRosterForLineup}
+            currentLineup={currentLineup}
+          />
         )}
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[260px_minmax(0,1fr)_300px]">
@@ -322,9 +383,19 @@ export default async function RosterPage({
                   const pFaction = player?.team ? teamFaction.get(player.team) ?? null : null;
                   const matches  = me.faction !== null && pFaction === me.faction;
                   const isIR     = player?.status === "Injured Reserve";
+                  const isStarting = Object.values(currentLineup).includes(r.player_id);
                   return (
                     <div key={r.id} className="flex items-center gap-3 rounded-lg border px-4 py-3"
                       style={{ borderColor: matches ? (me.faction === "hero" ? HERO_COLOR : VILLAIN_COLOR) : "#2a2a40" }}>
+
+                      {/* Starter indicator */}
+                      <span
+                        className="w-4 shrink-0 text-center text-xs font-bold"
+                        style={{ color: isStarting ? "#3DDC84" : "#2a2a40" }}
+                        title={isStarting ? "Starting" : "Bench"}
+                      >
+                        {isStarting ? "S" : "B"}
+                      </span>
 
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold truncate">{player?.full_name ?? r.player_id}</p>
@@ -332,7 +403,7 @@ export default async function RosterPage({
                           {player?.position ?? "?"} &middot; {player?.team ?? "FA"}
                           {player?.status && player.status !== "Active" && (
                             <span className="ml-1 font-semibold" style={{ color: isIR ? "#CC0000" : "#FFD700" }}>
-                              · {player.status}
+                              &middot; {player.status}
                             </span>
                           )}
                         </p>
@@ -340,7 +411,6 @@ export default async function RosterPage({
 
                       <FactionBadge faction={pFaction} />
 
-                      {/* Move to IR (only if player has IR designation) */}
                       {isIR && irSlotsUsed < irSlotsTotal && (
                         <form action={moveToIR}>
                           <input type="hidden" name="leagueId" value={leagueId} />
@@ -348,13 +418,133 @@ export default async function RosterPage({
                           <button type="submit"
                             className="rounded px-2 py-1 text-xs font-semibold"
                             style={{ background: "rgba(204,0,0,0.2)", color: "#ff8a8a" }}>
-                            → IR
+                            IR
                           </button>
                         </form>
                       )}
 
-                      {/* Drop */}
                       <form action={dropPlayer}>
                         <input type="hidden" name="leagueId" value={leagueId} />
                         <input type="hidden" name="playerId" value={r.player_id} />
-                        <input type="hidden" name="returnTo
+                        <input type="hidden" name="returnTo" value="roster" />
+                        <button type="submit"
+                          className="rounded px-2 py-1 text-xs font-semibold"
+                          style={{ background: "#1c1c2b", color: "#8a8a9a" }}>
+                          Drop
+                        </button>
+                      </form>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            {/* IR Roster */}
+            <section className="flex flex-col gap-3">
+              <h2 className="text-lg font-semibold" style={{ color: "#CC0000" }}>
+                Injured Reserve ({irSlotsUsed} / {irSlotsTotal})
+              </h2>
+              <p className="text-xs text-zinc-500">
+                IR players do not score or count toward your active roster cap.
+                Must have an official Injured Reserve designation to be placed here.
+              </p>
+
+              {irRoster.length === 0 && (
+                <p className="rounded-lg border p-4 text-sm text-zinc-400" style={{ borderColor: "#2a2a40" }}>
+                  No players on IR.
+                </p>
+              )}
+
+              <div className="flex flex-col gap-2">
+                {irRoster.map((r) => {
+                  const player = r.players;
+                  return (
+                    <div key={r.id} className="flex items-center gap-3 rounded-lg border px-4 py-3"
+                      style={{ borderColor: "rgba(204,0,0,0.4)", background: "rgba(204,0,0,0.04)" }}>
+
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold truncate">{player?.full_name ?? r.player_id}</p>
+                        <p className="text-sm" style={{ color: "#CC0000" }}>
+                          {player?.position ?? "?"} &middot; {player?.team ?? "FA"} &middot; Injured Reserve
+                        </p>
+                      </div>
+
+                      <form action={moveFromIR}>
+                        <input type="hidden" name="leagueId" value={leagueId} />
+                        <input type="hidden" name="playerId" value={r.player_id} />
+                        <button type="submit"
+                          className="rounded px-2 py-1 text-xs font-semibold"
+                          style={{ background: "rgba(0,87,255,0.2)", color: "#6fa3ff" }}>
+                          Active
+                        </button>
+                      </form>
+
+                      <form action={dropPlayer}>
+                        <input type="hidden" name="leagueId" value={leagueId} />
+                        <input type="hidden" name="playerId" value={r.player_id} />
+                        <input type="hidden" name="returnTo" value="roster" />
+                        <button type="submit"
+                          className="rounded px-2 py-1 text-xs font-semibold"
+                          style={{ background: "#1c1c2b", color: "#8a8a9a" }}>
+                          Drop
+                        </button>
+                      </form>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          </div>
+
+          {/* Right: activity + news */}
+          <aside className="order-3 flex flex-col gap-6">
+            <section className="flex flex-col gap-3">
+              <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>League Activity</h2>
+              {pickList.length === 0 ? (
+                <p className="rounded-lg border p-4 text-sm text-zinc-400" style={{ borderColor: "#2a2a40" }}>
+                  No draft picks yet.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {pickList.map((pick) => (
+                    <div key={pick.id} className="rounded-lg border p-3" style={{ borderColor: "#2a2a40" }}>
+                      <p className="text-sm">
+                        <span className="font-semibold">{pick.league_members?.team_name ?? "A manager"}</span>{" "}
+                        drafted{" "}
+                        <span className="font-semibold">{pick.players?.full_name ?? "a player"}</span>
+                        {pick.players?.position ? ` (${pick.players.position}${pick.players.team ? ` &middot; ${pick.players.team}` : ""})` : ""}
+                      </p>
+                      <p className="mt-1 text-xs text-zinc-500">
+                        Round {pick.round}, Pick {pick.pick_no} &middot; {timeAgo(pick.picked_at)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="flex flex-col gap-3">
+              <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>NFL News</h2>
+              {news.length === 0 ? (
+                <p className="rounded-lg border p-4 text-sm text-zinc-400" style={{ borderColor: "#2a2a40" }}>
+                  Headlines unavailable right now.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {news.map((item) => (
+                    <a key={item.link} href={item.link} target="_blank" rel="noopener noreferrer"
+                      className="rounded-lg border p-3 text-sm underline-offset-2 hover:underline"
+                      style={{ borderColor: "#2a2a40" }}>
+                      {item.title}
+                    </a>
+                  ))}
+                  <p className="text-xs text-zinc-500">Source: ESPN NFL headlines</p>
+                </div>
+              )}
+            </section>
+          </aside>
+        </div>
+      </main>
+    </div>
+  );
+}
