@@ -3,9 +3,8 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { makeDraftPick } from "./actions";
+import { makeDraftPick, assignPowerToPick, assignVampireBite } from "./actions";
 
-// Module-level singleton -- avoids recreating the client on every render
 const supabase = createClient();
 
 interface Player {
@@ -45,10 +44,17 @@ interface League {
 
 interface PowerRow {
   round: number;
-  draft_powers: { id: number; name: string; category: string | null; description: string } | null;
+  draft_powers: {
+    id: number;
+    name: string;
+    category: string | null;
+    description: string;
+    tied_position: string | null;
+  } | null;
 }
 
-// "DEF" is the actual position value in the players table (not "DST")
+type PowerResultType = "applied" | "fizzled" | "meta" | "error";
+
 const POSITIONS = ["ALL", "QB", "RB", "WR", "TE", "K", "DEF"];
 
 function snakeDraftSlot(pickNo: number, maxTeams: number): number {
@@ -57,6 +63,118 @@ function snakeDraftSlot(pickNo: number, maxTeams: number): number {
   return round % 2 === 1 ? posInRound : maxTeams - posInRound + 1;
 }
 
+// ── Vampire Bite target selection modal ──────────────────────────────────────
+function VampireBiteModal({
+  picks,
+  memberMap,
+  onSelect,
+  onSkip,
+  submitting,
+}: {
+  picks: Pick[];
+  memberMap: Record<string, Member>;
+  onSelect: (playerId: string) => void;
+  onSkip: () => void;
+  submitting: boolean;
+}) {
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<{ id: string; name: string } | null>(null);
+
+  const filteredPicks = picks.filter((p) => {
+    if (!p.players) return false;
+    if (!search.trim()) return true;
+    return p.players.full_name.toLowerCase().includes(search.toLowerCase());
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.85)" }}>
+      <div
+        className="relative mx-4 flex max-h-[90vh] w-full max-w-md flex-col rounded-xl border p-6"
+        style={{ background: "#0d0d1a", borderColor: "#CC0000" }}
+      >
+        <div className="mb-4">
+          <p className="text-xs uppercase tracking-[0.2em]" style={{ color: "#CC0000" }}>
+            🧛 Vampire Bite
+          </p>
+          <h2 className="mt-1 text-xl font-bold" style={{ color: "#f4f4f8" }}>
+            Choose your target
+          </h2>
+          <p className="mt-1 text-sm text-zinc-400">
+            10% of their weekly score drains to you — every week, for the entire season.
+          </p>
+        </div>
+
+        <input
+          type="text"
+          placeholder="Search drafted players…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="mb-3 w-full rounded-md border px-3 py-2 text-sm"
+          style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
+        />
+
+        <div className="min-h-0 max-h-[40vh] flex-1 overflow-y-auto flex flex-col gap-1 pr-1">
+          {filteredPicks.length === 0 && (
+            <p className="py-4 text-center text-sm text-zinc-500">No players match.</p>
+          )}
+          {filteredPicks.map((pick) => {
+            const isSelected = selected?.id === pick.player_id;
+            const owner = memberMap[pick.member_id];
+            return (
+              <button
+                key={pick.id}
+                onClick={() => setSelected({ id: pick.player_id, name: pick.players?.full_name ?? "" })}
+                className="flex items-center justify-between rounded-lg border px-3 py-2 text-left transition"
+                style={{
+                  borderColor: isSelected ? "#CC0000" : "#2a2a40",
+                  background: isSelected ? "rgba(204,0,0,0.12)" : "#15151f",
+                }}
+              >
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: "#f4f4f8" }}>
+                    {pick.players?.full_name ?? pick.player_id}
+                  </p>
+                  <p className="text-xs text-zinc-500">
+                    {pick.players?.position ?? "?"} · {pick.players?.team ?? "FA"} · {owner?.team_name ?? "?"}
+                  </p>
+                </div>
+                {isSelected && (
+                  <span className="ml-2 shrink-0 text-xs font-bold" style={{ color: "#CC0000" }}>
+                    LOCKED
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 flex gap-3">
+          <button
+            onClick={() => selected && onSelect(selected.id)}
+            disabled={!selected || submitting}
+            className="flex-1 rounded-md px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
+            style={{ background: "#CC0000", color: "#f4f4f8" }}
+          >
+            {submitting ? "Biting…" : selected ? `Bite ${selected.name.split(" ")[0]}` : "Select a target"}
+          </button>
+          <button
+            onClick={onSkip}
+            disabled={submitting}
+            className="rounded-md px-4 py-2.5 text-sm disabled:opacity-40"
+            style={{ background: "#1c1c2b", color: "#8a8a9a" }}
+          >
+            Skip
+          </button>
+        </div>
+        <p className="mt-2 text-center text-xs text-zinc-600">
+          Skipping forfeits your Vampire Bite permanently.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Main DraftRoom component ─────────────────────────────────────────────────
 export default function DraftRoom({
   league,
   members,
@@ -78,9 +196,12 @@ export default function DraftRoom({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [draftStatus, setDraftStatus] = useState(league.draft_status);
+  const [powerResult, setPowerResult] = useState<{ type: PowerResultType; message: string } | null>(null);
+  const [showVampireBiteModal, setShowVampireBiteModal] = useState(false);
+  const [vampireSubmitting, setVampireSubmitting] = useState(false);
   const leagueId = league.id;
 
-  // ── Poll for new picks every 5s ──────────────────────────────────────
+  // ── Poll for new picks every 5s ──────────────────────────────────────────
   const fetchPicks = async () => {
     const { data } = await supabase
       .from("uff_draft_picks")
@@ -100,19 +221,15 @@ export default function DraftRoom({
   useEffect(() => {
     const interval = setInterval(fetchPicks, 5000);
     return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leagueId]);
 
-  // ── Fetch players on search / position change ──────────────────────
+  // ── Fetch available players on search / position change ──────────────────
   useEffect(() => {
     const fetchPlayers = async () => {
       const hasSearch = search.trim().length >= 2;
       const hasPos = posFilter !== "ALL";
-
-      if (!hasSearch && !hasPos) {
-        setPlayers([]);
-        return;
-      }
+      if (!hasSearch && !hasPos) { setPlayers([]); return; }
 
       let q = supabase
         .from("players")
@@ -130,10 +247,9 @@ export default function DraftRoom({
     return () => clearTimeout(timer);
   }, [search, posFilter]);
 
-  // ── Derived state ────────────────────────────────────────────────────
+  // ── Derived state ────────────────────────────────────────────────────────
   const totalPicks = league.max_teams * league.draft_rounds;
   const isDraftComplete = draftStatus === "completed" || picks.length >= totalPicks;
-
   const currentPickNo = picks.length + 1;
   const currentRound = Math.ceil(currentPickNo / league.max_teams);
   const slot = snakeDraftSlot(currentPickNo, league.max_teams);
@@ -145,21 +261,44 @@ export default function DraftRoom({
   const pickedIds = new Set(picks.map((p) => p.player_id));
   const availablePlayers = players.filter((p) => !pickedIds.has(p.id));
 
-  // ── Pick handler ─────────────────────────────────────────────────────
-  async function handlePick(playerId: string) {
+  // ── Pick handler ─────────────────────────────────────────────────────────
+  async function handlePick(playerId: string, playerPosition: string) {
     setError(null);
+    setPowerResult(null);
     setSubmitting(true);
     try {
       const fd = new FormData();
       fd.append("leagueId", leagueId);
       fd.append("playerId", playerId);
       const result = await makeDraftPick(fd);
+
       if (result?.error) {
         setError(result.error);
       } else {
         setSuccess("Pick submitted!");
         await fetchPicks();
-        setTimeout(() => setSuccess(null), 3000);
+        setTimeout(() => setSuccess(null), 4000);
+
+        // ── Power assignment ─────────────────────────────────────────────
+        if (myPowerThisRound?.draft_powers) {
+          const dp = myPowerThisRound.draft_powers;
+          const pr = await assignPowerToPick({
+            leagueId,
+            playerId,
+            playerPosition,
+            powerName: dp.name,
+            powerCategory: dp.category ?? "",
+            powerTiedPosition: dp.tied_position,
+            round: currentRound,
+          });
+
+          if (pr.result === "vampire_bite") {
+            setShowVampireBiteModal(true);
+          } else {
+            setPowerResult({ type: pr.result as PowerResultType, message: pr.message });
+            setTimeout(() => setPowerResult(null), 6000);
+          }
+        }
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -168,8 +307,43 @@ export default function DraftRoom({
     }
   }
 
+  // ── Vampire Bite handler ─────────────────────────────────────────────────
+  async function handleVampireBite(targetPlayerId: string) {
+    setVampireSubmitting(true);
+    const result = await assignVampireBite({ leagueId, targetPlayerId });
+    setVampireSubmitting(false);
+    setShowVampireBiteModal(false);
+    if (result.error) {
+      setError(result.error);
+    } else {
+      setPowerResult({ type: "applied", message: "🧛 Vampire Bite locked in — 10% of their weekly score is yours all season." });
+      setTimeout(() => setPowerResult(null), 6000);
+    }
+  }
+
+  function powerBannerStyle(type: PowerResultType): React.CSSProperties {
+    if (type === "applied")  return { borderColor: "#3DDC84", color: "#3DDC84", background: "#0e1a12" };
+    if (type === "fizzled")  return { borderColor: "#FFD700", color: "#FFD700", background: "#1a190a" };
+    if (type === "meta")     return { borderColor: "#0057FF", color: "#8ab4ff", background: "#0a0e1a" };
+    return { borderColor: "#CC0000", color: "#ff8a8a", background: "#1a0e16" };
+  }
+
   return (
     <div className="min-h-screen px-4 py-8 sm:px-8" style={{ background: "#0d0d1a", color: "#f4f4f8" }}>
+      {showVampireBiteModal && (
+        <VampireBiteModal
+          picks={picks}
+          memberMap={memberMap}
+          onSelect={handleVampireBite}
+          onSkip={() => {
+            setShowVampireBiteModal(false);
+            setPowerResult({ type: "fizzled", message: "Vampire Bite skipped — power forfeited." });
+            setTimeout(() => setPowerResult(null), 5000);
+          }}
+          submitting={vampireSubmitting}
+        />
+      )}
+
       <div className="mx-auto max-w-5xl flex flex-col gap-6">
 
         {/* Header */}
@@ -200,20 +374,29 @@ export default function DraftRoom({
             }}
           >
             {isMyTurn ? (
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-2">
                 <p className="font-semibold" style={{ color: "#FFD700" }}>
                   🎯 It&rsquo;s your turn — pick now!
                 </p>
                 {myPowerThisRound?.draft_powers && (
-                  <p className="text-sm text-zinc-400">
-                    Your power this round:{" "}
-                    <span className="font-semibold" style={{ color: "#f4f4f8" }}>
+                  <div className="rounded-md border px-3 py-2" style={{ borderColor: "#2a2a40", background: "#0d0d1a" }}>
+                    <p className="text-xs uppercase tracking-wide text-zinc-500 mb-0.5">Your power this round</p>
+                    <p className="text-sm font-semibold" style={{ color: "#f4f4f8" }}>
                       {myPowerThisRound.draft_powers.name}
-                    </span>
-                    <span className="ml-1 text-xs" style={{ color: "#8a8a9a" }}>
-                      — {myPowerThisRound.draft_powers.description}
-                    </span>
-                  </p>
+                      {myPowerThisRound.draft_powers.tied_position &&
+                        myPowerThisRound.draft_powers.tied_position !== "ANY" && (
+                          <span
+                            className="ml-2 rounded px-1.5 py-0.5 text-xs font-normal"
+                            style={{ background: "#1c1c2b", color: "#8a8a9a" }}
+                          >
+                            {myPowerThisRound.draft_powers.tied_position} only
+                          </span>
+                        )}
+                    </p>
+                    <p className="mt-0.5 text-xs text-zinc-500">
+                      {myPowerThisRound.draft_powers.description}
+                    </p>
+                  </div>
                 )}
               </div>
             ) : (
@@ -246,33 +429,32 @@ export default function DraftRoom({
           </div>
         )}
 
-        {/* Error / success banners */}
+        {/* Banners: error / success / power result */}
         {error && (
-          <p
-            className="rounded-md border px-3 py-2 text-sm"
-            style={{ borderColor: "#CC0000", color: "#ff8a8a", background: "#1a0e16" }}
-          >
+          <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#CC0000", color: "#ff8a8a", background: "#1a0e16" }}>
             {error}
           </p>
         )}
         {success && (
-          <p
-            className="rounded-md border px-3 py-2 text-sm"
-            style={{ borderColor: "#3DDC84", color: "#3DDC84", background: "#0e1a12" }}
-          >
+          <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#3DDC84", color: "#3DDC84", background: "#0e1a12" }}>
             {success}
+          </p>
+        )}
+        {powerResult && (
+          <p className="rounded-md border px-3 py-2 text-sm font-semibold" style={powerBannerStyle(powerResult.type)}>
+            {powerResult.type === "applied" ? "⚡ " : powerResult.type === "fizzled" ? "💨 " : "ℹ️ "}
+            {powerResult.message}
           </p>
         )}
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
 
-          {/* Left: player search */}
+          {/* Left: available players */}
           <section className="flex flex-col gap-4">
             <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>
               Available Players
             </h2>
 
-            {/* Search + position filter */}
             <div className="flex flex-col gap-2">
               <input
                 type="text"
@@ -299,7 +481,6 @@ export default function DraftRoom({
               </div>
             </div>
 
-            {/* Player list */}
             <div className="flex flex-col gap-1 max-h-[480px] overflow-y-auto pr-1">
               {search.trim().length === 0 && posFilter === "ALL" && (
                 <p className="py-8 text-center text-sm text-zinc-500">
@@ -324,7 +505,7 @@ export default function DraftRoom({
                   </div>
                   {isMyTurn && (
                     <button
-                      onClick={() => handlePick(p.id)}
+                      onClick={() => handlePick(p.id, p.position ?? "")}
                       disabled={submitting}
                       className="ml-3 shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
                       style={{ background: "#0057FF", color: "#f4f4f8" }}
@@ -346,7 +527,6 @@ export default function DraftRoom({
               </span>
             </h2>
 
-            {/* Draft order strip */}
             <div className="flex flex-col gap-1">
               <p className="text-xs uppercase tracking-wide text-zinc-500 mb-1">Pick order (round 1)</p>
               {league.draft_order.map((memberId, idx) => {
@@ -356,15 +536,19 @@ export default function DraftRoom({
                     <span className="w-5 text-right text-xs text-zinc-600">{idx + 1}.</span>
                     <span style={{ color: memberId === myMemberId ? "#FFD700" : "#f4f4f8" }}>
                       {m?.team_name ?? memberId}
-                      {memberId === myMemberId && <span className="ml-1 text-xs text-zinc-500">(you)</span>}
+                      {memberId === myMemberId && (
+                        <span className="ml-1 text-xs text-zinc-500">(you)</span>
+                      )}
                     </span>
                   </div>
                 );
               })}
             </div>
 
-            {/* Recent picks */}
-            <div className="flex flex-col gap-2 max-h-[400px] overflow-y-auto border-t pt-4" style={{ borderColor: "#2a2a40" }}>
+            <div
+              className="flex flex-col gap-2 max-h-[400px] overflow-y-auto border-t pt-4"
+              style={{ borderColor: "#2a2a40" }}
+            >
               <p className="text-xs uppercase tracking-wide text-zinc-500">Recent picks</p>
               {picks.length === 0 && <p className="text-sm text-zinc-600">No picks yet.</p>}
               {[...picks].reverse().map((pick) => {
@@ -379,12 +563,8 @@ export default function DraftRoom({
                       background: isMe ? "rgba(0,87,255,0.06)" : "transparent",
                     }}
                   >
-                    <p className="text-xs text-zinc-500">
-                      R{pick.round} · #{pick.pick_no}
-                    </p>
-                    <p className="text-sm font-semibold">
-                      {pick.players?.full_name ?? pick.player_id}
-                    </p>
+                    <p className="text-xs text-zinc-500">R{pick.round} · #{pick.pick_no}</p>
+                    <p className="text-sm font-semibold">{pick.players?.full_name ?? pick.player_id}</p>
                     <p className="text-xs text-zinc-400">
                       {pick.players?.position ?? "?"} &middot; {pick.players?.team ?? "FA"} &rarr;{" "}
                       {m?.team_name ?? "?"}

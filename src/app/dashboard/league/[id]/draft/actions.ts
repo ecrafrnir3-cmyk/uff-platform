@@ -3,16 +3,32 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
+const POWER_SLUG_MAP: Record<string, string> = {
+  "Gunslinger": "gunslinger",
+  "Berserker Rage": "berserker_rage",
+  "Reception Specialist": "reception_specialist",
+  "Iron Defense": "iron_defense",
+  "Red Zone Menace": "red_zone_menace",
+  "Goal Line Hammer": "goal_line_hammer",
+  "Seam Buster": "seam_buster",
+  "Sniper": "sniper",
+  "Power Negation": "power_negation",
+  "Time Stone": "time_stone",
+  "Vampire Bite": "vampire_bite",
+  "Foresight Coin": "foresight_coin",
+  "Draft Heist": "draft_heist",
+  "Hero's Shield": "hero_shield",
+  "Telepathy": "telepathy",
+  "Cloak": "cloak",
+};
+
 export async function makeDraftPick(formData: FormData): Promise<{ error?: string }> {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated." };
 
   const leagueId = formData.get("leagueId") as string;
   const playerId = formData.get("playerId") as string;
-
   if (!leagueId || !playerId) return { error: "Missing league or player." };
 
   const { error } = await supabase.rpc("make_draft_pick", {
@@ -25,5 +41,103 @@ export async function makeDraftPick(formData: FormData): Promise<{ error?: strin
 
   revalidatePath(`/dashboard/league/${leagueId}/draft`);
   revalidatePath(`/dashboard/league/${leagueId}/roster`);
+  return {};
+}
+
+export async function assignPowerToPick(params: {
+  leagueId: string;
+  playerId: string;
+  playerPosition: string;
+  powerName: string;
+  powerCategory: string;
+  powerTiedPosition: string | null;
+  round: number;
+}): Promise<{ result: "applied" | "fizzled" | "meta" | "vampire_bite" | "error"; message: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { result: "error", message: "Not authenticated." };
+
+  const { leagueId, playerId, playerPosition, powerName, powerCategory, powerTiedPosition, round } = params;
+
+  // Draft mechanics are resolved during the draft flow itself, not tied to the player pick
+  if (powerCategory === "draft_mechanic") {
+    return { result: "meta", message: `${powerName} is a draft mechanic — it was applied automatically during your pick.` };
+  }
+
+  // Vampire Bite targets another player — handled via separate modal
+  if (powerName === "Vampire Bite") {
+    return { result: "vampire_bite", message: "Select your Vampire Bite target." };
+  }
+
+  // Check position eligibility
+  let eligible = false;
+  if (!powerTiedPosition || powerTiedPosition === "ANY") {
+    eligible = true;
+  } else if (powerTiedPosition === "WR/RB/TE") {
+    eligible = ["WR", "RB", "TE"].includes(playerPosition);
+  } else if (powerTiedPosition === "D/ST") {
+    eligible = playerPosition === "DEF";
+  } else {
+    eligible = playerPosition === powerTiedPosition;
+  }
+
+  if (!eligible) {
+    return {
+      result: "fizzled",
+      message: `${powerName} fizzled — ${playerPosition || "this position"} doesn't match the required position.`,
+    };
+  }
+
+  const slug = POWER_SLUG_MAP[powerName] ?? powerName.toLowerCase().replace(/[^a-z0-9]/g, "_");
+
+  const { error } = await supabase.from("player_draft_powers").upsert(
+    {
+      league_id: leagueId,
+      player_id: playerId,
+      power: slug,
+      round,
+      drafted_by_user_id: user.id,
+    },
+    { onConflict: "league_id,player_id" }
+  );
+
+  if (error) return { result: "error", message: error.message };
+
+  return { result: "applied", message: `${powerName} attached to this pick — active for the season!` };
+}
+
+export async function assignVampireBite(params: {
+  leagueId: string;
+  targetPlayerId: string;
+}): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const { leagueId, targetPlayerId } = params;
+
+  const { data: member } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!member) return { error: "Not a member of this league." };
+
+  const { error } = await supabase.from("vampire_bites").insert({
+    league_id: leagueId,
+    biting_member_id: member.id,
+    target_player_id: targetPlayerId,
+  });
+
+  if (error) {
+    if (error.code === "23505") {
+      return { error: "That player has already been bitten. Choose someone else." };
+    }
+    return { error: error.message };
+  }
+
+  revalidatePath(`/dashboard/league/${leagueId}/draft`);
   return {};
 }

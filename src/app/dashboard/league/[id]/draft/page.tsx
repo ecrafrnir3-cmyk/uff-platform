@@ -22,7 +22,13 @@ interface PickRow {
 
 interface PowerRow {
   round: number;
-  draft_powers: { id: number; name: string; category: string | null; description: string } | null;
+  draft_powers: {
+    id: number;
+    name: string;
+    category: string | null;
+    description: string;
+    tied_position: string | null;
+  } | null;
 }
 
 export default async function DraftPage({
@@ -69,7 +75,7 @@ export default async function DraftPage({
       .returns<PickRow[]>(),
     supabase
       .from("draft_power_assignments")
-      .select("round, draft_powers(id, name, category, description)")
+      .select("round, draft_powers(id, name, category, description, tied_position)")
       .eq("member_id", me.id)
       .order("round", { ascending: true })
       .returns<PowerRow[]>(),
