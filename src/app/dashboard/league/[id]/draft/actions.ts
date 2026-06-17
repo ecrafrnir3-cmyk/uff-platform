@@ -106,6 +106,49 @@ export async function assignPowerToPick(params: {
   return { result: "applied", message: `${powerName} attached to this pick — active for the season!` };
 }
 
+export async function swapForesightCoin(params: {
+  leagueId: string;
+  currentRound: number;
+  swapWithRound: number;
+}): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const { leagueId, currentRound, swapWithRound } = params;
+
+  const { data: member } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!member) return { error: "Not a member of this league." };
+
+  const { data: assignments } = await supabase
+    .from("draft_power_assignments")
+    .select("id, round, power_id")
+    .eq("member_id", member.id)
+    .in("round", [currentRound, swapWithRound]);
+
+  if (!assignments || assignments.length < 2) return { error: "Could not find power assignments to swap." };
+
+  const curr = assignments.find((a) => a.round === currentRound);
+  const swap = assignments.find((a) => a.round === swapWithRound);
+  if (!curr || !swap) return { error: "Could not find power assignments to swap." };
+
+  // Swap power_ids between the two rows
+  const [e1, e2] = await Promise.all([
+    supabase.from("draft_power_assignments").update({ power_id: swap.power_id }).eq("id", curr.id),
+    supabase.from("draft_power_assignments").update({ power_id: curr.power_id }).eq("id", swap.id),
+  ]);
+  if (e1.error) return { error: e1.error.message };
+  if (e2.error) return { error: e2.error.message };
+
+  revalidatePath(`/dashboard/league/${leagueId}/draft`);
+  return {};
+}
+
 export async function assignVampireBite(params: {
   leagueId: string;
   targetPlayerId: string;

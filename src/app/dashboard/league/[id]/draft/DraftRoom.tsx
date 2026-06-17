@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { makeDraftPick, assignPowerToPick, assignVampireBite } from "./actions";
+import { makeDraftPick, assignPowerToPick, assignVampireBite, swapForesightCoin } from "./actions";
 import { startDraft } from "../actions";
 
 const supabase = createClient();
@@ -192,6 +192,86 @@ function VampireBiteModal({
         </div>
         <p className="mt-2 text-center text-xs" style={{ color: "#8a8a9a" }}>
           Skipping forfeits your Vampire Bite permanently.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ---- Foresight Coin modal ----------------------------------------------------
+function ForesightCoinModal({
+  currentRound,
+  myPowers,
+  onSelect,
+  submitting,
+}: {
+  currentRound: number;
+  myPowers: PowerRow[];
+  onSelect: (swapWithRound: number) => void; // currentRound = keep current
+  submitting: boolean;
+}) {
+  const [selectedRound, setSelectedRound] = useState<number>(currentRound);
+
+  const options = [currentRound, currentRound + 1, currentRound + 2]
+    .map((r) => ({ round: r, power: myPowers.find((p) => p.round === r)?.draft_powers ?? null }))
+    .filter((o) => o.power !== null);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.85)" }}>
+      <div
+        className="relative mx-4 flex max-h-[90vh] w-full max-w-md flex-col rounded-xl border p-6"
+        style={{ background: "#0d0d1a", borderColor: "#FFD700" }}
+      >
+        <p className="text-xs uppercase tracking-[0.2em]" style={{ color: "#FFD700" }}>Foresight Coin</p>
+        <h2 className="mt-1 text-xl font-bold" style={{ color: "#f4f4f8" }}>Choose your power</h2>
+        <p className="mt-1 mb-4 text-sm" style={{ color: "#8a8a9a" }}>
+          Keep Round {currentRound}&apos;s power or swap it with a future round.
+          The powers swap — you don&apos;t lose any.
+        </p>
+
+        <div className="flex flex-col gap-2">
+          {options.map(({ round, power }) => {
+            const isSelected = selectedRound === round;
+            const isCurrent = round === currentRound;
+            return (
+              <button
+                key={round}
+                onClick={() => setSelectedRound(round)}
+                className="rounded-lg border px-4 py-3 text-left transition"
+                style={{
+                  borderColor: isSelected ? "#FFD700" : "#2a2a40",
+                  background: isSelected ? "rgba(255,215,0,0.08)" : "#15151f",
+                }}
+              >
+                <p className="text-xs uppercase tracking-wide mb-0.5" style={{ color: "#FFD700" }}>
+                  Round {round}{isCurrent ? " · current" : ""}
+                </p>
+                <p className="text-sm font-semibold" style={{ color: "#f4f4f8" }}>{power?.name ?? "Unknown"}</p>
+                <p className="text-xs mt-0.5" style={{ color: "#8a8a9a" }}>{power?.description ?? ""}</p>
+                {power?.tied_position && power.tied_position !== "ANY" && (
+                  <p className="mt-1 text-xs font-semibold" style={{ color: "#FFD700" }}>
+                    {power.tied_position} only
+                  </p>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          onClick={() => onSelect(selectedRound)}
+          disabled={submitting}
+          className="mt-4 w-full rounded-md px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
+          style={{ background: "#FFD700", color: "#0d0d1a" }}
+        >
+          {submitting
+            ? "Applying..."
+            : selectedRound === currentRound
+            ? "Keep current power"
+            : `Swap — take Round ${selectedRound}'s power`}
+        </button>
+        <p className="mt-2 text-center text-xs" style={{ color: "#8a8a9a" }}>
+          You must choose before your next pick.
         </p>
       </div>
     </div>
@@ -493,6 +573,10 @@ export default function DraftRoom({
   const [powerResult, setPowerResult] = useState<{ type: PowerResultType; message: string } | null>(null);
   const [showVampireBiteModal, setShowVampireBiteModal] = useState(false);
   const [vampireSubmitting, setVampireSubmitting] = useState(false);
+  const [showForesightModal, setShowForesightModal] = useState(false);
+  const [foresightSubmitting, setForesightSubmitting] = useState(false);
+  const [foresightPickedRound, setForesightPickedRound] = useState<number>(0);
+  const [myPowersState, setMyPowersState] = useState<PowerRow[]>(myPowers);
 
   // ---- isDraftComplete (computed early so effects can guard on it) -----------
   const totalPicksEarly = league.max_teams * league.draft_rounds;
@@ -564,7 +648,7 @@ export default function DraftRoom({
   const currentMemberId = isDraftComplete ? null : (league.draft_order[slot - 1] ?? null);
   const isMyTurn = !isDraftComplete && currentMemberId === myMemberId;
   const currentMember = members.find((m) => m.id === currentMemberId);
-  const myPowerThisRound = myPowers.find((p) => p.round === currentRound);
+  const myPowerThisRound = myPowersState.find((p) => p.round === currentRound);
   const memberMap = Object.fromEntries(members.map((m) => [m.id, m]));
   const pickedIds = new Set(picks.map((p) => p.player_id));
   const availablePlayers = players.filter((p) => !pickedIds.has(p.id));
@@ -584,8 +668,23 @@ export default function DraftRoom({
         setError(result.error);
       } else {
         setSuccess("Pick submitted!");
+        const pickedRound = currentRound; // capture before fetchPicks advances the round
         await fetchPicks();
         setTimeout(() => setSuccess(null), 4000);
+
+        // Foresight Coin: show swap modal instead of normal power flow
+        if (myPowerThisRound?.draft_powers?.name === "Foresight Coin") {
+          const hasPeek = myPowersState.some((p) => p.round > pickedRound && p.round <= pickedRound + 2);
+          if (hasPeek) {
+            setForesightPickedRound(pickedRound);
+            setShowForesightModal(true);
+            return;
+          }
+          // No future rounds to peek — just show meta banner
+          setPowerResult({ type: "meta", message: "Foresight Coin — no future rounds available to peek." });
+          setTimeout(() => setPowerResult(null), 5000);
+          return;
+        }
 
         if (myPowerThisRound?.draft_powers) {
           const dp = myPowerThisRound.draft_powers;
@@ -628,6 +727,41 @@ export default function DraftRoom({
     }
   }
 
+  // ---- Foresight Coin handler ------------------------------------------------
+  async function handleForesightCoin(swapWithRound: number) {
+    setForesightSubmitting(true);
+
+    if (swapWithRound !== foresightPickedRound) {
+      const result = await swapForesightCoin({ leagueId, currentRound: foresightPickedRound, swapWithRound });
+      if (result.error) {
+        setError(result.error);
+      } else {
+        const swappedPowerName = myPowersState.find((p) => p.round === swapWithRound)?.draft_powers?.name ?? "Unknown";
+        // Swap locally so sidebar updates immediately
+        setMyPowersState((prev) => {
+          const next = prev.map((p) => ({ ...p }));
+          const currIdx = next.findIndex((p) => p.round === currentRound);
+          const swapIdx = next.findIndex((p) => p.round === swapWithRound);
+          if (currIdx !== -1 && swapIdx !== -1) {
+            const tmp = next[currIdx].draft_powers;
+            next[currIdx] = { ...next[currIdx], draft_powers: next[swapIdx].draft_powers };
+            next[swapIdx] = { ...next[swapIdx], draft_powers: tmp };
+          }
+          return next;
+        });
+        setPowerResult({ type: "applied", message: `Foresight Coin — swapped to Round ${swapWithRound}'s power: ${swappedPowerName}!` });
+        setTimeout(() => setPowerResult(null), 6000);
+      }
+    } else {
+      const keptName = myPowersState.find((p) => p.round === foresightPickedRound)?.draft_powers?.name ?? "your power";
+      setPowerResult({ type: "meta", message: `Foresight Coin — kept ${keptName} for this round.` });
+      setTimeout(() => setPowerResult(null), 5000);
+    }
+
+    setForesightSubmitting(false);
+    setShowForesightModal(false);
+  }
+
   function powerBannerStyle(type: PowerResultType): React.CSSProperties {
     if (type === "applied")  return { borderColor: "#3DDC84", color: "#3DDC84", background: "#0e1a12" };
     if (type === "fizzled")  return { borderColor: "#FFD700", color: "#FFD700", background: "#1a190a" };
@@ -649,6 +783,14 @@ export default function DraftRoom({
             setTimeout(() => setPowerResult(null), 5000);
           }}
           submitting={vampireSubmitting}
+        />
+      )}
+      {showForesightModal && (
+        <ForesightCoinModal
+          currentRound={foresightPickedRound}
+          myPowers={myPowersState}
+          onSelect={handleForesightCoin}
+          submitting={foresightSubmitting}
         />
       )}
 
@@ -864,10 +1006,10 @@ export default function DraftRoom({
               <h3 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "#FFD700" }}>
                 My Powers
               </h3>
-              {myPowers.length === 0 && (
+              {myPowersState.length === 0 && (
                 <p className="text-xs" style={{ color: "#8a8a9a" }}>No power assignments found.</p>
               )}
-              {myPowers.map((pw) => {
+              {myPowersState.map((pw) => {
                 const dp = pw.draft_powers;
                 const isPast = pw.round < currentRound;
                 const isCurr = pw.round === currentRound;
