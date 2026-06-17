@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { makeDraftPick, assignPowerToPick, assignVampireBite } from "./actions";
+import { startDraft } from "../actions";
 
 const supabase = createClient();
 
@@ -57,13 +58,35 @@ type PowerResultType = "applied" | "fizzled" | "meta" | "error";
 
 const POSITIONS = ["ALL", "QB", "RB", "WR", "TE", "K", "DEF"];
 
+const POS_COLORS: Record<string, string> = {
+  QB: "#FF6B35",
+  RB: "#3DDC84",
+  WR: "#0057FF",
+  TE: "#FFD700",
+  K: "#a78bfa",
+  DEF: "#CC0000",
+};
+
+// Pick number for a given (round, col) in a snake draft.
+// col is 1-indexed draft-order position = display column index.
+function pickNoForCell(round: number, col: number, maxTeams: number): number {
+  const pickInRound = round % 2 === 1 ? col : maxTeams - col + 1;
+  return (round - 1) * maxTeams + pickInRound;
+}
+
+// Given a pick_no, which 1-indexed column in the display grid owns it?
 function snakeDraftSlot(pickNo: number, maxTeams: number): number {
   const round = Math.ceil(pickNo / maxTeams);
   const posInRound = pickNo - (round - 1) * maxTeams;
   return round % 2 === 1 ? posInRound : maxTeams - posInRound + 1;
 }
 
-// ── Vampire Bite target selection modal ──────────────────────────────────────
+function lastName(fullName: string): string {
+  const parts = fullName.trim().split(" ");
+  return parts[parts.length - 1] ?? fullName;
+}
+
+// ---- Vampire Bite modal -------------------------------------------------------
 function VampireBiteModal({
   picks,
   memberMap,
@@ -94,19 +117,19 @@ function VampireBiteModal({
       >
         <div className="mb-4">
           <p className="text-xs uppercase tracking-[0.2em]" style={{ color: "#CC0000" }}>
-            🧛 Vampire Bite
+            Vampire Bite
           </p>
           <h2 className="mt-1 text-xl font-bold" style={{ color: "#f4f4f8" }}>
             Choose your target
           </h2>
           <p className="mt-1 text-sm text-zinc-400">
-            10% of their weekly score drains to you — every week, for the entire season.
+            10% of their weekly score drains to you every week, all season.
           </p>
         </div>
 
         <input
           type="text"
-          placeholder="Search drafted players…"
+          placeholder="Search drafted players..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="mb-3 w-full rounded-md border px-3 py-2 text-sm"
@@ -135,7 +158,7 @@ function VampireBiteModal({
                     {pick.players?.full_name ?? pick.player_id}
                   </p>
                   <p className="text-xs text-zinc-500">
-                    {pick.players?.position ?? "?"} · {pick.players?.team ?? "FA"} · {owner?.team_name ?? "?"}
+                    {pick.players?.position ?? "?"} - {pick.players?.team ?? "FA"} - {owner?.team_name ?? "?"}
                   </p>
                 </div>
                 {isSelected && (
@@ -155,7 +178,7 @@ function VampireBiteModal({
             className="flex-1 rounded-md px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
             style={{ background: "#CC0000", color: "#f4f4f8" }}
           >
-            {submitting ? "Biting…" : selected ? `Bite ${selected.name.split(" ")[0]}` : "Select a target"}
+            {submitting ? "Biting..." : selected ? `Bite ${selected.name.split(" ")[0]}` : "Select a target"}
           </button>
           <button
             onClick={onSkip}
@@ -174,20 +197,290 @@ function VampireBiteModal({
   );
 }
 
-// ── Main DraftRoom component ─────────────────────────────────────────────────
+// ---- Full 2-D draft board ----------------------------------------------------
+function DraftBoardGrid({
+  picks,
+  league,
+  memberMap,
+  myMemberId,
+  currentPickNo,
+  isDraftComplete,
+}: {
+  picks: Pick[];
+  league: League;
+  memberMap: Record<string, Member>;
+  myMemberId: string;
+  currentPickNo: number;
+  isDraftComplete: boolean;
+}) {
+  const pickByNo: Record<number, Pick> = {};
+  for (const p of picks) pickByNo[p.pick_no] = p;
+  const totalPicks = league.max_teams * league.draft_rounds;
+
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-baseline gap-3">
+        <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>
+          Draft Board
+        </h2>
+        <span className="text-sm text-zinc-500">
+          {picks.length} / {totalPicks} picks
+          {isDraftComplete && " -- Final"}
+        </span>
+      </div>
+      <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "#2a2a40" }}>
+        <table
+          className="border-collapse"
+          style={{ minWidth: `${48 + league.max_teams * 96}px`, fontSize: "11px" }}
+        >
+          <thead>
+            <tr style={{ background: "#15151f" }}>
+              <th
+                className="border px-2 py-2 text-left font-normal text-zinc-500"
+                style={{ borderColor: "#2a2a40", minWidth: "36px" }}
+              >
+                Rd
+              </th>
+              {league.draft_order.map((memberId, idx) => {
+                const m = memberMap[memberId];
+                const isMe = memberId === myMemberId;
+                return (
+                  <th
+                    key={memberId}
+                    className="border px-2 py-2 text-left"
+                    style={{
+                      borderColor: "#2a2a40",
+                      color: isMe ? "#0057FF" : "#c4c4d0",
+                      minWidth: "88px",
+                      maxWidth: "110px",
+                      fontWeight: isMe ? 700 : 500,
+                    }}
+                  >
+                    <span className="block truncate" title={m?.team_name ?? `Team ${idx + 1}`}>
+                      {m?.team_name ?? `T${idx + 1}`}
+                    </span>
+                    <span className="block text-zinc-600 font-normal" style={{ fontSize: "9px" }}>
+                      Pick {idx + 1}
+                    </span>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: league.draft_rounds }, (_, ri) => {
+              const round = ri + 1;
+              const isEven = round % 2 === 0;
+              const rowBg = ri % 2 === 0 ? "#0d0d1a" : "#0f0f1e";
+              return (
+                <tr key={round}>
+                  <td
+                    className="border px-2 py-1 text-zinc-500"
+                    style={{ borderColor: "#2a2a40", background: rowBg, whiteSpace: "nowrap" }}
+                  >
+                    {round}
+                    <span className="ml-0.5 opacity-30" style={{ fontSize: "9px" }}>
+                      {isEven ? "<" : ">"}
+                    </span>
+                  </td>
+                  {Array.from({ length: league.max_teams }, (_, ci) => {
+                    const col = ci + 1;
+                    const pickNo = pickNoForCell(round, col, league.max_teams);
+                    const pick = pickByNo[pickNo];
+                    const isCurrent = !isDraftComplete && pickNo === currentPickNo;
+                    const isMe = pick?.member_id === myMemberId;
+
+                    let bg = rowBg;
+                    let borderC = "#2a2a40";
+                    if (isCurrent) {
+                      bg = "rgba(255,215,0,0.12)";
+                      borderC = "#FFD700";
+                    } else if (isMe && pick) {
+                      bg = "rgba(0,87,255,0.1)";
+                    }
+
+                    const pos = pick?.players?.position ?? "";
+                    const posColor = POS_COLORS[pos] ?? "#8a8a9a";
+
+                    return (
+                      <td
+                        key={ci}
+                        className="border px-2 py-1.5 align-top"
+                        style={{ borderColor: borderC, background: bg, maxWidth: "110px" }}
+                      >
+                        {pick ? (
+                          <div>
+                            <p
+                              className="truncate font-semibold leading-tight"
+                              style={{ color: isMe ? "#8ab4ff" : "#e0e0ea" }}
+                              title={pick.players?.full_name ?? ""}
+                            >
+                              {lastName(pick.players?.full_name ?? "?")}
+                            </p>
+                            <p style={{ color: posColor, fontSize: "9px", marginTop: "1px" }}>
+                              {pos} {pick.players?.team ? `- ${pick.players.team}` : ""}
+                            </p>
+                          </div>
+                        ) : isCurrent ? (
+                          <p
+                            className="font-bold uppercase"
+                            style={{ color: "#FFD700", fontSize: "9px", letterSpacing: "0.05em" }}
+                          >
+                            On Clock
+                          </p>
+                        ) : pickNo <= totalPicks ? (
+                          <p style={{ color: "#2a2a40", fontSize: "9px" }}>{pickNo}</p>
+                        ) : null}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+// ---- Pre-draft lobby ---------------------------------------------------------
+function PreDraftLobby({
+  league,
+  members,
+  myMemberId,
+  isCommissioner,
+}: {
+  league: League;
+  members: Member[];
+  myMemberId: string;
+  isCommissioner: boolean;
+}) {
+  const allFactionsSet = members.every((m) => m.faction !== null);
+  const unassigned = members.filter((m) => m.faction === null).length;
+
+  return (
+    <div className="min-h-screen px-4 py-8 sm:px-8" style={{ background: "#0d0d1a", color: "#f4f4f8" }}>
+      <div className="mx-auto max-w-2xl flex flex-col gap-8">
+        <header className="flex flex-col gap-1">
+          <Link href={`/dashboard/league/${league.id}`} className="text-sm underline" style={{ color: "#0057FF" }}>
+            &larr; Back to {league.name}
+          </Link>
+          <p className="text-xs uppercase tracking-[0.3em]" style={{ color: "#FFD700" }}>
+            Ultimate Fantasy Football
+          </p>
+          <h1 className="text-3xl font-bold" style={{ color: "#0057FF" }}>
+            Draft Lobby
+          </h1>
+          <p className="text-sm text-zinc-400">
+            {members.length} / {league.max_teams} managers
+          </p>
+        </header>
+
+        <div className="flex flex-col gap-2">
+          {members.map((m) => (
+            <div
+              key={m.id}
+              className="flex items-center justify-between rounded-lg border px-4 py-3"
+              style={{
+                borderColor: m.id === myMemberId ? "#0057FF" : "#2a2a40",
+                background: m.id === myMemberId ? "rgba(0,87,255,0.06)" : "#15151f",
+              }}
+            >
+              <div>
+                <p className="font-semibold" style={{ color: "#f4f4f8" }}>
+                  {m.team_name}
+                  {m.id === myMemberId && (
+                    <span className="ml-2 text-xs text-zinc-500">(you)</span>
+                  )}
+                </p>
+                <p className="text-xs text-zinc-500">
+                  {m.profiles?.display_name ?? m.profiles?.username ?? "Unknown"}
+                </p>
+              </div>
+              {m.faction ? (
+                <span
+                  className="rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide"
+                  style={{
+                    background: m.faction === "hero" ? "rgba(0,87,255,0.15)" : "rgba(204,0,0,0.15)",
+                    color: m.faction === "hero" ? "#0057FF" : "#CC0000",
+                  }}
+                >
+                  {m.faction}
+                </span>
+              ) : (
+                <span className="text-xs text-zinc-600">No faction</span>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {isCommissioner ? (
+          <div
+            className="flex flex-col gap-3 rounded-lg border p-5"
+            style={{ borderColor: allFactionsSet ? "#FFD700" : "#2a2a40" }}
+          >
+            <h2 className="font-semibold" style={{ color: "#FFD700" }}>
+              Commissioner Controls
+            </h2>
+            {allFactionsSet ? (
+              <>
+                <p className="text-sm text-zinc-400">
+                  All managers have factions. Ready to start the draft.
+                </p>
+                <form action={startDraft}>
+                  <input type="hidden" name="leagueId" value={league.id} />
+                  <button
+                    type="submit"
+                    className="rounded-md px-5 py-2.5 text-sm font-bold"
+                    style={{ background: "#FFD700", color: "#0d0d1a" }}
+                  >
+                    Start Draft
+                  </button>
+                </form>
+              </>
+            ) : (
+              <p className="text-sm text-zinc-400">
+                {unassigned} manager{unassigned !== 1 ? "s" : ""} still need
+                {unassigned === 1 ? "s" : ""} a faction.
+                Go back to the league page to randomize.
+              </p>
+            )}
+          </div>
+        ) : (
+          <div
+            className="rounded-lg border px-5 py-4 text-center"
+            style={{ borderColor: "#2a2a40", background: "#15151f" }}
+          >
+            <p className="text-sm text-zinc-400">
+              Waiting for the commissioner to start the draft...
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---- Main DraftRoom component ------------------------------------------------
 export default function DraftRoom({
   league,
   members,
   myMemberId,
+  isCommissioner,
   initialPicks,
   myPowers,
 }: {
   league: League;
   members: Member[];
   myMemberId: string;
+  isCommissioner: boolean;
   initialPicks: Pick[];
   myPowers: PowerRow[];
 }) {
+  const leagueId = league.id;
+
+  // ---- All state (must be declared before any early returns) -----------------
   const [picks, setPicks] = useState<Pick[]>(initialPicks);
   const [players, setPlayers] = useState<Player[]>([]);
   const [search, setSearch] = useState("");
@@ -199,10 +492,9 @@ export default function DraftRoom({
   const [powerResult, setPowerResult] = useState<{ type: PowerResultType; message: string } | null>(null);
   const [showVampireBiteModal, setShowVampireBiteModal] = useState(false);
   const [vampireSubmitting, setVampireSubmitting] = useState(false);
-  const leagueId = league.id;
 
-  // ── Poll for new picks every 5s ──────────────────────────────────────────
-  const fetchPicks = async () => {
+  // ---- fetchPicks (used in effect below) -------------------------------------
+  const fetchPicks = useCallback(async () => {
     const { data } = await supabase
       .from("uff_draft_picks")
       .select("id, round, pick_no, member_id, player_id, picked_at, players(full_name, position, team)")
@@ -216,15 +508,14 @@ export default function DraftRoom({
       .eq("id", leagueId)
       .maybeSingle();
     if (leagueRow) setDraftStatus(leagueRow.draft_status);
-  };
+  }, [leagueId]);
 
+  // ---- All effects (must be before any conditional returns) ------------------
   useEffect(() => {
     const interval = setInterval(fetchPicks, 5000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leagueId]);
+  }, [fetchPicks]);
 
-  // ── Fetch available players on search / position change ──────────────────
   useEffect(() => {
     const fetchPlayers = async () => {
       const hasSearch = search.trim().length >= 2;
@@ -247,7 +538,19 @@ export default function DraftRoom({
     return () => clearTimeout(timer);
   }, [search, posFilter]);
 
-  // ── Derived state ────────────────────────────────────────────────────────
+  // ---- Early return: pre-draft lobby -----------------------------------------
+  if (draftStatus === "not_started") {
+    return (
+      <PreDraftLobby
+        league={league}
+        members={members}
+        myMemberId={myMemberId}
+        isCommissioner={isCommissioner}
+      />
+    );
+  }
+
+  // ---- Derived state ---------------------------------------------------------
   const totalPicks = league.max_teams * league.draft_rounds;
   const isDraftComplete = draftStatus === "completed" || picks.length >= totalPicks;
   const currentPickNo = picks.length + 1;
@@ -261,7 +564,7 @@ export default function DraftRoom({
   const pickedIds = new Set(picks.map((p) => p.player_id));
   const availablePlayers = players.filter((p) => !pickedIds.has(p.id));
 
-  // ── Pick handler ─────────────────────────────────────────────────────────
+  // ---- Pick handler ----------------------------------------------------------
   async function handlePick(playerId: string, playerPosition: string) {
     setError(null);
     setPowerResult(null);
@@ -279,7 +582,6 @@ export default function DraftRoom({
         await fetchPicks();
         setTimeout(() => setSuccess(null), 4000);
 
-        // ── Power assignment ─────────────────────────────────────────────
         if (myPowerThisRound?.draft_powers) {
           const dp = myPowerThisRound.draft_powers;
           const pr = await assignPowerToPick({
@@ -307,7 +609,7 @@ export default function DraftRoom({
     }
   }
 
-  // ── Vampire Bite handler ─────────────────────────────────────────────────
+  // ---- Vampire Bite handler --------------------------------------------------
   async function handleVampireBite(targetPlayerId: string) {
     setVampireSubmitting(true);
     const result = await assignVampireBite({ leagueId, targetPlayerId });
@@ -316,7 +618,7 @@ export default function DraftRoom({
     if (result.error) {
       setError(result.error);
     } else {
-      setPowerResult({ type: "applied", message: "🧛 Vampire Bite locked in — 10% of their weekly score is yours all season." });
+      setPowerResult({ type: "applied", message: "Vampire Bite locked in -- 10% of their weekly score is yours all season." });
       setTimeout(() => setPowerResult(null), 6000);
     }
   }
@@ -328,6 +630,7 @@ export default function DraftRoom({
     return { borderColor: "#CC0000", color: "#ff8a8a", background: "#1a0e16" };
   }
 
+  // ---- Render ----------------------------------------------------------------
   return (
     <div className="min-h-screen px-4 py-8 sm:px-8" style={{ background: "#0d0d1a", color: "#f4f4f8" }}>
       {showVampireBiteModal && (
@@ -337,14 +640,14 @@ export default function DraftRoom({
           onSelect={handleVampireBite}
           onSkip={() => {
             setShowVampireBiteModal(false);
-            setPowerResult({ type: "fizzled", message: "Vampire Bite skipped — power forfeited." });
+            setPowerResult({ type: "fizzled", message: "Vampire Bite skipped -- power forfeited." });
             setTimeout(() => setPowerResult(null), 5000);
           }}
           submitting={vampireSubmitting}
         />
       )}
 
-      <div className="mx-auto max-w-5xl flex flex-col gap-6">
+      <div className="mx-auto max-w-6xl flex flex-col gap-6">
 
         {/* Header */}
         <header className="flex flex-col gap-1">
@@ -359,8 +662,8 @@ export default function DraftRoom({
           </h1>
           <p className="text-sm text-zinc-400">
             {isDraftComplete
-              ? `Draft complete — all ${totalPicks} picks locked in.`
-              : `Round ${currentRound} of ${league.draft_rounds} · Pick ${picks.length + 1} of ${totalPicks}`}
+              ? `Draft complete -- all ${totalPicks} picks locked in.`
+              : `Round ${currentRound} of ${league.draft_rounds} - Pick ${picks.length + 1} of ${totalPicks}`}
           </p>
         </header>
 
@@ -376,7 +679,7 @@ export default function DraftRoom({
             {isMyTurn ? (
               <div className="flex flex-col gap-2">
                 <p className="font-semibold" style={{ color: "#FFD700" }}>
-                  🎯 It&rsquo;s your turn — pick now!
+                  It&rsquo;s your turn -- pick now!
                 </p>
                 {myPowerThisRound?.draft_powers && (
                   <div className="rounded-md border px-3 py-2" style={{ borderColor: "#2a2a40", background: "#0d0d1a" }}>
@@ -405,7 +708,7 @@ export default function DraftRoom({
                 <span className="font-semibold" style={{ color: "#f4f4f8" }}>
                   {currentMember?.team_name ?? "another manager"}
                 </span>{" "}
-                to pick&hellip;
+                to pick...
               </p>
             )}
           </div>
@@ -429,7 +732,7 @@ export default function DraftRoom({
           </div>
         )}
 
-        {/* Banners: error / success / power result */}
+        {/* Banners */}
         {error && (
           <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#CC0000", color: "#ff8a8a", background: "#1a0e16" }}>
             {error}
@@ -442,23 +745,23 @@ export default function DraftRoom({
         )}
         {powerResult && (
           <p className="rounded-md border px-3 py-2 text-sm font-semibold" style={powerBannerStyle(powerResult.type)}>
-            {powerResult.type === "applied" ? "⚡ " : powerResult.type === "fizzled" ? "💨 " : "ℹ️ "}
+            {powerResult.type === "applied" ? "Power applied -- " : powerResult.type === "fizzled" ? "Fizzled -- " : ""}
             {powerResult.message}
           </p>
         )}
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+        {/* Two-column: available players + sidebar */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
 
           {/* Left: available players */}
           <section className="flex flex-col gap-4">
             <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>
               Available Players
             </h2>
-
             <div className="flex flex-col gap-2">
               <input
                 type="text"
-                placeholder="Search by name…"
+                placeholder="Search by name..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full rounded-md border px-3 py-2 text-sm"
@@ -480,15 +783,14 @@ export default function DraftRoom({
                 ))}
               </div>
             </div>
-
-            <div className="flex flex-col gap-1 max-h-[480px] overflow-y-auto pr-1">
+            <div className="flex flex-col gap-1 max-h-[520px] overflow-y-auto pr-1">
               {search.trim().length === 0 && posFilter === "ALL" && (
                 <p className="py-8 text-center text-sm text-zinc-500">
-                  Search by name or select a position to browse available players.
+                  Search by name or select a position to browse.
                 </p>
               )}
               {(search.trim().length > 0 || posFilter !== "ALL") && availablePlayers.length === 0 && (
-                <p className="py-8 text-center text-sm text-zinc-500">No available players match your search.</p>
+                <p className="py-8 text-center text-sm text-zinc-500">No available players match.</p>
               )}
               {availablePlayers.map((p) => (
                 <div
@@ -499,8 +801,8 @@ export default function DraftRoom({
                   <div>
                     <p className="text-sm font-semibold">{p.full_name}</p>
                     <p className="text-xs text-zinc-500">
-                      {p.position ?? "?"} &middot; {p.team ?? "FA"}
-                      {p.status && p.status !== "Active" ? ` · ${p.status}` : ""}
+                      {p.position ?? "?"} - {p.team ?? "FA"}
+                      {p.status && p.status !== "Active" ? ` - ${p.status}` : ""}
                     </p>
                   </div>
                   {isMyTurn && (
@@ -510,7 +812,7 @@ export default function DraftRoom({
                       className="ml-3 shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
                       style={{ background: "#0057FF", color: "#f4f4f8" }}
                     >
-                      {submitting ? "…" : "Draft"}
+                      {submitting ? "..." : "Draft"}
                     </button>
                   )}
                 </div>
@@ -518,56 +820,77 @@ export default function DraftRoom({
             </div>
           </section>
 
-          {/* Right: draft board */}
-          <aside className="flex flex-col gap-4">
-            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>
-              Draft Board{" "}
-              <span className="text-sm font-normal text-zinc-500">
-                ({picks.length} / {totalPicks})
-              </span>
-            </h2>
-
-            <div className="flex flex-col gap-1">
-              <p className="text-xs uppercase tracking-wide text-zinc-500 mb-1">Pick order (round 1)</p>
+          {/* Right: draft order + my powers */}
+          <aside className="flex flex-col gap-5">
+            <div className="flex flex-col gap-2">
+              <h3 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "#FFD700" }}>
+                Draft Order
+              </h3>
               {league.draft_order.map((memberId, idx) => {
                 const m = memberMap[memberId];
+                const isPickingNow = !isDraftComplete && memberId === currentMemberId;
                 return (
-                  <div key={memberId} className="flex items-center gap-2 text-sm">
+                  <div
+                    key={memberId}
+                    className="flex items-center gap-2 rounded px-2 py-1 text-sm"
+                    style={{
+                      background: isPickingNow ? "rgba(255,215,0,0.08)" : "transparent",
+                      border: isPickingNow ? "1px solid rgba(255,215,0,0.3)" : "1px solid transparent",
+                    }}
+                  >
                     <span className="w-5 text-right text-xs text-zinc-600">{idx + 1}.</span>
-                    <span style={{ color: memberId === myMemberId ? "#FFD700" : "#f4f4f8" }}>
+                    <span
+                      style={{
+                        color: memberId === myMemberId ? "#8ab4ff" : "#f4f4f8",
+                        fontWeight: isPickingNow ? 600 : 400,
+                      }}
+                    >
                       {m?.team_name ?? memberId}
                       {memberId === myMemberId && (
                         <span className="ml-1 text-xs text-zinc-500">(you)</span>
                       )}
                     </span>
+                    {isPickingNow && (
+                      <span className="ml-auto text-xs font-bold" style={{ color: "#FFD700" }}>
+                        PICKING
+                      </span>
+                    )}
                   </div>
                 );
               })}
             </div>
 
-            <div
-              className="flex flex-col gap-2 max-h-[400px] overflow-y-auto border-t pt-4"
-              style={{ borderColor: "#2a2a40" }}
-            >
-              <p className="text-xs uppercase tracking-wide text-zinc-500">Recent picks</p>
-              {picks.length === 0 && <p className="text-sm text-zinc-600">No picks yet.</p>}
-              {[...picks].reverse().map((pick) => {
-                const m = memberMap[pick.member_id];
-                const isMe = pick.member_id === myMemberId;
+            <div className="flex flex-col gap-2 border-t pt-4" style={{ borderColor: "#2a2a40" }}>
+              <h3 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "#FFD700" }}>
+                My Powers
+              </h3>
+              {myPowers.length === 0 && (
+                <p className="text-xs text-zinc-600">No power assignments found.</p>
+              )}
+              {myPowers.map((pw) => {
+                const dp = pw.draft_powers;
+                const isPast = pw.round < currentRound;
+                const isCurr = pw.round === currentRound;
                 return (
                   <div
-                    key={pick.id}
-                    className="rounded-lg border px-3 py-2"
+                    key={pw.round}
+                    className="rounded border px-2.5 py-2"
                     style={{
-                      borderColor: isMe ? "#0057FF" : "#2a2a40",
-                      background: isMe ? "rgba(0,87,255,0.06)" : "transparent",
+                      borderColor: isCurr ? "#FFD700" : "#2a2a40",
+                      background: isCurr ? "rgba(255,215,0,0.05)" : "transparent",
+                      opacity: isPast ? 0.45 : 1,
                     }}
                   >
-                    <p className="text-xs text-zinc-500">R{pick.round} · #{pick.pick_no}</p>
-                    <p className="text-sm font-semibold">{pick.players?.full_name ?? pick.player_id}</p>
-                    <p className="text-xs text-zinc-400">
-                      {pick.players?.position ?? "?"} &middot; {pick.players?.team ?? "FA"} &rarr;{" "}
-                      {m?.team_name ?? "?"}
+                    <p className="text-xs text-zinc-500">
+                      Rd {pw.round}
+                      {isCurr && (
+                        <span className="ml-1 font-bold" style={{ color: "#FFD700" }}>
+                          NOW
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-xs font-semibold" style={{ color: isCurr ? "#f4f4f8" : "#c4c4d0" }}>
+                      {dp?.name ?? "Unknown"}
                     </p>
                   </div>
                 );
@@ -575,6 +898,17 @@ export default function DraftRoom({
             </div>
           </aside>
         </div>
+
+        {/* Full draft board grid */}
+        <DraftBoardGrid
+          picks={picks}
+          league={league}
+          memberMap={memberMap}
+          myMemberId={myMemberId}
+          currentPickNo={currentPickNo}
+          isDraftComplete={isDraftComplete}
+        />
+
       </div>
     </div>
   );

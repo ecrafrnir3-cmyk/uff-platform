@@ -52,9 +52,7 @@ export default async function DraftPage({
 
   if (!league) redirect("/dashboard?error=" + encodeURIComponent("League not found."));
 
-  if (league.draft_status === "not_started") {
-    redirect(`/dashboard/league/${leagueId}?error=` + encodeURIComponent("The draft hasn't started yet."));
-  }
+  // No redirect for "not_started" -- DraftRoom shows a pre-draft lobby instead.
 
   const { data: members } = await supabase
     .from("league_members")
@@ -93,6 +91,7 @@ export default async function DraftPage({
       }}
       members={members ?? []}
       myMemberId={me.id}
+      isCommissioner={league.commissioner_id === user.id}
       initialPicks={picks ?? []}
       myPowers={myPowers ?? []}
     />
