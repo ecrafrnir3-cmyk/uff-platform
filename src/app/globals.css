@@ -18,4 +18,5 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-body, 'Roboto Condensed',
+  font-family: var(--font-body, 'Roboto Condensed', Arial, sans-serif);
+}

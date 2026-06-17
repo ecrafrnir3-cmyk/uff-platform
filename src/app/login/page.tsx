@@ -176,4 +176,30 @@ export default function LoginPage() {
                   setInfo(null);
                 }}
                 className="underline"
-                style={{ color: "#0057F
+                style={{ color: "#0057FF" }}
+              >
+                Sign up
+              </button>
+            </>
+          ) : (
+            <>
+              Already have an account?{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("sign-in");
+                  setError(null);
+                  setInfo(null);
+                }}
+                className="underline"
+                style={{ color: "#0057FF" }}
+              >
+                Sign in
+              </button>
+            </>
+          )}
+        </p>
+      </div>
+    </div>
+  );
+}
