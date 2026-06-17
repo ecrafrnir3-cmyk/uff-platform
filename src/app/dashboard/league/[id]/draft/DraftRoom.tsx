@@ -14,6 +14,7 @@ interface Player {
   position: string | null;
   team: string | null;
   status: string | null;
+  adp: number | null;
 }
 
 interface Pick {
@@ -520,17 +521,17 @@ export default function DraftRoom({
     const fetchPlayers = async () => {
       const hasSearch = search.trim().length >= 2;
       const hasPos = posFilter !== "ALL";
-      if (!hasSearch && !hasPos) { setPlayers([]); return; }
 
       let q = supabase
         .from("players")
-        .select("id, full_name, position, team, status")
+        .select("id, full_name, position, team, status, adp")
         .not("position", "is", null);
 
       if (hasSearch) q = q.ilike("full_name", `%${search.trim()}%`);
       if (hasPos) q = q.eq("position", posFilter);
 
-      const { data } = await q.order("full_name").limit(60);
+      // Default (ALL + no search): show top 60 by ADP
+      const { data } = await q.order("adp", { ascending: true, nullsFirst: false }).limit(60);
       setPlayers((data as Player[]) ?? []);
     };
 
@@ -784,11 +785,6 @@ export default function DraftRoom({
               </div>
             </div>
             <div className="flex flex-col gap-1 max-h-[520px] overflow-y-auto pr-1">
-              {search.trim().length === 0 && posFilter === "ALL" && (
-                <p className="py-8 text-center text-sm text-zinc-500">
-                  Search by name or select a position to browse.
-                </p>
-              )}
               {(search.trim().length > 0 || posFilter !== "ALL") && availablePlayers.length === 0 && (
                 <p className="py-8 text-center text-sm text-zinc-500">No available players match.</p>
               )}
