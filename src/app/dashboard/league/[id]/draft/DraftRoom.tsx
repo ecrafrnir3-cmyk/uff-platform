@@ -612,7 +612,7 @@ export default function DraftRoom({
   // ---- Vampire Bite handler --------------------------------------------------
   async function handleVampireBite(targetPlayerId: string) {
     setVampireSubmitting(true);
-    const result = await assignVampireBite({ leagueId, targetPlayerId });
+    const result = await assignVampireBite({ leagueId, targetPlayerId, round: currentRound });
     setVampireSubmitting(false);
     setShowVampireBiteModal(false);
     if (result.error) {

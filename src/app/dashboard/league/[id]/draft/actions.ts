@@ -109,12 +109,13 @@ export async function assignPowerToPick(params: {
 export async function assignVampireBite(params: {
   leagueId: string;
   targetPlayerId: string;
+  round: number;
 }): Promise<{ error?: string }> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated." };
 
-  const { leagueId, targetPlayerId } = params;
+  const { leagueId, targetPlayerId, round } = params;
 
   const { data: member } = await supabase
     .from("league_members")
@@ -129,6 +130,7 @@ export async function assignVampireBite(params: {
     league_id: leagueId,
     biting_member_id: member.id,
     target_player_id: targetPlayerId,
+    round,
   });
 
   if (error) {

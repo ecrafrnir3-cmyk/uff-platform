@@ -110,7 +110,7 @@ export default async function LeagueDetailPage({
             >
               My Team
             </Link>
-            {league.draft_status === "in_progress" && (
+            {league.draft_status !== "completed" && (
               <Link
                 href={`/dashboard/league/${league.id}/draft`}
                 className="inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold"
