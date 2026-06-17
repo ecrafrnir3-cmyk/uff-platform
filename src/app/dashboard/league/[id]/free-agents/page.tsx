@@ -133,7 +133,7 @@ export default async function FreeAgentsPage({
               </span>
             </span>
             {!hasProjections && (
-              <span className="text-zinc-600">
+              <span style={{ color: "#8a8a9a" }}>
                 Projections available once the season starts (Sept 3)
               </span>
             )}

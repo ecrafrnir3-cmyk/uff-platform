@@ -114,10 +114,10 @@ export default function FreeAgents({
           ))}
         </div>
         {hasProjections && (
-          <p className="text-xs text-zinc-600">Ranked by projected points · Week {new Date().toLocaleDateString()}</p>
+          <p className="text-xs" style={{ color: "#8a8a9a" }}>Ranked by projected points · Week {new Date().toLocaleDateString()}</p>
         )}
         {!hasProjections && (
-          <p className="text-xs text-zinc-600">Ranked by ADP · Projections available once the season starts</p>
+          <p className="text-xs" style={{ color: "#8a8a9a" }}>Ranked by ADP · Projections available once the season starts</p>
         )}
       </div>
 
@@ -147,7 +147,7 @@ export default function FreeAgents({
               style={{ borderColor: "#2a2a40" }}
             >
               {/* Rank */}
-              <span className="w-6 text-right text-xs text-zinc-600 shrink-0">{idx + 1}</span>
+              <span className="w-6 text-right text-xs shrink-0" style={{ color: "#8a8a9a" }}>{idx + 1}</span>
 
               {/* Player info */}
               <div className="flex-1 min-w-0">
@@ -168,7 +168,7 @@ export default function FreeAgents({
                   <p className="text-sm font-semibold tabular-nums" style={{ color: proj ? "#f4f4f8" : "#8a8a9a" }}>
                     {proj != null ? proj.toFixed(1) : "—"}
                   </p>
-                  <p className="text-xs text-zinc-600">proj</p>
+                  <p className="text-xs" style={{ color: "#8a8a9a" }}>proj</p>
                 </div>
               )}
 

@@ -206,7 +206,7 @@ export default async function SettingsPage({
                   {preset}
                 </a>
               ))}
-              <span className="text-xs text-zinc-600 self-center">(applies preset then save manually)</span>
+              <span className="text-xs self-center" style={{ color: "#8a8a9a" }}>(applies preset then save manually)</span>
             </div>
           </div>
 

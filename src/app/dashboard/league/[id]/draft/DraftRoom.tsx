@@ -190,7 +190,7 @@ function VampireBiteModal({
             Skip
           </button>
         </div>
-        <p className="mt-2 text-center text-xs text-zinc-600">
+        <p className="mt-2 text-center text-xs" style={{ color: "#8a8a9a" }}>
           Skipping forfeits your Vampire Bite permanently.
         </p>
       </div>
@@ -260,7 +260,7 @@ function DraftBoardGrid({
                     <span className="block truncate" title={m?.team_name ?? `Team ${idx + 1}`}>
                       {m?.team_name ?? `T${idx + 1}`}
                     </span>
-                    <span className="block text-zinc-600 font-normal" style={{ fontSize: "9px" }}>
+                    <span className="block font-normal" style={{ fontSize: "9px", color: "#8a8a9a" }}>
                       Pick {idx + 1}
                     </span>
                   </th>
@@ -410,7 +410,7 @@ function PreDraftLobby({
                   {m.faction}
                 </span>
               ) : (
-                <span className="text-xs text-zinc-600">No faction</span>
+                <span className="text-xs" style={{ color: "#8a8a9a" }}>No faction</span>
               )}
             </div>
           ))}
@@ -494,6 +494,10 @@ export default function DraftRoom({
   const [showVampireBiteModal, setShowVampireBiteModal] = useState(false);
   const [vampireSubmitting, setVampireSubmitting] = useState(false);
 
+  // ---- isDraftComplete (computed early so effects can guard on it) -----------
+  const totalPicksEarly = league.max_teams * league.draft_rounds;
+  const isDraftComplete = draftStatus === "completed" || picks.length >= totalPicksEarly;
+
   // ---- fetchPicks (used in effect below) -------------------------------------
   const fetchPicks = useCallback(async () => {
     const { data } = await supabase
@@ -513,9 +517,10 @@ export default function DraftRoom({
 
   // ---- All effects (must be before any conditional returns) ------------------
   useEffect(() => {
+    if (isDraftComplete) return; // stop polling once draft is done
     const interval = setInterval(fetchPicks, 5000);
     return () => clearInterval(interval);
-  }, [fetchPicks]);
+  }, [fetchPicks, isDraftComplete]);
 
   useEffect(() => {
     const fetchPlayers = async () => {
@@ -552,8 +557,7 @@ export default function DraftRoom({
   }
 
   // ---- Derived state ---------------------------------------------------------
-  const totalPicks = league.max_teams * league.draft_rounds;
-  const isDraftComplete = draftStatus === "completed" || picks.length >= totalPicks;
+  const totalPicks = totalPicksEarly; // already computed above
   const currentPickNo = picks.length + 1;
   const currentRound = Math.ceil(currentPickNo / league.max_teams);
   const slot = snakeDraftSlot(currentPickNo, league.max_teams);
@@ -834,7 +838,7 @@ export default function DraftRoom({
                       border: isPickingNow ? "1px solid rgba(255,215,0,0.3)" : "1px solid transparent",
                     }}
                   >
-                    <span className="w-5 text-right text-xs text-zinc-600">{idx + 1}.</span>
+                    <span className="w-5 text-right text-xs" style={{ color: "#8a8a9a" }}>{idx + 1}.</span>
                     <span
                       style={{
                         color: memberId === myMemberId ? "#8ab4ff" : "#f4f4f8",
@@ -861,7 +865,7 @@ export default function DraftRoom({
                 My Powers
               </h3>
               {myPowers.length === 0 && (
-                <p className="text-xs text-zinc-600">No power assignments found.</p>
+                <p className="text-xs" style={{ color: "#8a8a9a" }}>No power assignments found.</p>
               )}
               {myPowers.map((pw) => {
                 const dp = pw.draft_powers;

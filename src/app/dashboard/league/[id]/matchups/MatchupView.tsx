@@ -87,6 +87,7 @@ export default function MatchupView({
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
+    if (initialPairs.length === 0) return; // no matchups this week — skip subscription
     const channel = supabase
       .channel(`matchups-${leagueId}-week${week}`)
       .on(
@@ -136,12 +137,12 @@ export default function MatchupView({
           Week {week}
         </h2>
         {lastUpdated && (
-          <p className="text-xs text-zinc-600">
+          <p className="text-xs" style={{ color: "#8a8a9a" }}>
             Live &middot; updated {lastUpdated.toLocaleTimeString()}
           </p>
         )}
         {!lastUpdated && (
-          <p className="text-xs text-zinc-600">Live &middot; scores update every ~5 min during games</p>
+          <p className="text-xs" style={{ color: "#8a8a9a" }}>Live &middot; scores update every ~5 min during games</p>
         )}
       </div>
 
@@ -168,12 +169,12 @@ export default function MatchupView({
               <div className="flex items-stretch gap-3">
                 <ScoreCard row={a} isMe={a.member_id === myMemberId} isWinner={aWins} />
                 <div className="flex flex-col items-center justify-center px-1">
-                  <span className="text-sm font-bold text-zinc-600">vs</span>
+                  <span className="text-sm font-bold" style={{ color: "#8a8a9a" }}>vs</span>
                 </div>
                 <ScoreCard row={b} isMe={b.member_id === myMemberId} isWinner={bWins} />
               </div>
               {a.is_complete && (
-                <p className="mt-2 text-center text-xs text-zinc-600">Final</p>
+                <p className="mt-2 text-center text-xs" style={{ color: "#8a8a9a" }}>Final</p>
               )}
             </div>
           );

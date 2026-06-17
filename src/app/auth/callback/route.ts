@@ -31,6 +31,10 @@ export async function GET(request: Request) {
       console.error("[auth/callback] verifyOtp error:", error.message);
       return NextResponse.redirect(`${origin}/login?error=` + encodeURIComponent("Link expired or already used. Please try again."));
     }
+    // Password reset flow — always land on /reset-password so user can enter new password
+    if (type === "recovery") {
+      return NextResponse.redirect(`${origin}/reset-password`);
+    }
   } else {
     return NextResponse.redirect(`${origin}/login?error=` + encodeURIComponent("Invalid auth link."));
   }
