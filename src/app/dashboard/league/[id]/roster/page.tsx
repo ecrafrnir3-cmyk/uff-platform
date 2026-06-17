@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { dropPlayer, moveToIR, moveFromIR } from "../player-actions";
+import { dropPlayer, moveToIR, moveFromIR, useRestoreChip } from "../player-actions";
 import LineupManager from "./LineupManager";
 
 interface RosterRow {
@@ -37,6 +37,18 @@ interface DraftPickRow {
   picked_at: string;
   players: { full_name: string; position: string | null; team: string | null } | null;
   league_members: { team_name: string } | null;
+}
+
+interface ChipRow {
+  id: string;
+  earned_week: number;
+  used: boolean;
+}
+
+interface NegatedPlayerRow {
+  player_id: string;
+  players: { full_name: string } | null;
+  restored_at: string | null;
 }
 
 interface NewsItem {
@@ -136,10 +148,10 @@ export default async function RosterPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; dropped?: string; ir?: string; lineup?: string }>;
+  searchParams: Promise<{ error?: string; dropped?: string; ir?: string; lineup?: string; restored?: string }>;
 }) {
   const { id: leagueId } = await params;
-  const { error, dropped, ir, lineup: lineupSaved } = await searchParams;
+  const { error, dropped, ir, lineup: lineupSaved, restored } = await searchParams;
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -171,6 +183,8 @@ export default async function RosterPage({
     { data: powers },
     { data: picks },
     { data: lineupRows },
+    { data: chips },
+    { data: negatedPlayers },
     news,
   ] = await Promise.all([
     supabase
@@ -200,6 +214,21 @@ export default async function RosterPage({
       .select("slot, player_id")
       .eq("member_id", me.id)
       .eq("week", week),
+    supabase
+      .from("power_restore_chips")
+      .select("id, earned_week, used")
+      .eq("member_id", me.id)
+      .eq("used", false)
+      .order("earned_week", { ascending: true })
+      .returns<ChipRow[]>(),
+    supabase
+      .from("player_draft_powers")
+      .select("player_id, players(full_name), restored_at")
+      .eq("league_id", leagueId)
+      .eq("drafted_by_user_id", user.id)
+      .eq("power", "power_negation")
+      .is("restored_at", null)
+      .returns<NegatedPlayerRow[]>(),
     getNflNews(),
   ]);
 
@@ -223,8 +252,12 @@ export default async function RosterPage({
     return me.faction && f === me.faction;
   }).length;
 
-  const powerList = powers ?? [];
-  const pickList  = picks  ?? [];
+  const powerList       = powers ?? [];
+  const pickList        = picks  ?? [];
+  const chipList        = chips  ?? [];
+  const negatedList     = negatedPlayers ?? [];
+  const availableChips  = chipList.length;
+  const negatedPlayer   = negatedList[0] ?? null; // only one Power Negation per manager
 
   // Lineup management data
   const slotsConfig: Record<string, number> = (league.lineup_slots as Record<string, number>) ??
@@ -289,6 +322,11 @@ export default async function RosterPage({
             Lineup saved for Week {week}.
           </p>
         )}
+        {restored && (
+          <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#0057FF", color: "#8ab4ff", background: "#0a0e1a" }}>
+            ✅ Power Restore Chip used — your player's scoring is back to normal!
+          </p>
+        )}
 
         {/* Lineup Manager */}
         {activeRosterForLineup.length > 0 && (
@@ -303,9 +341,39 @@ export default async function RosterPage({
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[260px_minmax(0,1fr)_300px]">
 
-          {/* Left: powers */}
+          {/* Left: powers + chips */}
           <aside className="order-2 flex flex-col gap-3 lg:order-1">
             <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Your Powers</h2>
+
+            {/* Restore Chips indicator */}
+            {availableChips > 0 && (
+              <div className="rounded-lg border px-3 py-2" style={{ borderColor: "#0057FF", background: "rgba(0,87,255,0.07)" }}>
+                <p className="text-xs uppercase tracking-wide" style={{ color: "#0057FF" }}>Power Restore Chips</p>
+                <p className="mt-0.5 text-sm font-semibold" style={{ color: "#f4f4f8" }}>
+                  {availableChips} chip{availableChips !== 1 ? "s" : ""} available
+                </p>
+                {negatedPlayer && (
+                  <form action={useRestoreChip} className="mt-2">
+                    <input type="hidden" name="leagueId" value={leagueId} />
+                    <input type="hidden" name="chipId" value={chipList[0].id} />
+                    <input type="hidden" name="playerId" value={negatedPlayer.player_id} />
+                    <button
+                      type="submit"
+                      className="w-full rounded-md px-3 py-1.5 text-xs font-semibold"
+                      style={{ background: "#0057FF", color: "#f4f4f8" }}
+                    >
+                      Restore {negatedPlayer.players?.full_name?.split(" ").pop() ?? "player"}
+                    </button>
+                  </form>
+                )}
+                {!negatedPlayer && (
+                  <p className="mt-1 text-xs text-zinc-500">
+                    No negated players — bank it or trade it.
+                  </p>
+                )}
+              </div>
+            )}
+
             {powerList.length === 0 ? (
               <p className="rounded-lg border p-4 text-sm text-zinc-400" style={{ borderColor: "#2a2a40" }}>
                 Powers are assigned during the draft &mdash; none yet.
@@ -314,13 +382,20 @@ export default async function RosterPage({
               <div className="flex flex-col gap-2">
                 {powerList.map((p) => {
                   const status = p.team_active_powers?.[0]?.status ?? "pending";
+                  const isNegated = status === "negated";
                   return (
-                    <div key={p.id} className="rounded-lg border p-3" style={{ borderColor: "#2a2a40" }}>
+                    <div key={p.id} className="rounded-lg border p-3" style={{ borderColor: isNegated ? "rgba(204,0,0,0.4)" : "#2a2a40" }}>
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-xs uppercase tracking-wide text-zinc-500">Round {p.round}</p>
                         <PowerStatusBadge status={status} />
                       </div>
                       <p className="mt-1 text-sm font-semibold">{p.draft_powers?.name ?? "Unknown power"}</p>
+                      {isNegated && negatedPlayer && (
+                        <p className="mt-1 text-xs" style={{ color: "#CC0000" }}>
+                          {negatedPlayer.players?.full_name ?? "Your pick"} scoring halved this season.
+                          {availableChips > 0 ? " Use a chip above to restore." : " Earn a chip to restore."}
+                        </p>
+                      )}
                     </div>
                   );
                 })}
@@ -512,7 +587,7 @@ export default async function RosterPage({
                         <span className="font-semibold">{pick.league_members?.team_name ?? "A manager"}</span>{" "}
                         drafted{" "}
                         <span className="font-semibold">{pick.players?.full_name ?? "a player"}</span>
-                        {pick.players?.position ? ` (${pick.players.position}${pick.players.team ? ` &middot; ${pick.players.team}` : ""})` : ""}
+                        {pick.players?.position ? ` (${pick.players.position}${pick.players.team ? ` · ${pick.players.team}` : ""})` : ""}
                       </p>
                       <p className="mt-1 text-xs text-zinc-500">
                         Round {pick.round}, Pick {pick.pick_no} &middot; {timeAgo(pick.picked_at)}
