@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { dropPlayer, moveToIR, moveFromIR, useRestoreChip } from "../player-actions";
 import DragDropLineup from "./DragDropLineup";
+import { getCurrentNFLWeek } from "@/lib/nfl-utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface RosterRow {
@@ -81,12 +82,6 @@ function timeAgo(iso: string): string {
   const h = Math.floor(mins / 60);
   if (h < 24)    return h + "h ago";
   return Math.floor(h / 24) + "d ago";
-}
-
-function getCurrentNFLWeek(): number {
-  const start = new Date("2026-09-03");
-  const diff  = Math.floor((Date.now() - start.getTime()) / (7 * 86400000));
-  return Math.min(Math.max(diff + 1, 1), 18);
 }
 
 function expandSlots(config: Record<string, number>): string[] {
@@ -662,3 +657,4 @@ export default async function RosterPage({
     </div>
   );
 }
+                                                                                                                                                             
