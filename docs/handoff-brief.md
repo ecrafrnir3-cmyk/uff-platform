@@ -1,5 +1,39 @@
 # 🚀 UFF Handoff Brief
 
+## ✅ Session update — 2026-06-18 (audit fixes + deploy)
+
+**Shipped this session:**
+
+Full codebase audit fixes committed (`cdb18bb`) and deployed to production via `vercel --prod`.
+
+**Changes shipped:**
+- **`src/proxy.ts`** — created (Next.js 16: `middleware.ts` renamed to `proxy.ts`, function renamed `middleware` → `proxy`)
+- **`src/middleware.ts`** — deleted (deprecated in Next.js 16)
+- **`src/app/dashboard/league/[id]/roster/LineupManager.tsx`** — deleted (dead code, fully superseded by `DragDropLineup.tsx`)
+- **`src/lib/nfl-utils.ts`** — new shared util, exports `getCurrentNFLWeek()`; replaced 3 duplicate local copies
+- **`loading.tsx`** — added to free-agents, matchups, and standings pages (loading skeletons)
+- **`next.config.ts`** — security headers: X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy
+- **Cleanup** (`6e30eda`): removed temp batch files; restored 3 Edit-tool-corrupted files from git HEAD
+
+**Git log:**
+```
+6e30eda chore: remove temp deploy batch files
+8dd0762 Fix: password reset redirect, DraftRoom polling guard, MatchupView Realtime guard
+cdb18bb chore: audit fixes - proxy rename, dead code, shared util, security headers, loading skeletons
+```
+
+**Vercel:** all commits live at `https://uff-platform.vercel.app`
+
+**Critical next items (from audit):**
+1. **Lineup lock deadline** — no game-time cutoff enforcement yet; critical before Week 1
+2. **Trade tool** — currently 'Coming Soon' button; highest-priority missing feature
+3. **Suspense streaming on roster page** — N Sleeper API calls block full render; wrap in Suspense for instant shell
+
+**NTFS write rule (CRITICAL — all future sessions):**
+Never use Edit/Write tools or bash heredocs. Always use a Python script file via bash.
+
+*Last updated: 2026-06-18*
+
 ## Session update -- 2026-06-16 (evening: NTFS corruption cleanup)
 
 **Shipped this session:**
