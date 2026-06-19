@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { dropPlayer, moveToIR, moveFromIR, useRestoreChip } from "../player-actions";
 import DragDropLineup from "./DragDropLineup";
-import { getCurrentNFLWeek } from "@/lib/nfl-utils";
+import { getCurrentNFLWeek, isLineupLocked, getWeekLockTime } from "@/lib/nfl-utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface RosterRow {
@@ -366,6 +366,8 @@ export default async function RosterPage({
             slots={expandedSlots}
             activeRoster={activeRosterForLineup}
             currentLineup={currentLineup}
+            locked={isLineupLocked(week)}
+            lockTime={getWeekLockTime(week).toISOString()}
           />
         )}
 
@@ -647,13 +649,4 @@ export default async function RosterPage({
                     {item.title}
                   </a>
                 ))}
-                <p className="text-xs" style={{ color: "#3a3a50" }}>Source: ESPN NFL headlines</p>
-              </div>
-            )}
-          </section>
-
-        </div>
-      </main>
-    </div>
-  );
-}
+                <p className="text-xs" style={{ color: "#3a3a50" }}>So

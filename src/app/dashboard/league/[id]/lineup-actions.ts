@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { isLineupLocked } from "@/lib/nfl-utils";
 
 export async function setLineup(formData: FormData) {
   const supabase = await createClient();
@@ -11,6 +12,15 @@ export async function setLineup(formData: FormData) {
 
   const leagueId = formData.get("leagueId") as string;
   const week = parseInt(formData.get("week") as string);
+
+  // Hard block: lineup locks at Thursday night kickoff
+  if (isLineupLocked(week)) {
+    redirect(
+      `/dashboard/league/${leagueId}/roster?error=${encodeURIComponent(
+        "Lineup is locked for Week " + week + ". Changes are not allowed after Thursday kickoff."
+      )}`
+    );
+  }
 
   // Collect non-empty slot assignments from formData
   const slots: { slot: string; player_id: string }[] = [];

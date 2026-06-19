@@ -20,7 +20,7 @@ const SLOT_ELIGIBLE: Record<string, string[]> = {
   DST:  ["DEF", "DST"],
 };
 
-const HERO_COLOR  = "#0057FF";
+const HERO_COLOR    = "#0057FF";
 const VILLAIN_COLOR = "#CC0000";
 
 function slotBase(slot: string): string {
@@ -33,12 +33,16 @@ export default function DragDropLineup({
   slots,
   activeRoster,
   currentLineup,
+  locked,
+  lockTime,
 }: {
   leagueId: string;
   week: number;
   slots: string[];
   activeRoster: RosterPlayer[];
   currentLineup: Record<string, string>;
+  locked: boolean;
+  lockTime: string; // ISO string for display
 }) {
   const [assignments, setAssignments] = useState<Record<string, string>>(currentLineup);
   const [draggedId,   setDraggedId]   = useState<string | null>(null);
@@ -58,6 +62,7 @@ export default function DragDropLineup({
   }
 
   function onDragStart(pid: string, src: string) {
+    if (locked) return;
     setDraggedId(pid);
     setDragSource(src);
   }
@@ -71,7 +76,7 @@ export default function DragDropLineup({
   }
 
   function dropOnSlot(slot: string) {
-    if (!draggedId) return;
+    if (!draggedId || locked) return;
     if (!eligible(draggedId, slot)) {
       setInvalidSlot(slot);
       setTimeout(() => setInvalidSlot(null), 600);
@@ -81,7 +86,6 @@ export default function DragDropLineup({
     setAssignments((prev) => {
       const next = { ...prev };
       const displaced = next[slot];
-      // If dragged from another slot, put displaced player back there
       if (dragSource && dragSource !== "bench") {
         next[dragSource] = displaced ?? "";
       }
@@ -92,7 +96,7 @@ export default function DragDropLineup({
   }
 
   function dropOnBench() {
-    if (!draggedId || !dragSource || dragSource === "bench") return;
+    if (!draggedId || !dragSource || dragSource === "bench" || locked) return;
     setAssignments((prev) => ({ ...prev, [dragSource!]: "" }));
     setOverBench(false);
   }
@@ -104,34 +108,51 @@ export default function DragDropLineup({
     await setLineup(fd);
   }
 
+  // Format lock time for display
+  const lockDisplay = new Date(lockTime).toLocaleString("en-US", {
+    weekday: "short", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit", timeZoneName: "short",
+    timeZone: "America/New_York",
+  });
+
   return (
-    <section className="flex flex-col gap-4 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>
-      <div className="flex items-center justify-between">
+    <section className="flex flex-col gap-4 rounded-lg border p-5" style={{ borderColor: locked ? "#CC0000" : "#2a2a40" }}>
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>
           Starting Lineup &mdash; Week {week}
         </h2>
-        <span className="text-xs" style={{ color: "#8a8a9a" }}>
-          {filledCount} / {slots.length} filled
+        <span className="text-xs" style={{ color: locked ? "#CC0000" : "#8a8a9a" }}>
+          {locked
+            ? "\uD83D\uDD12 Locked"
+            : `${filledCount} / ${slots.length} filled`}
         </span>
       </div>
-      <p className="text-xs" style={{ color: "#8a8a9a" }}>
-        Drag players into starter slots. FLEX accepts RB, WR, or TE.
-        Drop a starter back to Bench to remove them.
-      </p>
+
+      {locked ? (
+        <div className="rounded-md border px-4 py-3 text-sm" style={{ borderColor: "#CC0000", background: "#1a0e16", color: "#ff8a8a" }}>
+          <span className="font-semibold">Lineup locked</span> for Week {week}. No changes allowed after Thursday kickoff ({lockDisplay}).
+        </div>
+      ) : (
+        <p className="text-xs" style={{ color: "#8a8a9a" }}>
+          Drag players into starter slots. FLEX accepts RB, WR, or TE.
+          Drop a starter back to Bench to remove them.
+          Locks at Thursday kickoff ({lockDisplay}).
+        </p>
+      )}
 
       {/* Starter grid */}
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">
         {slots.map((slot) => {
           const pid    = assignments[slot] ?? "";
           const player = pid ? activeRoster.find((p) => p.player_id === pid) : null;
-          const isOver    = overSlot === slot;
+          const isOver    = !locked && overSlot === slot;
           const isInvalid = invalidSlot === slot;
           const dropOk    = draggedId ? eligible(draggedId, slot) : true;
 
           return (
             <div
               key={slot}
-              onDragOver={(e) => { e.preventDefault(); setOverSlot(slot); }}
+              onDragOver={(e) => { if (!locked) { e.preventDefault(); setOverSlot(slot); } }}
               onDragLeave={(e) => {
                 if (!e.currentTarget.contains(e.relatedTarget as Node)) setOverSlot(null);
               }}
@@ -150,6 +171,7 @@ export default function DragDropLineup({
                     ? (dropOk ? "rgba(0,87,255,0.08)" : "rgba(204,0,0,0.08)")
                     : pid ? "rgba(0,87,255,0.03)" : "transparent",
                 transition: "border-color 0.12s, background 0.12s",
+                opacity: locked ? 0.75 : 1,
               }}
             >
               <p
@@ -161,11 +183,14 @@ export default function DragDropLineup({
 
               {player ? (
                 <div
-                  draggable
+                  draggable={!locked}
                   onDragStart={() => onDragStart(player.player_id, slot)}
                   onDragEnd={onDragEnd}
-                  className="cursor-grab rounded px-1.5 py-1 active:cursor-grabbing select-none"
-                  style={{ background: "#15151f" }}
+                  className="rounded px-1.5 py-1 select-none"
+                  style={{
+                    background: "#15151f",
+                    cursor: locked ? "default" : "grab",
+                  }}
                 >
                   <p className="truncate text-xs font-semibold" title={player.full_name}>
                     {player.full_name.split(" ").pop()}
@@ -180,7 +205,7 @@ export default function DragDropLineup({
                 </p>
               )}
 
-              {player && (
+              {player && !locked && (
                 <button
                   onClick={() => setAssignments((prev) => ({ ...prev, [slot]: "" }))}
                   className="absolute right-1 top-1 text-xs leading-none"
@@ -197,7 +222,7 @@ export default function DragDropLineup({
 
       {/* Bench drop zone */}
       <div
-        onDragOver={(e) => { e.preventDefault(); setOverBench(true); }}
+        onDragOver={(e) => { if (!locked) { e.preventDefault(); setOverBench(true); } }}
         onDragLeave={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node)) setOverBench(false);
         }}
@@ -220,11 +245,15 @@ export default function DragDropLineup({
             {benchPlayers.map((p) => (
               <div
                 key={p.player_id}
-                draggable
+                draggable={!locked}
                 onDragStart={() => onDragStart(p.player_id, "bench")}
                 onDragEnd={onDragEnd}
-                className="cursor-grab select-none rounded-full px-3 py-1 text-xs font-semibold active:cursor-grabbing"
-                style={{ background: "#1c1c2b", color: "#f4f4f8" }}
+                className="select-none rounded-full px-3 py-1 text-xs font-semibold"
+                style={{
+                  background: "#1c1c2b",
+                  color: "#f4f4f8",
+                  cursor: locked ? "default" : "grab",
+                }}
                 title={p.full_name + " (" + p.position + ")"}
               >
                 {p.full_name.split(" ").pop()}{" "}
@@ -235,29 +264,31 @@ export default function DragDropLineup({
         )}
       </div>
 
-      {/* Hidden form + save button */}
-      <form action={handleSave} className="flex items-center gap-3">
-        <input type="hidden" name="leagueId" value={leagueId} />
-        <input type="hidden" name="week"     value={week} />
-        {Object.entries(assignments)
-          .filter(([, pid]) => pid !== "")
-          .map(([slot, pid]) => (
-            <input key={slot} type="hidden" name={"slot_" + slot} value={pid} />
-          ))}
-        <button
-          type="submit"
-          disabled={filledCount === 0}
-          className="rounded-md px-5 py-2 text-sm font-semibold disabled:opacity-40"
-          style={{ background: "#FFD700", color: "#0d0d1a" }}
-        >
-          Save Lineup
-        </button>
-        {filledCount < slots.length && (
-          <span className="text-xs" style={{ color: "#8a8a9a" }}>
-            {slots.length - filledCount} slot{slots.length - filledCount !== 1 ? "s" : ""}{" "}empty &mdash; those score 0
-          </span>
-        )}
-      </form>
+      {/* Save button — hidden when locked */}
+      {!locked && (
+        <form action={handleSave} className="flex items-center gap-3">
+          <input type="hidden" name="leagueId" value={leagueId} />
+          <input type="hidden" name="week"     value={week} />
+          {Object.entries(assignments)
+            .filter(([, pid]) => pid !== "")
+            .map(([slot, pid]) => (
+              <input key={slot} type="hidden" name={"slot_" + slot} value={pid} />
+            ))}
+          <button
+            type="submit"
+            disabled={filledCount === 0}
+            className="rounded-md px-5 py-2 text-sm font-semibold disabled:opacity-40"
+            style={{ background: "#FFD700", color: "#0d0d1a" }}
+          >
+            Save Lineup
+          </button>
+          {filledCount < slots.length && (
+            <span className="text-xs" style={{ color: "#8a8a9a" }}>
+              {slots.length - filledCount} slot{slots.length - filledCount !== 1 ? "s" : ""}{" "}empty &mdash; those score 0
+            </span>
+          )}
+        </form>
+      )}
     </section>
   );
 }
