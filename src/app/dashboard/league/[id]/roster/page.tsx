@@ -649,4 +649,13 @@ export default async function RosterPage({
                     {item.title}
                   </a>
                 ))}
-                <p className="text-xs" style={{ color: "#3a3a50" }}>So
+                <p className="text-xs" style={{ color: "#3a3a50" }}>Source: ESPN NFL headlines</p>
+              </div>
+            )}
+          </section>
+
+        </div>
+      </main>
+    </div>
+  );
+}
