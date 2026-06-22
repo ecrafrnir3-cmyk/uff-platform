@@ -1,15 +1,16 @@
 // Returns the current NFL week (1-18) based on the 2026 season start date.
+// Week 1 opens Thursday Sep 9, 2026 (confirmed via ESPN API).
 export function getCurrentNFLWeek(): number {
-  const start = new Date("2026-09-03");
+  const start = new Date("2026-09-09");
   const diff  = Math.floor((Date.now() - start.getTime()) / (7 * 86400000));
   return Math.min(Math.max(diff + 1, 1), 18);
 }
 
-// Week N locks at the Thursday night kickoff (8:20 PM ET = 00:20 UTC Friday).
-// For weeks without a Thursday game this is still a safe cutoff.
+// Fallback whole-week lock time (used when uff_game_schedule is not yet seeded).
+// Per-player locks via uff_game_schedule take precedence when available.
+// Week 1 Thursday opener: 2026-09-09 20:20 ET = 2026-09-10T00:20:00Z
 export function getWeekLockTime(week: number): Date {
-  // Week 1 Thursday: 2026-09-03 20:20 ET = 2026-09-04 00:20 UTC
-  const WEEK1_LOCK_UTC = new Date("2026-09-04T00:20:00Z");
+  const WEEK1_LOCK_UTC = new Date("2026-09-10T00:20:00Z");
   return new Date(WEEK1_LOCK_UTC.getTime() + (week - 1) * 7 * 24 * 60 * 60 * 1000);
 }
 

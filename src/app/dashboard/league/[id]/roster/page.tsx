@@ -7,6 +7,8 @@ import DragDropLineup from "./DragDropLineup";
 import PlayerPhoto from "./PlayerPhoto";
 import { getCurrentNFLWeek, isLineupLocked, getWeekLockTime } from "@/lib/nfl-utils";
 
+interface GameScheduleRow { team: string; kickoff_utc: string; }
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface RosterRow {
   id: string;
@@ -214,6 +216,7 @@ export default async function RosterPage({
     { data: chips },
     { data: negatedPlayers },
     news,
+    { data: gameScheduleRows },
   ] = await Promise.all([
     supabase
       .from("uff_roster_players")
@@ -254,6 +257,12 @@ export default async function RosterPage({
       .is("restored_at", null)
       .returns<NegatedPlayerRow[]>(),
     getNflNews(),
+    supabase
+      .from("uff_game_schedule")
+      .select("team, kickoff_utc")
+      .eq("season", 2026)
+      .eq("week", week)
+      .returns<GameScheduleRow[]>(),
   ]);
 
 
@@ -334,6 +343,10 @@ export default async function RosterPage({
   for (const [pid, s] of Object.entries(statsMap)) {
     if (s.pts_ppr) seasonPtsMap[pid] = s.pts_ppr;
   }
+
+  // Build team → kickoff map for per-player lock UI (empty until seed-schedule.mjs is run)
+  const gameTimes: Record<string, string> = {};
+  for (const g of gameScheduleRows ?? []) gameTimes[g.team] = g.kickoff_utc;
 
   const factionAccent = me.faction === "hero" ? HERO_COLOR : me.faction === "villain" ? VILLAIN_COLOR : "#2a2a40";
 
@@ -418,6 +431,7 @@ export default async function RosterPage({
             locked={isLineupLocked(week)}
             lockTime={getWeekLockTime(week).toISOString()}
             seasonPts={seasonPtsMap}
+            gameTimes={Object.keys(gameTimes).length > 0 ? gameTimes : undefined}
           />
         )}
 

@@ -1,5 +1,37 @@
 # 🚀 UFF Handoff Brief
 
+## ✅ Session update — 2026-06-22 (audit + Yahoo-quality redesign + headshots)
+
+**Shipped this session:**
+
+Full platform audit, competitive benchmarking vs Yahoo/Sleeper/ESPN, and Yahoo-quality redesign deployed (commit `9f6b069`).
+
+**Changes shipped:**
+- **`DragDropLineup.tsx`** — full rewrite. Yahoo-style full-width slot rows: badge | photo | name+pos·team | pts | remove. `PlayerAvatar` client component with Sleeper CDN headshots + initials fallback. Auto-fill button. Green "✓ Lineup complete" save bar. Red lock banner.
+- **`PlayerPhoto.tsx`** — new `"use client"` component for server-side use; DEF/DST shows letter fallback.
+- **`roster/page.tsx`** — headshots in roster table, simplified from 13 → 4 columns (Player, Slot, 2024 Pts, Actions), `seasonPts` + `team` passed to DragDropLineup.
+- **`FreeAgents.tsx`** — bug fix: `Week {new Date().toLocaleDateString()}` → `Week {week}`. Headshots added inline.
+- **`free-agents/page.tsx`** — `week` prop wired through.
+
+**Key technical notes:**
+- Sleeper CDN headshots free at `sleepercdn.com/content/nfl/players/thumb/{player_id}.jpg` — confirmed `players.id` = Sleeper player ID (zero DB changes).
+- DEF/DST: Sleeper uses team abbreviations as player IDs — no individual headshot URL. Show letter fallback.
+- Server components can't use `onError` — extracted `PlayerPhoto.tsx` as `"use client"` component.
+- `npx tsc --noEmit` → zero errors after all changes.
+
+**Critical next items:**
+1. **Lineup lock DB enforcement** — `isLineupLocked()` exists in `nfl-utils.ts` but not wired to block saves in `set_lineup` RPC; critical before Week 1
+2. **Suspense streaming on roster page** — N Sleeper calls still block render; wrap stats in `<Suspense>`
+3. **Settings presets bug** — Half PPR / Standard only update `rec` field, not full scoring config
+4. **ESPN per-player news** — decision pending
+
+**NTFS write rule (CRITICAL — all future sessions):**
+Never use Edit/Write tools or bash heredocs. Always use a Python script file via bash.
+
+*Last updated: 2026-06-22*
+
+
+
 ## ✅ Session update — 2026-06-22 (trade tool shipped)
 
 **Shipped this session:**

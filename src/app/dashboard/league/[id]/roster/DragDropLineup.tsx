@@ -91,6 +91,7 @@ export default function DragDropLineup({
   locked,
   lockTime,
   seasonPts,
+  gameTimes,
 }: {
   leagueId: string;
   week: number;
@@ -100,6 +101,7 @@ export default function DragDropLineup({
   locked: boolean;
   lockTime: string;
   seasonPts?: Record<string, number>;
+  gameTimes?: Record<string, string>; // team abbr → ISO kickoff UTC
 }) {
   const [assignments, setAssignments] = useState<Record<string, string>>(currentLineup);
   const [draggedId,   setDraggedId]   = useState<string | null>(null);
@@ -107,6 +109,14 @@ export default function DragDropLineup({
   const [overSlot,    setOverSlot]    = useState<string | null>(null);
   const [overBench,   setOverBench]   = useState(false);
   const [invalidSlot, setInvalidSlot] = useState<string | null>(null);
+
+  // ── Per-player lock: game has started for this player's team ────────────────
+  function isPlayerLocked(player: RosterPlayer): boolean {
+    if (locked) return true; // global lock overrides
+    if (!gameTimes || !player.team) return false;
+    const kickoff = gameTimes[player.team];
+    return kickoff ? Date.now() >= new Date(kickoff).getTime() : false;
+  }
 
   const assignedIds = new Set(
     Object.entries(assignments).filter(([, v]) => v !== "").map(([, v]) => v)
@@ -119,7 +129,8 @@ export default function DragDropLineup({
   }
 
   function onDragStart(pid: string, src: string) {
-    if (locked) return;
+    const player = activeRoster.find((p) => p.player_id === pid);
+    if (!player || isPlayerLocked(player)) return; // per-player lock
     setDraggedId(pid);
     setDragSource(src);
   }
@@ -133,7 +144,7 @@ export default function DragDropLineup({
   }
 
   function dropOnSlot(slot: string) {
-    if (!draggedId || locked) return;
+    if (!draggedId) return;
     if (!eligible(draggedId, slot)) {
       setInvalidSlot(slot);
       setTimeout(() => setInvalidSlot(null), 600);
@@ -143,7 +154,13 @@ export default function DragDropLineup({
     setAssignments((prev) => {
       const next = { ...prev };
       const displaced = next[slot];
-      if (dragSource && dragSource !== "bench") next[dragSource] = displaced ?? "";
+      // Don't displace into bench if displaced player is locked
+      if (dragSource && dragSource !== "bench") {
+        const displacedPlayer = displaced ? activeRoster.find((p) => p.player_id === displaced) : null;
+        if (!displacedPlayer || !isPlayerLocked(displacedPlayer)) {
+          next[dragSource] = displaced ?? "";
+        }
+      }
       next[slot] = draggedId!;
       return next;
     });
@@ -151,7 +168,7 @@ export default function DragDropLineup({
   }
 
   function dropOnBench() {
-    if (!draggedId || !dragSource || dragSource === "bench" || locked) return;
+    if (!draggedId || !dragSource || dragSource === "bench") return;
     setAssignments((prev) => ({ ...prev, [dragSource!]: "" }));
     setOverBench(false);
   }
@@ -165,7 +182,10 @@ export default function DragDropLineup({
         if (next[slot]) continue;
         const base = slotBase(slot);
         const eligiblePos = SLOT_ELIGIBLE[base] ?? [];
+        // Prefer unlocked players for auto-fill
         const candidate = activeRoster.find(
+          (p) => eligiblePos.includes(p.position) && !usedIds.has(p.player_id) && !isPlayerLocked(p)
+        ) ?? activeRoster.find(
           (p) => eligiblePos.includes(p.position) && !usedIds.has(p.player_id)
         );
         if (candidate) {
@@ -186,6 +206,21 @@ export default function DragDropLineup({
     hour: "numeric", minute: "2-digit", timeZoneName: "short",
     timeZone: "America/New_York",
   });
+
+  // Find the earliest upcoming kickoff to show in hint bar
+  const nextKickoff = gameTimes
+    ? Object.values(gameTimes)
+        .map((t) => new Date(t))
+        .filter((d) => d.getTime() > Date.now())
+        .sort((a, b) => a.getTime() - b.getTime())[0]
+    : null;
+
+  const nextKickoffDisplay = nextKickoff
+    ? nextKickoff.toLocaleString("en-US", {
+        weekday: "short", hour: "numeric", minute: "2-digit",
+        timeZoneName: "short", timeZone: "America/New_York",
+      })
+    : null;
 
   async function handleSave(fd: FormData) {
     await setLineup(fd);
@@ -233,13 +268,17 @@ export default function DragDropLineup({
         </div>
       </div>
 
-      {/* Hint / lock bar */}
+      {/* Hint bar */}
       {!locked ? (
         <div
           className="px-4 py-1.5 text-xs"
           style={{ background: "#0f0f1c", color: "#5a5a7a", borderBottom: "1px solid #1a1a2e" }}
         >
-          Drag players into slots &middot; Drop onto Bench to remove &middot; Locks {lockDisplay}
+          {gameTimes
+            ? nextKickoffDisplay
+              ? <>Drag players into slots &middot; Players lock at kickoff &middot; First game: <span style={{ color: "#8a8a9a" }}>{nextKickoffDisplay}</span></>
+              : "Drag players into slots · Players lock individually at their game time"
+            : `Drag players into slots · Drop onto Bench to remove · Locks ${lockDisplay}`}
         </div>
       ) : (
         <div
@@ -257,15 +296,16 @@ export default function DragDropLineup({
           const player = pid ? activeRoster.find((p) => p.player_id === pid) : null;
           const base   = slotBase(slot);
           const posColor  = POS_COLOR[base] ?? "#8a8a9a";
-          const isOver    = !locked && overSlot === slot;
+          const isOver    = overSlot === slot;
           const isInvalid = invalidSlot === slot;
           const dropOk    = draggedId ? eligible(draggedId, slot) : true;
           const pts       = player ? (seasonPts?.[player.player_id] ?? null) : null;
+          const playerLocked = player ? isPlayerLocked(player) : false;
 
           return (
             <div
               key={slot}
-              onDragOver={(e) => { if (!locked) { e.preventDefault(); setOverSlot(slot); } }}
+              onDragOver={(e) => { if (!playerLocked) { e.preventDefault(); setOverSlot(slot); } }}
               onDragLeave={(e) => {
                 if (!e.currentTarget.contains(e.relatedTarget as Node)) setOverSlot(null);
               }}
@@ -299,14 +339,14 @@ export default function DragDropLineup({
               {/* Player card or empty drop zone */}
               {player ? (
                 <div
-                  draggable={!locked}
+                  draggable={!playerLocked}
                   onDragStart={() => onDragStart(player.player_id, slot)}
                   onDragEnd={onDragEnd}
                   className="flex flex-1 items-center gap-3 rounded-lg px-2 py-1.5"
                   style={{
-                    cursor: locked ? "default" : "grab",
-                    background: "#13132b",
-                    border: "1px solid #2a2a40",
+                    cursor: playerLocked ? "default" : "grab",
+                    background: playerLocked ? "#0f0f1e" : "#13132b",
+                    border: `1px solid ${playerLocked ? "#3a1a1a" : "#2a2a40"}`,
                     userSelect: "none",
                   }}
                 >
@@ -317,7 +357,7 @@ export default function DragDropLineup({
                     size={38}
                   />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate" style={{ color: "#f4f4f8" }}>
+                    <p className="text-sm font-semibold truncate" style={{ color: playerLocked ? "#9a9aaa" : "#f4f4f8" }}>
                       {player.full_name}
                     </p>
                     <p className="text-xs truncate" style={{ color: "#8a8a9a" }}>
@@ -333,7 +373,16 @@ export default function DragDropLineup({
                       <p className="text-xs" style={{ color: "#5a5a7a" }}>pts</p>
                     </div>
                   )}
-                  {!locked && (
+                  {/* Lock icon when game started, × button when moveable */}
+                  {playerLocked ? (
+                    <span
+                      className="flex-shrink-0 text-sm"
+                      title={`${player.team ?? "Game"} has kicked off — this player is locked`}
+                      style={{ color: VILLAIN_COLOR + "aa", paddingRight: 2 }}
+                    >
+                      &#128274;
+                    </span>
+                  ) : (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -373,7 +422,7 @@ export default function DragDropLineup({
 
       {/* Bench drop zone */}
       <div
-        onDragOver={(e) => { if (!locked) { e.preventDefault(); setOverBench(true); } }}
+        onDragOver={(e) => { e.preventDefault(); setOverBench(true); }}
         onDragLeave={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node)) setOverBench(false);
         }}
@@ -403,18 +452,20 @@ export default function DragDropLineup({
             {benchPlayers.map((p, i) => {
               const posColor = POS_COLOR[p.position] ?? "#8a8a9a";
               const pts = seasonPts?.[p.player_id] ?? null;
+              const playerLocked = isPlayerLocked(p);
               return (
                 <div
                   key={p.player_id}
-                  draggable={!locked}
+                  draggable={!playerLocked}
                   onDragStart={() => onDragStart(p.player_id, "bench")}
                   onDragEnd={onDragEnd}
                   className="flex items-center gap-3 px-3 py-2"
                   style={{
                     borderBottom: i < benchPlayers.length - 1 ? "1px solid #1a1a2e" : undefined,
-                    cursor: locked ? "default" : "grab",
+                    cursor: playerLocked ? "default" : "grab",
                     userSelect: "none",
                     minHeight: 54,
+                    opacity: playerLocked ? 0.65 : 1,
                   }}
                 >
                   <div
@@ -446,6 +497,15 @@ export default function DragDropLineup({
                     <p className="text-sm tabular-nums flex-shrink-0 pr-1" style={{ color: "#5a5a7a" }}>
                       {pts.toFixed(1)}
                     </p>
+                  )}
+                  {playerLocked && (
+                    <span
+                      className="flex-shrink-0 text-xs"
+                      title={`${p.team ?? "Game"} has kicked off`}
+                      style={{ color: VILLAIN_COLOR + "99", paddingRight: 4 }}
+                    >
+                      &#128274;
+                    </span>
                   )}
                 </div>
               );
