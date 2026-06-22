@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { dropPlayer, moveToIR, moveFromIR, useRestoreChip } from "../player-actions";
 import { respondToTrade, cancelTrade } from "../trade-actions";
 import DragDropLineup from "./DragDropLineup";
+import PlayerPhoto from "./PlayerPhoto";
 import { getCurrentNFLWeek, isLineupLocked, getWeekLockTime } from "@/lib/nfl-utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -326,7 +327,13 @@ export default async function RosterPage({
       player_id: r.player_id,
       full_name: r.players!.full_name,
       position:  r.players!.position!,
+    team:      r.players!.team ?? undefined,
     }));
+
+  const seasonPtsMap: Record<string, number> = {};
+  for (const [pid, s] of Object.entries(statsMap)) {
+    if (s.pts_ppr) seasonPtsMap[pid] = s.pts_ppr;
+  }
 
   const factionAccent = me.faction === "hero" ? HERO_COLOR : me.faction === "villain" ? VILLAIN_COLOR : "#2a2a40";
 
@@ -410,6 +417,7 @@ export default async function RosterPage({
             currentLineup={currentLineup}
             locked={isLineupLocked(week)}
             lockTime={getWeekLockTime(week).toISOString()}
+            seasonPts={seasonPtsMap}
           />
         )}
 
@@ -537,19 +545,9 @@ export default async function RosterPage({
               <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ background: "#15151f", color: "#8a8a9a" }}>
-                    <th className="px-3 py-2 text-left font-semibold uppercase tracking-wider text-xs" style={{ minWidth: 180 }}>Player</th>
+                    <th className="px-3 py-2 text-left font-semibold uppercase tracking-wider text-xs">Player</th>
                     <th className="px-2 py-2 text-center text-xs">Slot</th>
-                    <th className="px-2 py-2 text-right text-xs" title="2024 Fantasy Pts (PPR)">Pts</th>
-                    <th className="px-2 py-2 text-right text-xs" title="Pass Yards">PaYd</th>
-                    <th className="px-2 py-2 text-right text-xs" title="Pass TDs">PaTD</th>
-                    <th className="px-2 py-2 text-right text-xs" title="Interceptions">INT</th>
-                    <th className="px-2 py-2 text-right text-xs" title="Rush Attempts">RuAtt</th>
-                    <th className="px-2 py-2 text-right text-xs" title="Rush Yards">RuYd</th>
-                    <th className="px-2 py-2 text-right text-xs" title="Rush TDs">RuTD</th>
-                    <th className="px-2 py-2 text-right text-xs" title="Targets">Tgt</th>
-                    <th className="px-2 py-2 text-right text-xs" title="Receptions">Rec</th>
-                    <th className="px-2 py-2 text-right text-xs" title="Receiving Yards">ReYd</th>
-                    <th className="px-2 py-2 text-right text-xs" title="Receiving TDs">ReTD</th>
+                    <th className="px-2 py-2 text-right text-xs" title="2024 Season Fantasy Pts (PPR)">2024 Pts</th>
                     <th className="px-2 py-2 text-xs"></th>
                   </tr>
                 </thead>
@@ -575,6 +573,7 @@ export default async function RosterPage({
                         {/* Player info */}
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-2">
+                            <PlayerPhoto playerId={r.player_id} size={30} position={player?.position ?? null} />
                             <PosBadge position={player?.position ?? null} />
                             <div className="min-w-0">
                               <p className="font-semibold truncate">{player?.full_name ?? r.player_id}</p>
@@ -602,17 +601,7 @@ export default async function RosterPage({
                           </span>
                         </td>
                         {/* Stats */}
-                        <td className="px-2 py-2 text-right font-semibold" style={{ color: "#f4f4f8" }}>{fmt(s.pts_ppr, 1)}</td>
-                        <td className="px-2 py-2 text-right" style={{ color: "#8a8a9a" }}>{fmt(s.pass_yd)}</td>
-                        <td className="px-2 py-2 text-right" style={{ color: "#8a8a9a" }}>{fmt(s.pass_td)}</td>
-                        <td className="px-2 py-2 text-right" style={{ color: "#8a8a9a" }}>{fmt(s.pass_int)}</td>
-                        <td className="px-2 py-2 text-right" style={{ color: "#8a8a9a" }}>{fmt(s.rush_att)}</td>
-                        <td className="px-2 py-2 text-right" style={{ color: "#8a8a9a" }}>{fmt(s.rush_yd)}</td>
-                        <td className="px-2 py-2 text-right" style={{ color: "#8a8a9a" }}>{fmt(s.rush_td)}</td>
-                        <td className="px-2 py-2 text-right" style={{ color: "#8a8a9a" }}>{fmt(s.rec_tgt)}</td>
-                        <td className="px-2 py-2 text-right" style={{ color: "#8a8a9a" }}>{fmt(s.rec)}</td>
-                        <td className="px-2 py-2 text-right" style={{ color: "#8a8a9a" }}>{fmt(s.rec_yd)}</td>
-                        <td className="px-2 py-2 text-right" style={{ color: "#8a8a9a" }}>{fmt(s.rec_td)}</td>
+                        <td className="px-2 py-2 text-right font-bold tabular-nums" style={{ color: "#FFD700" }}>{fmt(s.pts_ppr, 1)}</td>
                         {/* Actions */}
                         <td className="px-2 py-2">
                           <div className="flex items-center gap-1">
@@ -647,7 +636,7 @@ export default async function RosterPage({
             </div>
           )}
           <p className="text-xs" style={{ color: "#3a3a50" }}>
-            Stats shown are 2024 regular-season totals (PPR). Live scoring begins Week 1, 2026.
+            2024 PPR season totals (via Sleeper). Live scoring begins Week 1, 2026.
           </p>
         </section>
 

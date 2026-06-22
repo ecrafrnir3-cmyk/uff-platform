@@ -154,6 +154,7 @@ export default async function FreeAgentsPage({
           hasProjections={hasProjections}
           rosterFull={rosterFull}
           maxActive={league.draft_rounds}
+          week={week}
         />
       </main>
     </div>

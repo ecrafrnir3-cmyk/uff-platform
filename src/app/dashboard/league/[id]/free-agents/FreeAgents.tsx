@@ -32,6 +32,7 @@ export default function FreeAgents({
   hasProjections,
   rosterFull,
   maxActive,
+  week,
 }: {
   leagueId: string;
   rosteredIds: string[];
@@ -39,6 +40,7 @@ export default function FreeAgents({
   hasProjections: boolean;
   rosterFull: boolean;
   maxActive: number;
+  week: number;
 }) {
   const [search, setSearch] = useState("");
   const [posFilter, setPosFilter] = useState("ALL");
@@ -114,7 +116,7 @@ export default function FreeAgents({
           ))}
         </div>
         {hasProjections && (
-          <p className="text-xs" style={{ color: "#8a8a9a" }}>Ranked by projected points · Week {new Date().toLocaleDateString()}</p>
+          <p className="text-xs" style={{ color: "#8a8a9a" }}>Ranked by projected points · Week {week}</p>
         )}
         {!hasProjections && (
           <p className="text-xs" style={{ color: "#8a8a9a" }}>Ranked by ADP · Projections available once the season starts</p>
@@ -150,6 +152,15 @@ export default function FreeAgents({
               <span className="w-6 text-right text-xs shrink-0" style={{ color: "#8a8a9a" }}>{idx + 1}</span>
 
               {/* Player info */}
+              {p.position !== "DEF" && p.position !== "DST" && (
+                <img
+                  src={`https://sleepercdn.com/content/nfl/players/thumb/${p.id}.jpg`}
+                  alt=""
+                  width={32} height={32}
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden"; }}
+                  style={{ borderRadius: "50%", objectFit: "cover", flexShrink: 0, width: 32, height: 32, background: "#1c1c2b" }}
+                />
+              )}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold truncate">{p.full_name}</p>
                 <p className="text-xs text-zinc-500">

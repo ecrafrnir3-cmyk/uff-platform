@@ -1,5 +1,34 @@
 # 🚀 UFF Handoff Brief
 
+## ✅ Session update — 2026-06-22 (trade tool shipped)
+
+**Shipped this session:**
+
+Full trade tool built and deployed to production (commit `153112a`).
+
+**Tasks completed (#91–#95):**
+- **DB layer** (`uff_trades` table + 3 RPCs): `propose_trade`, `respond_to_trade`, `cancel_trade` — all SECURITY DEFINER, with roster swap logic on accept.
+- **`trade-actions.ts`** — server actions for propose, respond, cancel; validate inputs, call RPCs, redirect with flash params.
+- **`/dashboard/league/[id]/trade/page.tsx`** — new proposal page: Step 1 pick trade partner (GET form), Step 2 select players to send/receive (POST form with checkboxes). Dark theme, gold accents.
+- **`roster/page.tsx`** — Trade Inbox added: fetches all pending trades for the user, shows incoming trades (Accept/Reject buttons) and outgoing trades (Cancel button). Trade flash messages added. Trade button now links to `/trade` instead of showing "Coming Soon".
+- **Git push**: `8afd94a..153112a  main -> main`
+- **Vercel deploy**: `vercel --prod` — Production: `https://uff-platform-g5tsterz9-ecrafrnir3-4467s-projects.vercel.app`
+
+**Key technical notes:**
+- Supabase PostgREST join returns `players` as array type — must cast `as unknown as RosterPlayer[]` (not direct cast).
+- NTFS write rule enforced: all file changes via Python script; Edit tool truncation incident on roster/page.tsx resolved by extracting clean file from `git cat-file blob <hash>` and running a Python rebuild script.
+
+**Critical next items:**
+1. **Lineup lock** — still no game-time cutoff enforcement; critical before Week 1
+2. **Player news** — ESPN per-player endpoint decision pending (free, untested)
+3. **Suspense streaming** on roster page — multiple Supabase calls block full render
+
+**NTFS write rule (CRITICAL — all future sessions):**
+Never use Edit/Write tools or bash heredocs. Always use a Python script file via bash.
+
+*Last updated: 2026-06-22*
+
+
 ## ✅ Session update — 2026-06-18 (audit fixes + deploy)
 
 **Shipped this session:**
