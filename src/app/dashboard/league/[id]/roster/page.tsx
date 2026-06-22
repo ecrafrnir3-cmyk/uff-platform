@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { dropPlayer, moveToIR, moveFromIR, useRestoreChip } from "../player-actions";
+import { respondToTrade, cancelTrade } from "../trade-actions";
 import DragDropLineup from "./DragDropLineup";
 import { getCurrentNFLWeek, isLineupLocked, getWeekLockTime } from "@/lib/nfl-utils";
 
@@ -38,6 +39,15 @@ interface PlayerStats {
   pass_yd?: number; pass_td?: number; pass_int?: number;
   rush_att?: number; rush_yd?: number; rush_td?: number;
   rec_tgt?: number; rec?: number; rec_yd?: number; rec_td?: number;
+}
+interface TradeRow {
+  id: string;
+  proposer_id: string;
+  receiver_id: string;
+  proposer_player_ids: string[];
+  receiver_player_ids: string[];
+  status: string;
+  created_at: string;
 }
 interface DraftPickRow {
   id: string; round: number; pick_no: number; picked_at: string;
@@ -167,10 +177,10 @@ export default async function RosterPage({
   searchParams,
 }: {
   params:       Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; dropped?: string; ir?: string; lineup?: string; restored?: string }>;
+  searchParams: Promise<{ error?: string; dropped?: string; ir?: string; lineup?: string; restored?: string; trade?: string }>;
 }) {
   const { id: leagueId } = await params;
-  const { error, dropped, ir, lineup: lineupSaved, restored } = await searchParams;
+  const { error, dropped, ir, lineup: lineupSaved, restored, trade: tradeMsg } = await searchParams;
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -245,6 +255,34 @@ export default async function RosterPage({
     getNflNews(),
   ]);
 
+
+  // ── Pending trades ────────────────────────────────────────────
+  const { data: tradeRows } = await supabase
+    .from("uff_trades")
+    .select("id, proposer_id, receiver_id, proposer_player_ids, receiver_player_ids, status, created_at")
+    .eq("league_id", leagueId)
+    .eq("status", "pending")
+    .or(`proposer_id.eq.${me.id},receiver_id.eq.${me.id}`)
+    .returns<TradeRow[]>();
+
+  const pendingTrades = tradeRows ?? [];
+  let tradePlayerNames: Record<string, string> = {};
+  let tradeMemberNames: Record<string, string> = {};
+
+  if (pendingTrades.length > 0) {
+    const allTradePlayerIds = [...new Set(pendingTrades.flatMap(t => [...t.proposer_player_ids, ...t.receiver_player_ids]))];
+    const allTradeMemberIds = [...new Set(pendingTrades.flatMap(t => [t.proposer_id, t.receiver_id]).filter(id => id !== me.id))];
+    const [{ data: tradePlayers }, { data: tradeMembers }] = await Promise.all([
+      supabase.from("players").select("id, full_name").in("id", allTradePlayerIds).returns<{ id: string; full_name: string }[]>(),
+      supabase.from("league_members").select("id, team_name").in("id", allTradeMemberIds).returns<{ id: string; team_name: string }[]>(),
+    ]);
+    for (const p of (tradePlayers ?? [])) tradePlayerNames[p.id] = p.full_name;
+    for (const m of (tradeMembers ?? [])) tradeMemberNames[m.id] = m.team_name;
+  }
+
+  const incomingTrades = pendingTrades.filter(t => t.receiver_id === me.id);
+  const outgoingTrades = pendingTrades.filter(t => t.proposer_id === me.id);
+
   // Sort roster by position
   const teamFaction = new Map((teams ?? []).map((t) => [t.abbr, t.faction]));
   const allRoster = (roster ?? []).slice().sort((a, b) => {
@@ -312,6 +350,10 @@ export default async function RosterPage({
         {ir      && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: HERO_COLOR, color: "#6fa3ff", background: "#0a0e1a" }}>Player moved to IR.</p>}
         {lineupSaved && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#3DDC84", color: "#3DDC84", background: "#0e1a12" }}>Lineup saved for Week {week}.</p>}
         {restored && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: HERO_COLOR, color: "#8ab4ff", background: "#0a0e1a" }}>Power Restore Chip used &mdash; scoring restored!</p>}
+        {tradeMsg === "proposed"  && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#FFD700", color: "#FFD700", background: "#1a1a0e" }}>Trade offer sent!</p>}
+        {tradeMsg === "accepted"  && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#3DDC84", color: "#3DDC84", background: "#0e1a12" }}>Trade accepted &mdash; rosters updated!</p>}
+        {tradeMsg === "rejected"  && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#8a8a9a", color: "#8a8a9a", background: "#13131f" }}>Trade rejected.</p>}
+        {tradeMsg === "cancelled" && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#8a8a9a", color: "#8a8a9a", background: "#13131f" }}>Trade offer cancelled.</p>}
 
         {/* ── Team header ── */}
         <div className="overflow-hidden rounded-xl border" style={{ borderColor: "#2a2a40" }}>
@@ -347,13 +389,13 @@ export default async function RosterPage({
               >
                 Manage IR
               </a>
-              <span
-                className="rounded-md px-4 py-2 text-sm font-semibold opacity-40 cursor-not-allowed"
+              <Link
+                href={`/dashboard/league/${leagueId}/trade`}
+                className="rounded-md px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-80"
                 style={{ background: "#1c1c2b", color: "#f4f4f8", border: "1px solid #2a2a40" }}
-                title="Coming soon"
               >
                 Trade
-              </span>
+              </Link>
             </div>
           </div>
         </div>
@@ -369,6 +411,109 @@ export default async function RosterPage({
             locked={isLineupLocked(week)}
             lockTime={getWeekLockTime(week).toISOString()}
           />
+        )}
+
+
+        {/* ── Trade Inbox ── */}
+        {(incomingTrades.length > 0 || outgoingTrades.length > 0) && (
+          <section className="flex flex-col gap-3">
+            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>
+              Trade Inbox
+            </h2>
+
+            {incomingTrades.length > 0 && (
+              <div className="flex flex-col gap-3">
+                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8a8a9a" }}>Incoming offers</p>
+                {incomingTrades.map((t) => (
+                  <div key={t.id} className="rounded-xl border p-4" style={{ borderColor: "#2a2a40", background: "#13132b" }}>
+                    <p className="text-sm font-bold mb-2" style={{ color: "#f4f4f8" }}>
+                      {tradeMemberNames[t.proposer_id] ?? "A team"} wants to trade
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3 text-sm">
+                      <div>
+                        <p className="text-xs font-semibold uppercase mb-1" style={{ color: "#8a8a9a" }}>They send</p>
+                        <ul className="flex flex-col gap-0.5">
+                          {t.proposer_player_ids.map(pid => (
+                            <li key={pid} style={{ color: "#3DDC84" }}>{tradePlayerNames[pid] ?? pid}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase mb-1" style={{ color: "#8a8a9a" }}>You send</p>
+                        <ul className="flex flex-col gap-0.5">
+                          {t.receiver_player_ids.map(pid => (
+                            <li key={pid} style={{ color: "#FF6B35" }}>{tradePlayerNames[pid] ?? pid}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <form action={respondToTrade}>
+                        <input type="hidden" name="leagueId" value={leagueId} />
+                        <input type="hidden" name="tradeId" value={t.id} />
+                        <input type="hidden" name="accept" value="true" />
+                        <button type="submit"
+                          className="rounded-md px-4 py-1.5 text-xs font-bold transition-opacity hover:opacity-90"
+                          style={{ background: "#3DDC84", color: "#0d0d1a" }}>
+                          Accept
+                        </button>
+                      </form>
+                      <form action={respondToTrade}>
+                        <input type="hidden" name="leagueId" value={leagueId} />
+                        <input type="hidden" name="tradeId" value={t.id} />
+                        <input type="hidden" name="accept" value="false" />
+                        <button type="submit"
+                          className="rounded-md px-4 py-1.5 text-xs font-bold transition-opacity hover:opacity-90"
+                          style={{ background: "#1c1c2b", color: "#f4f4f8", border: "1px solid #2a2a40" }}>
+                          Reject
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {outgoingTrades.length > 0 && (
+              <div className="flex flex-col gap-3">
+                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8a8a9a" }}>Pending offers you sent</p>
+                {outgoingTrades.map((t) => (
+                  <div key={t.id} className="rounded-xl border p-4" style={{ borderColor: "#2a2a40", background: "#13132b" }}>
+                    <p className="text-sm font-bold mb-2" style={{ color: "#f4f4f8" }}>
+                      Offer to {tradeMemberNames[t.receiver_id] ?? "a team"}
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3 text-sm">
+                      <div>
+                        <p className="text-xs font-semibold uppercase mb-1" style={{ color: "#8a8a9a" }}>You send</p>
+                        <ul className="flex flex-col gap-0.5">
+                          {t.proposer_player_ids.map(pid => (
+                            <li key={pid} style={{ color: "#FF6B35" }}>{tradePlayerNames[pid] ?? pid}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase mb-1" style={{ color: "#8a8a9a" }}>You receive</p>
+                        <ul className="flex flex-col gap-0.5">
+                          {t.receiver_player_ids.map(pid => (
+                            <li key={pid} style={{ color: "#3DDC84" }}>{tradePlayerNames[pid] ?? pid}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                    <form action={cancelTrade}>
+                      <input type="hidden" name="leagueId" value={leagueId} />
+                      <input type="hidden" name="tradeId" value={t.id} />
+                      <button type="submit"
+                        className="rounded-md px-4 py-1.5 text-xs font-bold transition-opacity hover:opacity-90"
+                        style={{ background: "#1c1c2b", color: "#CC0000", border: "1px solid rgba(204,0,0,0.3)" }}>
+                        Cancel Offer
+                      </button>
+                    </form>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         )}
 
         {/* ── Active Roster Stats Table ── */}
