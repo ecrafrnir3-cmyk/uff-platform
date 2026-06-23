@@ -67,6 +67,19 @@ export default async function MatchupsPage({
   }
   const matchupPairs = [...pairMap.values()];
 
+  // Token assignments for this week (all members)
+  const memberIdsThisWeek = [...new Set((matchupRows ?? []).map(m => m.member_id))];
+  const { data: tokenRows } = memberIdsThisWeek.length > 0
+    ? await supabase
+        .from("weekly_token_assignments")
+        .select("member_id, token_id, status")
+        .in("member_id", memberIdsThisWeek)
+        .eq("week", viewWeek)
+    : { data: [] };
+
+  const tokenMap: Record<string, { tokenId: number; status: string }> = {};
+  for (const t of (tokenRows ?? [])) tokenMap[t.member_id] = { tokenId: t.token_id, status: t.status };
+
   // Available weeks (derived from existing matchup data)
   const { data: weekRows } = await supabase
     .from("uff_matchups")
@@ -144,6 +157,7 @@ export default async function MatchupsPage({
               week={viewWeek}
               matchupPairs={matchupPairs}
               myMemberId={me.id}
+              tokenMap={tokenMap}
             />
 
             {isCommissioner && !weekIsFinalized && (

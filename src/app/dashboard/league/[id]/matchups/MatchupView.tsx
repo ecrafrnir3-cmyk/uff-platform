@@ -182,4 +182,33 @@ export default function MatchupView({
 
           const aWins = a.is_complete && a.points > b.points;
           const bWins = b.is_complete && b.points > a.points;
-          const isMyMatchup = a.member_id === myM
+          const isMyMatchup = a.member_id === myMemberId || b.member_id === myMemberId;
+
+          return (
+            <div
+              key={a.matchup_id}
+              className="rounded-lg border p-4"
+              style={{ borderColor: isMyMatchup ? "#FFD700" : "#2a2a40", background: "#0d0d1a" }}
+            >
+              {isMyMatchup && (
+                <p className="mb-2 text-xs font-semibold uppercase tracking-widest" style={{ color: "#FFD700" }}>
+                  Your matchup
+                </p>
+              )}
+              <div className="flex items-stretch gap-3">
+                <ScoreCard row={a} isMe={a.member_id === myMemberId} isWinner={aWins} token={tokenMap[a.member_id]} />
+                <div className="flex flex-col items-center justify-center px-1">
+                  <span className="text-sm font-bold" style={{ color: "#8a8a9a" }}>vs</span>
+                </div>
+                <ScoreCard row={b} isMe={b.member_id === myMemberId} isWinner={bWins} token={tokenMap[b.member_id]} />
+              </div>
+              {a.is_complete && (
+                <p className="mt-2 text-center text-xs" style={{ color: "#8a8a9a" }}>Final</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

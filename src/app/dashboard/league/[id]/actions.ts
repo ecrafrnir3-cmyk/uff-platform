@@ -115,3 +115,45 @@ export async function randomizeFactions(formData: FormData) {
   revalidatePath(`/dashboard/league/${leagueId}`);
   redirect(`/dashboard/league/${leagueId}`);
 }
+
+/**
+ * Set the manager's choice for their weekly token (Position Power or Second Wind).
+ * Writes `choice` to weekly_token_assignments. Only valid while status = 'pending'.
+ */
+export async function setTokenChoice(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const leagueId = formData.get("leagueId") as string;
+  const week     = parseInt(formData.get("week") as string);
+  const choice   = formData.get("choice") as string;
+
+  if (!leagueId || !week || !choice) {
+    redirect(`/dashboard/league/${leagueId}/roster?error=` + encodeURIComponent("Invalid token choice."));
+  }
+
+  const { data: me } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!me) redirect(`/dashboard/league/${leagueId}/roster?error=` + encodeURIComponent("Not a member."));
+
+  const { error } = await supabase
+    .from("weekly_token_assignments")
+    .update({ choice })
+    .eq("league_id", leagueId)
+    .eq("member_id", me.id)
+    .eq("week", week)
+    .eq("status", "pending");
+
+  if (error) {
+    redirect(`/dashboard/league/${leagueId}/roster?error=` + encodeURIComponent(error.message));
+  }
+
+  revalidatePath(`/dashboard/league/${leagueId}/roster`);
+  redirect(`/dashboard/league/${leagueId}/roster`);
+}

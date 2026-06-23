@@ -25,6 +25,12 @@ export async function finalizeWeek(formData: FormData) {
     );
   }
 
+  // Mark this league's tokens as 'used' now that the week is finalized.
+  await supabase.rpc("mark_week_tokens_used", {
+    p_league_id: leagueId,
+    p_week: week,
+  });
+
   revalidatePath(`/dashboard/league/${leagueId}/matchups`);
   revalidatePath(`/dashboard/league/${leagueId}/standings`);
   redirect(`/dashboard/league/${leagueId}/matchups?week=${week}&saved=1`);

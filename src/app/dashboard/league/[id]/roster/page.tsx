@@ -7,6 +7,7 @@ import { respondToTrade, cancelTrade } from "../trade-actions";
 import DragDropLineup from "./DragDropLineup";
 import PlayerPhoto from "./PlayerPhoto";
 import RosterStatsTable from "./RosterStatsTable";
+import TokenChoicePicker from "./TokenChoicePicker";
 import { getCurrentNFLWeek, isLineupLocked, getWeekLockTime } from "@/lib/nfl-utils";
 
 interface GameScheduleRow { team: string; kickoff_utc: string; }
@@ -169,16 +170,25 @@ function WeeklyTokenCard({
   tokenId,
   status,
   choice,
+  leagueId,
+  week,
+  pastUsedTokenIds,
+  locked,
 }: {
   tokenId: number;
   status: string;
   choice: string | null;
+  leagueId: string;
+  week: number;
+  pastUsedTokenIds: number[];
+  locked: boolean;
 }) {
   const info = TOKEN_INFO[tokenId];
   if (!info) return null;
   const isUsed    = status === "used";
   const isExpired = status === "expired";
   const dimmed    = isUsed || isExpired;
+  const needsChoice = !dimmed && (tokenId === 7 || tokenId === 18);
   return (
     <div
       className="flex flex-col gap-1 rounded-xl border p-4"
@@ -217,6 +227,16 @@ function WeeklyTokenCard({
         )}
       </p>
       <p className="text-sm" style={{ color: "#8a8a9a" }}>{info.effect}</p>
+      {needsChoice && (
+        <TokenChoicePicker
+          leagueId={leagueId}
+          week={week}
+          tokenId={tokenId}
+          currentChoice={choice}
+          pastUsedTokenIds={pastUsedTokenIds}
+          locked={locked}
+        />
+      )}
     </div>
   );
 }
@@ -320,6 +340,7 @@ export default async function RosterPage({
     news,
     { data: gameScheduleRows },
     { data: weeklyToken },
+    { data: pastTokenRows },
   ] = await Promise.all([
     supabase
       .from("uff_roster_players")
@@ -373,6 +394,13 @@ export default async function RosterPage({
       .eq("member_id", me.id)
       .eq("week", week)
       .maybeSingle(),
+    // Past used tokens — needed for Second Wind (token 18) choice picker
+    supabase
+      .from("weekly_token_assignments")
+      .select("token_id")
+      .eq("league_id", leagueId)
+      .eq("member_id", me.id)
+      .eq("status", "used"),
   ]);
 
   // ── Pending trades ────────────────────────────────────────────
@@ -455,6 +483,7 @@ export default async function RosterPage({
   const negatedList    = negatedPlayers ?? [];
   const availableChips = chipList.length;
   const negatedPlayer  = negatedList[0] ?? null;
+  const pastUsedTokenIds = (pastTokenRows ?? []).map((r: { token_id: number }) => r.token_id);
 
   const slotsConfig: Record<string, number> =
     (league.lineup_slots as Record<string, number>) ??
@@ -547,6 +576,10 @@ export default async function RosterPage({
             tokenId={weeklyToken.token_id}
             status={weeklyToken.status}
             choice={weeklyToken.choice}
+            leagueId={leagueId}
+            week={week}
+            pastUsedTokenIds={pastUsedTokenIds}
+            locked={isLineupLocked(week)}
           />
         )}
 
@@ -728,4 +761,94 @@ export default async function RosterPage({
               <div className="rounded-lg border px-3 py-2" style={{ borderColor: HERO_COLOR, background: "rgba(0,87,255,0.07)" }}>
                 <p className="text-xs uppercase tracking-wide" style={{ color: HERO_COLOR }}>Power Restore Chips</p>
                 <p className="mt-0.5 text-sm font-semibold">{availableChips} chip{availableChips !== 1 ? "s" : ""} available</p>
-                {negatedP
+                {negatedPlayer && (
+                  <form action={useRestoreChip} className="mt-2">
+                    <input type="hidden" name="leagueId" value={leagueId} />
+                    <input type="hidden" name="chipId"   value={chipList[0].id} />
+                    <input type="hidden" name="playerId" value={negatedPlayer.player_id} />
+                    <button type="submit" className="w-full rounded-md px-3 py-1.5 text-xs font-semibold"
+                      style={{ background: HERO_COLOR, color: "#f4f4f8" }}>
+                      Restore {negatedPlayer.players?.full_name?.split(" ").pop() ?? "player"}
+                    </button>
+                  </form>
+                )}
+                {!negatedPlayer && <p className="mt-1 text-xs" style={{ color: "#8a8a9a" }}>No negated players &mdash; bank it or trade it.</p>}
+              </div>
+            )}
+            {powerList.length === 0 ? (
+              <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#8a8a9a" }}>
+                Powers are assigned during the draft &mdash; none yet.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {powerList.map((p) => {
+                  const status    = p.team_active_powers?.[0]?.status ?? "pending";
+                  const isNegated = status === "negated";
+                  return (
+                    <div key={p.id} className="rounded-lg border p-3"
+                      style={{ borderColor: isNegated ? "rgba(204,0,0,0.4)" : "#2a2a40" }}>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs uppercase tracking-wide" style={{ color: "#8a8a9a" }}>Round {p.round}</p>
+                        <PowerStatusBadge status={status} />
+                      </div>
+                      <p className="mt-1 text-sm font-semibold">{p.draft_powers?.name ?? "Unknown power"}</p>
+                      {isNegated && negatedPlayer && (
+                        <p className="mt-1 text-xs" style={{ color: VILLAIN_COLOR }}>
+                          {negatedPlayer.players?.full_name ?? "Your pick"} scoring halved.
+                          {availableChips > 0 ? " Use a chip above to restore." : " Earn a chip to restore."}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {/* League Activity */}
+          <section className="flex flex-col gap-3">
+            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>League Activity</h2>
+            {pickList.length === 0 ? (
+              <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#8a8a9a" }}>No draft picks yet.</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {pickList.map((pick) => (
+                  <div key={pick.id} className="rounded-lg border p-3" style={{ borderColor: "#2a2a40" }}>
+                    <p className="text-sm">
+                      <span className="font-semibold">{pick.league_members?.team_name ?? "A manager"}</span>{" "}
+                      drafted <span className="font-semibold">{pick.players?.full_name ?? "a player"}</span>
+                      {pick.players?.position ? ` (${pick.players.position}${pick.players.team ? " · " + pick.players.team : ""})` : ""}
+                    </p>
+                    <p className="mt-1 text-xs" style={{ color: "#8a8a9a" }}>
+                      Round {pick.round}, Pick {pick.pick_no} &middot; {timeAgo(pick.picked_at)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* NFL News */}
+          <section className="flex flex-col gap-3">
+            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>NFL News</h2>
+            {news.length === 0 ? (
+              <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#8a8a9a" }}>Headlines unavailable.</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {news.map((item) => (
+                  <a key={item.link} href={item.link} target="_blank" rel="noopener noreferrer"
+                    className="rounded-lg border p-3 text-sm underline-offset-2 hover:underline"
+                    style={{ borderColor: "#2a2a40" }}>
+                    {item.title}
+                  </a>
+                ))}
+                <p className="text-xs" style={{ color: "#3a3a50" }}>Source: ESPN NFL headlines</p>
+              </div>
+            )}
+          </section>
+
+        </div>
+      </main>
+    </div>
+  );
+}
