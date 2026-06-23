@@ -1,10 +1,12 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { dropPlayer, moveToIR, moveFromIR, useRestoreChip } from "../player-actions";
+import { dropPlayer, moveFromIR, useRestoreChip } from "../player-actions";
 import { respondToTrade, cancelTrade } from "../trade-actions";
 import DragDropLineup from "./DragDropLineup";
 import PlayerPhoto from "./PlayerPhoto";
+import RosterStatsTable from "./RosterStatsTable";
 import { getCurrentNFLWeek, isLineupLocked, getWeekLockTime } from "@/lib/nfl-utils";
 
 interface GameScheduleRow { team: string; kickoff_utc: string; }
@@ -37,12 +39,6 @@ interface NegatedPlayerRow {
   restored_at: string | null;
 }
 interface NewsItem { title: string; link: string; }
-interface PlayerStats {
-  pts_ppr?: number;
-  pass_yd?: number; pass_td?: number; pass_int?: number;
-  rush_att?: number; rush_yd?: number; rush_td?: number;
-  rec_tgt?: number; rec?: number; rec_yd?: number; rec_td?: number;
-}
 interface TradeRow {
   id: string;
   proposer_id: string;
@@ -108,24 +104,6 @@ function expandSlots(config: Record<string, number>): string[] {
   return result;
 }
 
-function fmt(n: number | undefined, dec = 0): string {
-  if (n === undefined || n === 0) return "—";
-  return dec > 0 ? n.toFixed(dec) : Math.round(n).toString();
-}
-
-async function fetchPlayerStats(playerId: string): Promise<PlayerStats> {
-  try {
-    const res = await fetch(
-      "https://api.sleeper.app/v1/stats/nfl/player/" + playerId +
-      "?season_type=regular&season=2024&grouping=season",
-      { next: { revalidate: 86400 } }
-    );
-    if (!res.ok) return {};
-    const data = await res.json();
-    return (data?.stats ?? {}) as PlayerStats;
-  } catch { return {}; }
-}
-
 async function getNflNews(): Promise<NewsItem[]> {
   try {
     const res = await fetch("https://www.espn.com/espn/rss/nfl/news", {
@@ -174,6 +152,53 @@ function PowerStatusBadge({ status }: { status: string }) {
   );
 }
 
+// ─── Roster Stats Skeleton (shown while Sleeper stats load) ───────────────────
+function RosterStatsSkeleton({ count, draftRounds }: { count: number; draftRounds: number }) {
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>
+          Active Roster ({count} / {draftRounds})
+        </h2>
+      </div>
+      <div className="overflow-x-auto rounded-lg border animate-pulse" style={{ borderColor: "#2a2a40" }}>
+        <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: "#15151f", color: "#8a8a9a" }}>
+              <th className="px-3 py-2 text-left font-semibold uppercase tracking-wider text-xs">Player</th>
+              <th className="px-2 py-2 text-center text-xs">Slot</th>
+              <th className="px-2 py-2 text-right text-xs">2024 Pts</th>
+              <th className="px-2 py-2 text-xs"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: Math.min(count, 8) }).map((_, i) => (
+              <tr key={i} className="border-t" style={{ borderColor: "#2a2a40" }}>
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-full" style={{ background: "#2a2a40" }} />
+                    <div className="h-4 w-8 rounded" style={{ background: "#2a2a40" }} />
+                    <div className="h-4 w-28 rounded" style={{ background: "#2a2a40" }} />
+                  </div>
+                </td>
+                <td className="px-2 py-2 text-center">
+                  <div className="mx-auto h-4 w-5 rounded" style={{ background: "#2a2a40" }} />
+                </td>
+                <td className="px-2 py-2 text-right">
+                  <div className="ml-auto h-4 w-10 rounded" style={{ background: "#2a2a40" }} />
+                </td>
+                <td className="px-2 py-2">
+                  <div className="h-5 w-10 rounded" style={{ background: "#2a2a40" }} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default async function RosterPage({
   params,
@@ -202,7 +227,7 @@ export default async function RosterPage({
     .eq("league_id", leagueId)
     .eq("user_id", user.id)
     .maybeSingle();
-  if (!me) redirect("/dashboard?error=" + encodeURIComponent("You’re not a member of that league."));
+  if (!me) redirect("/dashboard?error=" + encodeURIComponent("You're not a member of that league."));
 
   const week = getCurrentNFLWeek();
 
@@ -265,7 +290,6 @@ export default async function RosterPage({
       .returns<GameScheduleRow[]>(),
   ]);
 
-
   // ── Pending trades ────────────────────────────────────────────
   const { data: tradeRows } = await supabase
     .from("uff_trades")
@@ -302,18 +326,9 @@ export default async function RosterPage({
   const activeRoster = allRoster.filter((r) => r.slot === "active");
   const irRoster     = allRoster.filter((r) => r.slot === "ir");
 
-  // Sleeper 2024 season stats for active roster
-  const statsResults = await Promise.all(activeRoster.map((r) => fetchPlayerStats(r.player_id)));
-  const statsMap: Record<string, PlayerStats> = {};
-  activeRoster.forEach((r, i) => { statsMap[r.player_id] = statsResults[i]; });
-
   const irSlotsUsed  = irRoster.length;
   const irSlotsTotal = league.ir_spots ?? 2;
   const bonusPoints  = typeof bonus === "number" ? bonus : Number(bonus ?? 0);
-  const matchingCount = activeRoster.filter((r) => {
-    const f = r.players?.team ? teamFaction.get(r.players.team) : null;
-    return me.faction && f === me.faction;
-  }).length;
 
   const powerList      = powers ?? [];
   const pickList       = picks  ?? [];
@@ -336,15 +351,10 @@ export default async function RosterPage({
       player_id: r.player_id,
       full_name: r.players!.full_name,
       position:  r.players!.position!,
-    team:      r.players!.team ?? undefined,
+      team:      r.players!.team ?? undefined,
     }));
 
-  const seasonPtsMap: Record<string, number> = {};
-  for (const [pid, s] of Object.entries(statsMap)) {
-    if (s.pts_ppr) seasonPtsMap[pid] = s.pts_ppr;
-  }
-
-  // Build team → kickoff map for per-player lock UI (empty until seed-schedule.mjs is run)
+  // Build team -> kickoff map for per-player lock UI
   const gameTimes: Record<string, string> = {};
   for (const g of gameScheduleRows ?? []) gameTimes[g.team] = g.kickoff_utc;
 
@@ -377,7 +387,6 @@ export default async function RosterPage({
 
         {/* ── Team header ── */}
         <div className="overflow-hidden rounded-xl border" style={{ borderColor: "#2a2a40" }}>
-          {/* Faction color bar */}
           <div style={{ height: 4, background: factionAccent }} />
           <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col gap-1">
@@ -393,27 +402,20 @@ export default async function RosterPage({
                 <span>Faction Bonus: <strong style={{ color: factionAccent }}>+{bonusPoints.toFixed(1)} pts/wk</strong></span>
               </div>
             </div>
-            {/* Action buttons */}
             <div className="flex flex-wrap gap-2">
-              <Link
-                href={`/dashboard/league/${leagueId}/free-agents`}
+              <Link href={`/dashboard/league/${leagueId}/free-agents`}
                 className="rounded-md px-4 py-2 text-sm font-semibold"
-                style={{ background: HERO_COLOR, color: "#f4f4f8" }}
-              >
+                style={{ background: HERO_COLOR, color: "#f4f4f8" }}>
                 + Add Player
               </Link>
-              <a
-                href="#ir-section"
+              <a href="#ir-section"
                 className="rounded-md px-4 py-2 text-sm font-semibold"
-                style={{ background: "#1c1c2b", color: "#f4f4f8", border: "1px solid #2a2a40" }}
-              >
+                style={{ background: "#1c1c2b", color: "#f4f4f8", border: "1px solid #2a2a40" }}>
                 Manage IR
               </a>
-              <Link
-                href={`/dashboard/league/${leagueId}/trade`}
+              <Link href={`/dashboard/league/${leagueId}/trade`}
                 className="rounded-md px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-80"
-                style={{ background: "#1c1c2b", color: "#f4f4f8", border: "1px solid #2a2a40" }}
-              >
+                style={{ background: "#1c1c2b", color: "#f4f4f8", border: "1px solid #2a2a40" }}>
                 Trade
               </Link>
             </div>
@@ -430,18 +432,14 @@ export default async function RosterPage({
             currentLineup={currentLineup}
             locked={isLineupLocked(week)}
             lockTime={getWeekLockTime(week).toISOString()}
-            seasonPts={seasonPtsMap}
             gameTimes={Object.keys(gameTimes).length > 0 ? gameTimes : undefined}
           />
         )}
 
-
         {/* ── Trade Inbox ── */}
         {(incomingTrades.length > 0 || outgoingTrades.length > 0) && (
           <section className="flex flex-col gap-3">
-            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>
-              Trade Inbox
-            </h2>
+            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Trade Inbox</h2>
 
             {incomingTrades.length > 0 && (
               <div className="flex flex-col gap-3">
@@ -474,21 +472,15 @@ export default async function RosterPage({
                         <input type="hidden" name="leagueId" value={leagueId} />
                         <input type="hidden" name="tradeId" value={t.id} />
                         <input type="hidden" name="accept" value="true" />
-                        <button type="submit"
-                          className="rounded-md px-4 py-1.5 text-xs font-bold transition-opacity hover:opacity-90"
-                          style={{ background: "#3DDC84", color: "#0d0d1a" }}>
-                          Accept
-                        </button>
+                        <button type="submit" className="rounded-md px-4 py-1.5 text-xs font-bold transition-opacity hover:opacity-90"
+                          style={{ background: "#3DDC84", color: "#0d0d1a" }}>Accept</button>
                       </form>
                       <form action={respondToTrade}>
                         <input type="hidden" name="leagueId" value={leagueId} />
                         <input type="hidden" name="tradeId" value={t.id} />
                         <input type="hidden" name="accept" value="false" />
-                        <button type="submit"
-                          className="rounded-md px-4 py-1.5 text-xs font-bold transition-opacity hover:opacity-90"
-                          style={{ background: "#1c1c2b", color: "#f4f4f8", border: "1px solid #2a2a40" }}>
-                          Reject
-                        </button>
+                        <button type="submit" className="rounded-md px-4 py-1.5 text-xs font-bold transition-opacity hover:opacity-90"
+                          style={{ background: "#1c1c2b", color: "#f4f4f8", border: "1px solid #2a2a40" }}>Reject</button>
                       </form>
                     </div>
                   </div>
@@ -525,8 +517,7 @@ export default async function RosterPage({
                     <form action={cancelTrade}>
                       <input type="hidden" name="leagueId" value={leagueId} />
                       <input type="hidden" name="tradeId" value={t.id} />
-                      <button type="submit"
-                        className="rounded-md px-4 py-1.5 text-xs font-bold transition-opacity hover:opacity-90"
+                      <button type="submit" className="rounded-md px-4 py-1.5 text-xs font-bold transition-opacity hover:opacity-90"
                         style={{ background: "#1c1c2b", color: "#CC0000", border: "1px solid rgba(204,0,0,0.3)" }}>
                         Cancel Offer
                       </button>
@@ -538,121 +529,20 @@ export default async function RosterPage({
           </section>
         )}
 
-        {/* ── Active Roster Stats Table ── */}
-        <section className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>
-              Active Roster ({activeRoster.length} / {league.draft_rounds})
-            </h2>
-            <Link href={`/dashboard/league/${leagueId}/free-agents`}
-              className="text-xs font-semibold underline" style={{ color: HERO_COLOR }}>
-              + Add player
-            </Link>
-          </div>
-
-          {activeRoster.length === 0 ? (
-            <p className="rounded-lg border p-5 text-sm" style={{ borderColor: "#2a2a40", color: "#8a8a9a" }}>
-              No active players &mdash; draft players or add from free agency.
-            </p>
-          ) : (
-            <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "#2a2a40" }}>
-              <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ background: "#15151f", color: "#8a8a9a" }}>
-                    <th className="px-3 py-2 text-left font-semibold uppercase tracking-wider text-xs">Player</th>
-                    <th className="px-2 py-2 text-center text-xs">Slot</th>
-                    <th className="px-2 py-2 text-right text-xs" title="2024 Season Fantasy Pts (PPR)">2024 Pts</th>
-                    <th className="px-2 py-2 text-xs"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {activeRoster.map((r) => {
-                    const player    = r.players;
-                    const pFaction  = player?.team ? teamFaction.get(player.team) ?? null : null;
-                    const matches   = me.faction !== null && pFaction === me.faction;
-                    const isIR      = player?.status === "Injured Reserve";
-                    const isStarter = Object.values(currentLineup).includes(r.player_id);
-                    const s         = statsMap[r.player_id] ?? {};
-                    const accentCol = matches ? factionAccent : "#2a2a40";
-
-                    return (
-                      <tr
-                        key={r.id}
-                        className="border-t"
-                        style={{
-                          borderColor: "#2a2a40",
-                          borderLeft: `3px solid ${accentCol}`,
-                        }}
-                      >
-                        {/* Player info */}
-                        <td className="px-3 py-2">
-                          <div className="flex items-center gap-2">
-                            <PlayerPhoto playerId={r.player_id} size={30} position={player?.position ?? null} />
-                            <PosBadge position={player?.position ?? null} />
-                            <div className="min-w-0">
-                              <p className="font-semibold truncate">{player?.full_name ?? r.player_id}</p>
-                              <p className="text-xs truncate" style={{ color: "#8a8a9a" }}>
-                                {player?.team ?? "FA"}
-                                {player?.status && player.status !== "Active" && (
-                                  <span className="ml-1 font-semibold" style={{ color: isIR ? VILLAIN_COLOR : "#FFD700" }}>
-                                    &middot; {player.status}
-                                  </span>
-                                )}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                        {/* Slot badge */}
-                        <td className="px-2 py-2 text-center">
-                          <span
-                            className="inline-block rounded px-1.5 text-xs font-bold"
-                            style={{
-                              background: isStarter ? "rgba(61,220,132,0.15)" : "#1c1c2b",
-                              color: isStarter ? "#3DDC84" : "#8a8a9a",
-                            }}
-                          >
-                            {isStarter ? "S" : "B"}
-                          </span>
-                        </td>
-                        {/* Stats */}
-                        <td className="px-2 py-2 text-right font-bold tabular-nums" style={{ color: "#FFD700" }}>{fmt(s.pts_ppr, 1)}</td>
-                        {/* Actions */}
-                        <td className="px-2 py-2">
-                          <div className="flex items-center gap-1">
-                            {isIR && irSlotsUsed < irSlotsTotal && (
-                              <form action={moveToIR}>
-                                <input type="hidden" name="leagueId" value={leagueId} />
-                                <input type="hidden" name="playerId" value={r.player_id} />
-                                <button type="submit"
-                                  className="rounded px-2 py-0.5 text-xs font-semibold"
-                                  style={{ background: "rgba(204,0,0,0.2)", color: "#ff8a8a" }}>
-                                  IR
-                                </button>
-                              </form>
-                            )}
-                            <form action={dropPlayer}>
-                              <input type="hidden" name="leagueId" value={leagueId} />
-                              <input type="hidden" name="playerId" value={r.player_id} />
-                              <input type="hidden" name="returnTo" value="roster" />
-                              <button type="submit"
-                                className="rounded px-2 py-0.5 text-xs font-semibold"
-                                style={{ background: "#1c1c2b", color: "#8a8a9a" }}>
-                                Drop
-                              </button>
-                            </form>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <p className="text-xs" style={{ color: "#3a3a50" }}>
-            2024 PPR season totals (via Sleeper). Live scoring begins Week 1, 2026.
-          </p>
-        </section>
+        {/* ── Active Roster — streams in after DB shell renders ── */}
+        <Suspense fallback={<RosterStatsSkeleton count={activeRoster.length} draftRounds={league.draft_rounds} />}>
+          <RosterStatsTable
+            activeRoster={activeRoster}
+            leagueId={leagueId}
+            draftRounds={league.draft_rounds}
+            irSlotsUsed={irSlotsUsed}
+            irSlotsTotal={irSlotsTotal}
+            currentLineup={currentLineup}
+            teams={teams ?? []}
+            memberFaction={me.faction}
+            factionAccent={factionAccent}
+          />
+        </Suspense>
 
         {/* ── IR Section ── */}
         <section id="ir-section" className="flex flex-col gap-3">
@@ -682,21 +572,15 @@ export default async function RosterPage({
                     <form action={moveFromIR}>
                       <input type="hidden" name="leagueId" value={leagueId} />
                       <input type="hidden" name="playerId" value={r.player_id} />
-                      <button type="submit"
-                        className="rounded px-2 py-1 text-xs font-semibold"
-                        style={{ background: "rgba(0,87,255,0.2)", color: "#6fa3ff" }}>
-                        Activate
-                      </button>
+                      <button type="submit" className="rounded px-2 py-1 text-xs font-semibold"
+                        style={{ background: "rgba(0,87,255,0.2)", color: "#6fa3ff" }}>Activate</button>
                     </form>
                     <form action={dropPlayer}>
                       <input type="hidden" name="leagueId" value={leagueId} />
                       <input type="hidden" name="playerId" value={r.player_id} />
                       <input type="hidden" name="returnTo" value="roster" />
-                      <button type="submit"
-                        className="rounded px-2 py-1 text-xs font-semibold"
-                        style={{ background: "#1c1c2b", color: "#8a8a9a" }}>
-                        Drop
-                      </button>
+                      <button type="submit" className="rounded px-2 py-1 text-xs font-semibold"
+                        style={{ background: "#1c1c2b", color: "#8a8a9a" }}>Drop</button>
                     </form>
                   </div>
                 );
@@ -720,8 +604,7 @@ export default async function RosterPage({
                     <input type="hidden" name="leagueId" value={leagueId} />
                     <input type="hidden" name="chipId"   value={chipList[0].id} />
                     <input type="hidden" name="playerId" value={negatedPlayer.player_id} />
-                    <button type="submit"
-                      className="w-full rounded-md px-3 py-1.5 text-xs font-semibold"
+                    <button type="submit" className="w-full rounded-md px-3 py-1.5 text-xs font-semibold"
                       style={{ background: HERO_COLOR, color: "#f4f4f8" }}>
                       Restore {negatedPlayer.players?.full_name?.split(" ").pop() ?? "player"}
                     </button>
@@ -772,7 +655,7 @@ export default async function RosterPage({
                     <p className="text-sm">
                       <span className="font-semibold">{pick.league_members?.team_name ?? "A manager"}</span>{" "}
                       drafted <span className="font-semibold">{pick.players?.full_name ?? "a player"}</span>
-                      {pick.players?.position ? ` (${pick.players.position}${pick.players.team ? " · " + pick.players.team : ""})` : ""}
+                      {pick.players?.position ? ` (${pick.players.position}${pick.players.team ? " \u00b7 " + pick.players.team : ""})` : ""}
                     </p>
                     <p className="mt-1 text-xs" style={{ color: "#8a8a9a" }}>
                       Round {pick.round}, Pick {pick.pick_no} &middot; {timeAgo(pick.picked_at)}
