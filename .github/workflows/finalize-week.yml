@@ -1,0 +1,26 @@
+name: Finalize Week (Auto)
+
+# Runs Wednesday at 07:00 UTC — safely after MNF ends (~01:00 UTC Tuesday).
+# Finalizes all active leagues for the week that just completed
+# and awards Power Restore Chips to weekly high scorers.
+on:
+  schedule:
+    - cron: "0 7 * * 3"
+  workflow_dispatch: {}   # allow manual trigger for testing
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger finalize-week cron route
+        run: |
+          RESPONSE=$(curl -s -w "
+%{http_code}" -X POST             "${{ secrets.NEXT_PUBLIC_APP_URL }}/api/cron/finalize-week"             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"             -H "Content-Type: application/json")
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          STATUS=$(echo "$RESPONSE" | tail -n 1)
+          echo "Response body: $BODY"
+          echo "Response status: $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "Unexpected status $STATUS"
+            exit 1
+          fi

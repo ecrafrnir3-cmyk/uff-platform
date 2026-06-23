@@ -1,0 +1,22 @@
+name: Score Matchups (Live)
+
+# Runs every 15 min on game days (Thu-Tue UTC).
+# Wednesday is the only day with zero NFL games — safe to skip.
+# DOW: 0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat
+on:
+  schedule:
+    - cron: "0,15,30,45 * * * 0,1,2,4,5,6"
+  workflow_dispatch: {}   # allow manual trigger for testing
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger score-matchups cron route
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST             "${{ secrets.NEXT_PUBLIC_APP_URL }}/api/cron/score-matchups"             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"             -H "Content-Type: application/json")
+          echo "Response status: $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "Unexpected status $STATUS"
+            exit 1
+          fi
