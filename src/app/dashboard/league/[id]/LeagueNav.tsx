@@ -3,18 +3,30 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const NAV_ITEMS = [
+const BASE_NAV = [
   { label: "League",      href: "" },
   { label: "Roster",      href: "/roster" },
   { label: "Matchups",    href: "/matchups" },
   { label: "Standings",   href: "/standings" },
   { label: "Free Agents", href: "/free-agents" },
-  { label: "Settings",    href: "/settings" },
+  { label: "Trade",       href: "/trade" },
 ];
 
-export default function LeagueNav({ leagueId }: { leagueId: string }) {
+const COMMISSIONER_NAV = [
+  ...BASE_NAV,
+  { label: "Settings", href: "/settings" },
+];
+
+export default function LeagueNav({
+  leagueId,
+  isCommissioner,
+}: {
+  leagueId: string;
+  isCommissioner: boolean;
+}) {
   const pathname = usePathname();
   const base = `/dashboard/league/${leagueId}`;
+  const navItems = isCommissioner ? COMMISSIONER_NAV : BASE_NAV;
 
   return (
     <nav
@@ -31,7 +43,7 @@ export default function LeagueNav({ leagueId }: { leagueId: string }) {
           UFF
         </Link>
 
-        {NAV_ITEMS.map(({ label, href }) => {
+        {navItems.map(({ label, href }) => {
           const fullHref = base + href;
           const isActive =
             href === ""

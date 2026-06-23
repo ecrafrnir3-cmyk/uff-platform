@@ -8,6 +8,14 @@ const supabase = createClient();
 const HERO_COLOR = "#0057FF";
 const VILLAIN_COLOR = "#CC0000";
 
+const TOKEN_NAMES: Record<number, string> = {
+  1: "Power Surge", 2: "Triple Threat", 3: "Bench Vault", 4: "Mulligan",
+  5: "Mirror Match", 6: "Faction Surge", 7: "Position Power", 8: "Fortress",
+  9: "Recon", 10: "Air Raid", 11: "Insurance", 12: "Last Stand",
+  13: "Quick Feet", 14: "Momentum", 15: "Underdog", 16: "Iron Will",
+  17: "Clutch Gene", 18: "Second Wind",
+};
+
 interface MatchupRow {
   id: string;
   matchup_id: number;
@@ -31,10 +39,12 @@ function ScoreCard({
   row,
   isMe,
   isWinner,
+  token,
 }: {
   row: MatchupRow;
   isMe: boolean;
   isWinner: boolean;
+  token?: { tokenId: number; status: string };
 }) {
   const color = factionColor(row.league_members?.faction ?? null);
   return (
@@ -68,6 +78,23 @@ function ScoreCard({
           Winner
         </p>
       )}
+      {token && (
+        <div
+          className="mt-1 flex items-center gap-1 rounded-full px-2 py-0.5"
+          style={{
+            background: token.status === "used" ? "rgba(61,220,132,0.12)" : "rgba(255,215,0,0.1)",
+            border: `1px solid ${token.status === "used" ? "#3DDC84" : "#FFD700"}33`,
+          }}
+        >
+          <span className="text-xs">⚡</span>
+          <span
+            className="text-xs font-semibold"
+            style={{ color: token.status === "used" ? "#3DDC84" : "#FFD700" }}
+          >
+            {TOKEN_NAMES[token.tokenId] ?? `Token ${token.tokenId}`}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -77,11 +104,13 @@ export default function MatchupView({
   week,
   matchupPairs: initialPairs,
   myMemberId,
+  tokenMap = {},
 }: {
   leagueId: string;
   week: number;
   matchupPairs: MatchupPair[];
   myMemberId: string;
+  tokenMap?: Record<string, { tokenId: number; status: string }>;
 }) {
   const [pairs, setPairs] = useState<MatchupPair[]>(initialPairs);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -142,7 +171,7 @@ export default function MatchupView({
           </p>
         )}
         {!lastUpdated && (
-          <p className="text-xs" style={{ color: "#8a8a9a" }}>Live &middot; scores update every ~5 min during games</p>
+          <p className="text-xs" style={{ color: "#8a8a9a" }}>Live &middot; scores update every ~15 min during games</p>
         )}
       </div>
 
@@ -153,33 +182,4 @@ export default function MatchupView({
 
           const aWins = a.is_complete && a.points > b.points;
           const bWins = b.is_complete && b.points > a.points;
-          const isMyMatchup = a.member_id === myMemberId || b.member_id === myMemberId;
-
-          return (
-            <div
-              key={a.matchup_id}
-              className="rounded-lg border p-4"
-              style={{ borderColor: isMyMatchup ? "#FFD700" : "#2a2a40", background: "#0d0d1a" }}
-            >
-              {isMyMatchup && (
-                <p className="mb-2 text-xs font-semibold uppercase tracking-widest" style={{ color: "#FFD700" }}>
-                  Your matchup
-                </p>
-              )}
-              <div className="flex items-stretch gap-3">
-                <ScoreCard row={a} isMe={a.member_id === myMemberId} isWinner={aWins} />
-                <div className="flex flex-col items-center justify-center px-1">
-                  <span className="text-sm font-bold" style={{ color: "#8a8a9a" }}>vs</span>
-                </div>
-                <ScoreCard row={b} isMe={b.member_id === myMemberId} isWinner={bWins} />
-              </div>
-              {a.is_complete && (
-                <p className="mt-2 text-center text-xs" style={{ color: "#8a8a9a" }}>Final</p>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+          const isMyMatchup = a.member_id === myM

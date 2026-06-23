@@ -1,6 +1,7 @@
 import Link from "next/link";
 import PlayerPhoto from "./PlayerPhoto";
-import { dropPlayer, moveToIR } from "../player-actions";
+import { moveToIR } from "../player-actions";
+import DropButton from "./DropButton";
 
 interface RosterRow {
   id: string;
@@ -203,18 +204,12 @@ export default async function RosterStatsTable({
                           </button>
                         </form>
                       )}
-                      <form action={dropPlayer}>
-                        <input type="hidden" name="leagueId" value={leagueId} />
-                        <input type="hidden" name="playerId" value={r.player_id} />
-                        <input type="hidden" name="returnTo" value="roster" />
-                        <button
-                          type="submit"
-                          className="rounded px-2 py-0.5 text-xs font-semibold"
-                          style={{ background: "#1c1c2b", color: "#8a8a9a" }}
-                        >
-                          Drop
-                        </button>
-                      </form>
+                      <DropButton
+                        leagueId={leagueId}
+                        playerId={r.player_id}
+                        playerName={r.players?.full_name ?? "this player"}
+                        returnTo="roster"
+                      />
                     </div>
                   </td>
                 </tr>

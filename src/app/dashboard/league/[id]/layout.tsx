@@ -15,19 +15,28 @@ export default async function LeagueLayout({
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Verify membership (lightweight check -- pages do their own full queries)
-  const { data: member } = await supabase
-    .from("league_members")
-    .select("id")
-    .eq("league_id", leagueId)
-    .eq("user_id", user.id)
-    .maybeSingle();
+  // Verify membership + grab commissioner_id in one query
+  const [{ data: member }, { data: league }] = await Promise.all([
+    supabase
+      .from("league_members")
+      .select("id")
+      .eq("league_id", leagueId)
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("uff_leagues")
+      .select("commissioner_id")
+      .eq("id", leagueId)
+      .maybeSingle(),
+  ]);
 
   if (!member) redirect("/dashboard?error=" + encodeURIComponent("You're not a member of that league."));
 
+  const isCommissioner = league?.commissioner_id === user.id;
+
   return (
     <>
-      <LeagueNav leagueId={leagueId} />
+      <LeagueNav leagueId={leagueId} isCommissioner={isCommissioner} />
       {children}
     </>
   );

@@ -57,6 +57,27 @@ interface DraftPickRow {
 // ─── Constants ───────────────────────────────────────────────────────────────
 const HERO_COLOR    = "#0057FF";
 const VILLAIN_COLOR = "#CC0000";
+
+const TOKEN_INFO: Record<number, { name: string; effect: string }> = {
+  1:  { name: "Power Surge",      effect: "+2.0 flat points added to your score this week." },
+  2:  { name: "Triple Threat",    effect: "Your kicker's points are tripled this week." },
+  3:  { name: "Bench Vault",      effect: "Your highest-scoring bench player's points are added to your score on top of starters." },
+  4:  { name: "Mulligan",         effect: "After games, your worst underperforming starter is retroactively swapped with the best eligible bench player who outscored them." },
+  5:  { name: "Mirror Match",     effect: "Your score gains a bonus equal to the total extra points your opponent's draft powers generated for them this week." },
+  6:  { name: "Faction Surge",    effect: "Your Faction Roster Bonus is doubled this week (1.0 pts/player instead of 0.5)." },
+  7:  { name: "Position Power",   effect: "Choose a position — your top-scoring starter at that position gets a 1.5x boost this week." },
+  8:  { name: "Fortress",         effect: "Your D/ST score is doubled this week." },
+  9:  { name: "Recon",            effect: "Reveals your opponent's weekly token selection before the normal lock-and-reveal." },
+  10: { name: "Air Raid",         effect: "+1 extra point per passing TD for your QB(s) this week." },
+  11: { name: "Insurance",        effect: "If you lose this week, the loss doesn't count toward your record — logged as a no contest." },
+  12: { name: "Last Stand",       effect: "If you trail by 20+ points after all players lock, all your bench points are retroactively added to your score." },
+  13: { name: "Quick Feet",       effect: "You may make one late injury swap after games start this week." },
+  14: { name: "Momentum",         effect: "If you're on a 2+ game win streak, +1.5 pts added to your score this week." },
+  15: { name: "Underdog",         effect: "If you lose this week, +3 pts is added to your score as a consolation bonus (does not flip the result)." },
+  16: { name: "Iron Will",        effect: "Your starter with the lowest pre-game projection this week gets 2x their actual points." },
+  17: { name: "Clutch Gene",      effect: "If your matchup is within 5 pts, your score is rounded up by 1 full point." },
+  18: { name: "Second Wind",      effect: "Reuse any one weekly token you've already used earlier this season." },
+};
 const POSITION_ORDER = ["QB", "RB", "WR", "TE", "K", "DEF", "DST"];
 
 const POS_COLOR: Record<string, string> = {
@@ -144,6 +165,62 @@ function PosBadge({ position }: { position: string | null }) {
   );
 }
 
+function WeeklyTokenCard({
+  tokenId,
+  status,
+  choice,
+}: {
+  tokenId: number;
+  status: string;
+  choice: string | null;
+}) {
+  const info = TOKEN_INFO[tokenId];
+  if (!info) return null;
+  const isUsed    = status === "used";
+  const isExpired = status === "expired";
+  const dimmed    = isUsed || isExpired;
+  return (
+    <div
+      className="flex flex-col gap-1 rounded-xl border p-4"
+      style={{
+        borderColor: dimmed ? "#2a2a40" : "#FFD700",
+        background:  dimmed ? "#0f0f1a" : "rgba(255,215,0,0.05)",
+        opacity:     dimmed ? 0.65 : 1,
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <span className="text-base">⚡</span>
+        <span className="text-sm font-bold uppercase tracking-wide" style={{ color: dimmed ? "#8a8a9a" : "#FFD700" }}>
+          Weekly Power Token
+        </span>
+        <span
+          className="ml-auto rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide"
+          style={{
+            background: isUsed ? "rgba(61,220,132,0.15)" : isExpired ? "#1c1c2b" : "rgba(255,215,0,0.15)",
+            color:      isUsed ? "#3DDC84"               : isExpired ? "#8a8a9a" : "#FFD700",
+          }}
+        >
+          {isUsed ? "Used" : isExpired ? "Expired" : "Active"}
+        </span>
+      </div>
+      <p className="text-lg font-bold" style={{ color: dimmed ? "#8a8a9a" : "#f4f4f8" }}>
+        {info.name}
+        {choice && tokenId === 7 && (
+          <span className="ml-2 text-sm font-normal" style={{ color: "#8a8a9a" }}>
+            (chosen pos: {choice})
+          </span>
+        )}
+        {choice && tokenId === 18 && (
+          <span className="ml-2 text-sm font-normal" style={{ color: "#8a8a9a" }}>
+            (replaying: {TOKEN_INFO[parseInt(choice)]?.name ?? choice})
+          </span>
+        )}
+      </p>
+      <p className="text-sm" style={{ color: "#8a8a9a" }}>{info.effect}</p>
+    </div>
+  );
+}
+
 function PowerStatusBadge({ status }: { status: string }) {
   const s = POWER_STATUS_STYLES[status] ?? POWER_STATUS_STYLES.pending;
   return (
@@ -216,7 +293,7 @@ export default async function RosterPage({
 
   const { data: league } = await supabase
     .from("uff_leagues")
-    .select("id, name, season, draft_rounds, ir_spots, lineup_slots")
+    .select("id, name, season, draft_rounds, ir_spots, lineup_slots, scoring_settings")
     .eq("id", leagueId)
     .maybeSingle();
   if (!league) redirect("/dashboard?error=" + encodeURIComponent("League not found."));
@@ -242,6 +319,7 @@ export default async function RosterPage({
     { data: negatedPlayers },
     news,
     { data: gameScheduleRows },
+    { data: weeklyToken },
   ] = await Promise.all([
     supabase
       .from("uff_roster_players")
@@ -288,6 +366,13 @@ export default async function RosterPage({
       .eq("season", 2026)
       .eq("week", week)
       .returns<GameScheduleRow[]>(),
+    supabase
+      .from("weekly_token_assignments")
+      .select("token_id, status, choice")
+      .eq("league_id", leagueId)
+      .eq("member_id", me.id)
+      .eq("week", week)
+      .maybeSingle(),
   ]);
 
   // ── Pending trades ────────────────────────────────────────────
@@ -316,6 +401,40 @@ export default async function RosterPage({
 
   const incomingTrades = pendingTrades.filter(t => t.receiver_id === me.id);
   const outgoingTrades = pendingTrades.filter(t => t.proposer_id === me.id);
+
+  // ── Live weekly pts (current week, from Sleeper) ──────────────────────────
+  const FLAG_KEYS_SCORE = new Set([
+    'pts_allow_0','pts_allow_1_6','pts_allow_7_13','pts_allow_14_20',
+    'pts_allow_21_27','pts_allow_28_34','pts_allow_35p',
+  ]);
+  let seasonPts: Record<string, number> | undefined;
+  const scoringSettings = (league as unknown as { scoring_settings: Record<string, number> }).scoring_settings ?? {};
+  if (Object.keys(scoringSettings).length > 0) {
+    try {
+      const sleeperRes = await fetch(
+        `https://api.sleeper.app/v1/stats/nfl/2026/${week}?season_type=regular`,
+        { next: { revalidate: 300 } }
+      );
+      if (sleeperRes.ok) {
+        const allStats: Record<string, Record<string, number>> = await sleeperRes.json();
+        const ptsMap: Record<string, number> = {};
+        let hasAnyPts = false;
+        for (const r of (roster ?? [])) {
+          const stats = allStats[r.player_id] ?? {};
+          let score = 0;
+          for (const [key, mult] of Object.entries(scoringSettings)) {
+            const val = stats[key];
+            if (val == null || val === 0) continue;
+            score += FLAG_KEYS_SCORE.has(key) ? mult : val * (mult as number);
+          }
+          const rounded = Math.round(score * 100) / 100;
+          ptsMap[r.player_id] = rounded;
+          if (rounded > 0) hasAnyPts = true;
+        }
+        if (hasAnyPts) seasonPts = ptsMap;
+      }
+    } catch { /* pre-season or API down — no pts shown */ }
+  }
 
   // Sort roster by position
   const teamFaction = new Map((teams ?? []).map((t) => [t.abbr, t.faction]));
@@ -422,6 +541,15 @@ export default async function RosterPage({
           </div>
         </div>
 
+        {/* ── Weekly Power Token ── */}
+        {weeklyToken && (
+          <WeeklyTokenCard
+            tokenId={weeklyToken.token_id}
+            status={weeklyToken.status}
+            choice={weeklyToken.choice}
+          />
+        )}
+
         {/* ── Drag-and-Drop Lineup ── */}
         {activeRosterForLineup.length > 0 && (
           <DragDropLineup
@@ -433,6 +561,7 @@ export default async function RosterPage({
             locked={isLineupLocked(week)}
             lockTime={getWeekLockTime(week).toISOString()}
             gameTimes={Object.keys(gameTimes).length > 0 ? gameTimes : undefined}
+            seasonPts={seasonPts}
           />
         )}
 
@@ -599,94 +728,4 @@ export default async function RosterPage({
               <div className="rounded-lg border px-3 py-2" style={{ borderColor: HERO_COLOR, background: "rgba(0,87,255,0.07)" }}>
                 <p className="text-xs uppercase tracking-wide" style={{ color: HERO_COLOR }}>Power Restore Chips</p>
                 <p className="mt-0.5 text-sm font-semibold">{availableChips} chip{availableChips !== 1 ? "s" : ""} available</p>
-                {negatedPlayer && (
-                  <form action={useRestoreChip} className="mt-2">
-                    <input type="hidden" name="leagueId" value={leagueId} />
-                    <input type="hidden" name="chipId"   value={chipList[0].id} />
-                    <input type="hidden" name="playerId" value={negatedPlayer.player_id} />
-                    <button type="submit" className="w-full rounded-md px-3 py-1.5 text-xs font-semibold"
-                      style={{ background: HERO_COLOR, color: "#f4f4f8" }}>
-                      Restore {negatedPlayer.players?.full_name?.split(" ").pop() ?? "player"}
-                    </button>
-                  </form>
-                )}
-                {!negatedPlayer && <p className="mt-1 text-xs" style={{ color: "#8a8a9a" }}>No negated players &mdash; bank it or trade it.</p>}
-              </div>
-            )}
-            {powerList.length === 0 ? (
-              <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#8a8a9a" }}>
-                Powers are assigned during the draft &mdash; none yet.
-              </p>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {powerList.map((p) => {
-                  const status    = p.team_active_powers?.[0]?.status ?? "pending";
-                  const isNegated = status === "negated";
-                  return (
-                    <div key={p.id} className="rounded-lg border p-3"
-                      style={{ borderColor: isNegated ? "rgba(204,0,0,0.4)" : "#2a2a40" }}>
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs uppercase tracking-wide" style={{ color: "#8a8a9a" }}>Round {p.round}</p>
-                        <PowerStatusBadge status={status} />
-                      </div>
-                      <p className="mt-1 text-sm font-semibold">{p.draft_powers?.name ?? "Unknown power"}</p>
-                      {isNegated && negatedPlayer && (
-                        <p className="mt-1 text-xs" style={{ color: VILLAIN_COLOR }}>
-                          {negatedPlayer.players?.full_name ?? "Your pick"} scoring halved.
-                          {availableChips > 0 ? " Use a chip above to restore." : " Earn a chip to restore."}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
-          {/* League Activity */}
-          <section className="flex flex-col gap-3">
-            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>League Activity</h2>
-            {pickList.length === 0 ? (
-              <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#8a8a9a" }}>No draft picks yet.</p>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {pickList.map((pick) => (
-                  <div key={pick.id} className="rounded-lg border p-3" style={{ borderColor: "#2a2a40" }}>
-                    <p className="text-sm">
-                      <span className="font-semibold">{pick.league_members?.team_name ?? "A manager"}</span>{" "}
-                      drafted <span className="font-semibold">{pick.players?.full_name ?? "a player"}</span>
-                      {pick.players?.position ? ` (${pick.players.position}${pick.players.team ? " \u00b7 " + pick.players.team : ""})` : ""}
-                    </p>
-                    <p className="mt-1 text-xs" style={{ color: "#8a8a9a" }}>
-                      Round {pick.round}, Pick {pick.pick_no} &middot; {timeAgo(pick.picked_at)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          {/* NFL News */}
-          <section className="flex flex-col gap-3">
-            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>NFL News</h2>
-            {news.length === 0 ? (
-              <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#8a8a9a" }}>Headlines unavailable.</p>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {news.map((item) => (
-                  <a key={item.link} href={item.link} target="_blank" rel="noopener noreferrer"
-                    className="rounded-lg border p-3 text-sm underline-offset-2 hover:underline"
-                    style={{ borderColor: "#2a2a40" }}>
-                    {item.title}
-                  </a>
-                ))}
-                <p className="text-xs" style={{ color: "#3a3a50" }}>Source: ESPN NFL headlines</p>
-              </div>
-            )}
-          </section>
-
-        </div>
-      </main>
-    </div>
-  );
-}
+                {negatedP
