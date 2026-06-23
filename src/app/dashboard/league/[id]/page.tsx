@@ -66,7 +66,7 @@ export default async function LeagueDetailPage({
     .from("league_members")
     .select("id, team_name, is_commissioner, faction, user_id, profiles(display_name, username)")
     .eq("league_id", leagueId)
-    .order("created_at", { ascending: true })
+    .order("joined_at", { ascending: true })
     .returns<MemberRow[]>();
 
   const memberList = members ?? [];
