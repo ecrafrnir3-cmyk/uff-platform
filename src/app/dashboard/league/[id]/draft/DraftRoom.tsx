@@ -809,6 +809,17 @@ export default function DraftRoom({
   const availablePlayers = players.filter((p) => !pickedIds.has(p.id));
   const queuedIds = new Set(queue.map((q) => q.player_id));
 
+  // Next pick number for the current user (first future pick_no where they're on the clock)
+  const myNextPickNo = (() => {
+    if (isDraftComplete) return null;
+    const startFrom = isMyTurn ? currentPickNo + 1 : currentPickNo;
+    for (let pno = startFrom; pno <= totalPicks; pno++) {
+      const s = snakeDraftSlot(pno, league.max_teams);
+      if (activeDraftOrder[s - 1] === myMemberId) return pno;
+    }
+    return null;
+  })();
+
   // ---- Queue handlers --------------------------------------------------------
   async function handleAddToQueue(player: Player) {
     const newItem: QueueItem = {
@@ -1179,13 +1190,23 @@ export default function DraftRoom({
                 )}
               </div>
             ) : (
-              <p className="text-sm text-white">
-                Waiting on{" "}
-                <span className="font-semibold" style={{ color: "#f4f4f8" }}>
-                  {currentMember?.team_name ?? "another manager"}
-                </span>{" "}
-                to pick...
-              </p>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <p className="text-sm text-white">
+                  Waiting on{" "}
+                  <span className="font-semibold" style={{ color: "#f4f4f8" }}>
+                    {currentMember?.team_name ?? "another manager"}
+                  </span>{" "}
+                  to pick...
+                </p>
+                {myNextPickNo !== null && (
+                  <span
+                    className="rounded-full px-3 py-1 text-xs font-semibold"
+                    style={{ background: "#1c1c2b", color: "#FFD700", border: "1px solid rgba(255,215,0,0.25)" }}
+                  >
+                    Your next pick: #{myNextPickNo}
+                  </span>
+                )}
+              </div>
             )}
           </div>
         )}

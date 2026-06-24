@@ -4,6 +4,6 @@ if exist ".git\index.lock" del ".git\index.lock"
 if exist ".git\HEAD.lock" del ".git\HEAD.lock"
 if exist ".git\refs\heads\main.lock" del ".git\refs\heads\main.lock"
 git add -A
-git commit -m "feat: draft queue + autodraft — star players to queue, autodraft picks top available"
+git commit -m "feat: draft queue + autodraft + next pick indicator"
 git push origin main
 pause
