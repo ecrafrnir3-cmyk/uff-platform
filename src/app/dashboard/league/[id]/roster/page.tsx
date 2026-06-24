@@ -175,6 +175,7 @@ function WeeklyTokenCard({
   week,
   pastUsedTokenIds,
   locked,
+  opponentTokenId,
 }: {
   tokenId: number;
   status: string;
@@ -183,6 +184,7 @@ function WeeklyTokenCard({
   week: number;
   pastUsedTokenIds: number[];
   locked: boolean;
+  opponentTokenId?: number | null;
 }) {
   const info = TOKEN_INFO[tokenId];
   if (!info) return null;
@@ -237,6 +239,27 @@ function WeeklyTokenCard({
           pastUsedTokenIds={pastUsedTokenIds}
           locked={locked}
         />
+      )}
+      {tokenId === 9 && !dimmed && (
+        <div className="mt-2 rounded-lg border p-3" style={{ borderColor: "#2a2a40", background: "#0f0f1a" }}>
+          <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "#FFD700" }}>
+            🔍 Opponent&apos;s Token Revealed
+          </p>
+          {opponentTokenId ? (
+            <>
+              <p className="mt-1 text-sm font-bold" style={{ color: "#f4f4f8" }}>
+                {TOKEN_INFO[opponentTokenId]?.name ?? `Token #${opponentTokenId}`}
+              </p>
+              <p className="text-xs" style={{ color: "#8a8a9a" }}>
+                {TOKEN_INFO[opponentTokenId]?.effect}
+              </p>
+            </>
+          ) : (
+            <p className="mt-1 text-xs" style={{ color: "#8a8a9a" }}>
+              Opponent has no token assigned yet this week.
+            </p>
+          )}
+        </div>
       )}
     </div>
   );
@@ -403,6 +426,40 @@ export default async function RosterPage({
       .eq("member_id", me.id)
       .eq("status", "used"),
   ]);
+
+  // ── Token 9 (Recon): reveal opponent's token ────────────────────────────────────────
+  let opponentTokenId: number | null = null;
+  if (weeklyToken?.token_id === 9 && weeklyToken.status === "pending") {
+    const { data: myMatchup } = await supabase
+      .from("uff_matchups")
+      .select("matchup_id")
+      .eq("league_id", leagueId)
+      .eq("member_id", me.id)
+      .eq("week", week)
+      .maybeSingle();
+
+    if (myMatchup) {
+      const { data: oppMatchup } = await supabase
+        .from("uff_matchups")
+        .select("member_id")
+        .eq("league_id", leagueId)
+        .eq("matchup_id", myMatchup.matchup_id)
+        .eq("week", week)
+        .neq("member_id", me.id)
+        .maybeSingle();
+
+      if (oppMatchup) {
+        const { data: oppToken } = await supabase
+          .from("weekly_token_assignments")
+          .select("token_id")
+          .eq("league_id", leagueId)
+          .eq("member_id", oppMatchup.member_id)
+          .eq("week", week)
+          .maybeSingle();
+        opponentTokenId = oppToken?.token_id ?? null;
+      }
+    }
+  }
 
   // ── Pending trades ────────────────────────────────────────────
   const { data: tradeRows } = await supabase
@@ -581,6 +638,7 @@ export default async function RosterPage({
             week={week}
             pastUsedTokenIds={pastUsedTokenIds}
             locked={isLineupLocked(week)}
+            opponentTokenId={opponentTokenId}
           />
         )}
 

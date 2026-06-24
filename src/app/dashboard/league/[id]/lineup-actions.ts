@@ -26,11 +26,10 @@ export async function setLineup(formData: FormData) {
     );
   }
 
-  // ── Per-player game-time lock ─────────────────────────────────────────────
+  // Per-player game-time lock
   const playerIds = Object.values(newAssignments);
   const now = new Date();
 
-  // Kick off both lookups in parallel — fail gracefully if table not seeded yet
   const [{ data: games }, { data: playerRows }] = await Promise.all([
     supabase
       .from("uff_game_schedule")
@@ -40,11 +39,11 @@ export async function setLineup(formData: FormData) {
     supabase.from("players").select("id, team").in("id", playerIds),
   ]);
 
-  // team abbr → kickoff Date
+  // team abbr to kickoff Date
   const teamKickoff: Record<string, Date> = {};
   for (const g of games ?? []) teamKickoff[g.team] = new Date(g.kickoff_utc);
 
-  // player_id → team abbr
+  // player_id to team abbr
   const playerTeam: Record<string, string> = {};
   for (const p of playerRows ?? []) { if (p.team) playerTeam[p.id] = p.team; }
 
@@ -55,14 +54,11 @@ export async function setLineup(formData: FormData) {
     return ko ? now >= ko : false;
   }
 
-  // ── Merge locked players with existing lineup ─────────────────────────────
-  // If any submitted player's game has already started, we preserve their
-  // current slot assignment instead of allowing a move.
+  // Merge locked players with existing lineup
   let finalSlots: { slot: string; player_id: string }[];
   const anyLocked = playerIds.some(isLocked);
 
   if (anyLocked) {
-    // Fetch current lineup so we can preserve locked players' positions
     const { data: memberRow } = await supabase
       .from("league_members")
       .select("id")
@@ -71,25 +67,64 @@ export async function setLineup(formData: FormData) {
       .maybeSingle();
 
     let currentLineup: Record<string, string> = {};
+    let quickFeetRowId: string | null = null;
+
     if (memberRow?.id) {
-      const { data: rows } = await supabase
-        .from("uff_lineups")
-        .select("slot, player_id")
-        .eq("member_id", memberRow.id)
-        .eq("week", week);
+      const [{ data: rows }, { data: qfToken }] = await Promise.all([
+        supabase
+          .from("uff_lineups")
+          .select("slot, player_id")
+          .eq("member_id", memberRow.id)
+          .eq("week", week),
+        // Token 13 (Quick Feet): allows one locked-player swap per week
+        supabase
+          .from("weekly_token_assignments")
+          .select("id")
+          .eq("league_id", leagueId)
+          .eq("member_id", memberRow.id)
+          .eq("week", week)
+          .eq("token_id", 13)
+          .eq("status", "pending")
+          .maybeSingle(),
+      ]);
       for (const r of rows ?? []) currentLineup[r.slot] = r.player_id;
+      quickFeetRowId = qfToken?.id ?? null;
     }
 
-    // Build merged: start from new assignments, then enforce locked players back
+    // Build merged lineup. Quick Feet allows one locked-slot change through.
     const merged: Record<string, string> = { ...newAssignments };
+    let quickFeetConsumed = false;
 
     // Re-lock: any slot whose current occupant has kicked off keeps them there
     for (const [slot, pid] of Object.entries(currentLineup)) {
-      if (isLocked(pid)) merged[slot] = pid;
+      if (isLocked(pid)) {
+        const newPid = newAssignments[slot];
+        if (newPid !== pid) {
+          if (quickFeetRowId && !quickFeetConsumed) {
+            quickFeetConsumed = true;
+          } else {
+            merged[slot] = pid;
+          }
+        }
+      }
     }
-    // Also block a locked player from appearing in a new slot they didn't occupy
+    // Block a locked player from appearing in a new slot they did not occupy
     for (const [slot, pid] of Object.entries(merged)) {
-      if (isLocked(pid) && currentLineup[slot] !== pid) delete merged[slot];
+      if (isLocked(pid) && currentLineup[slot] !== pid) {
+        if (quickFeetRowId && !quickFeetConsumed) {
+          quickFeetConsumed = true;
+        } else {
+          delete merged[slot];
+        }
+      }
+    }
+
+    // Mark Quick Feet as used if the swap was exercised
+    if (quickFeetConsumed && quickFeetRowId) {
+      await supabase
+        .from("weekly_token_assignments")
+        .update({ status: "used", used_at: new Date().toISOString() })
+        .eq("id", quickFeetRowId);
     }
 
     finalSlots = Object.entries(merged).map(([slot, player_id]) => ({ slot, player_id }));

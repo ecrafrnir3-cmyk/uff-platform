@@ -7,6 +7,7 @@ interface MatchupRow {
   member_id: string;
   points: number;
   is_complete: boolean;
+  void_result: boolean;
 }
 
 interface MemberInfo {
@@ -74,7 +75,7 @@ export default async function StandingsPage({
   // Fetch all matchup rows for this league
   const { data: matchupRows } = await supabase
     .from("uff_matchups")
-    .select("matchup_id, member_id, points, is_complete")
+    .select("matchup_id, member_id, points, is_complete, void_result")
     .eq("league_id", leagueId)
     .eq("season", league.season)
     .returns<MatchupRow[]>();
@@ -105,10 +106,12 @@ export default async function StandingsPage({
     if (a.is_complete && b.is_complete) {
       if (a.points > b.points) {
         record[a.member_id].wins++;
-        record[b.member_id].losses++;
+        // Insurance (token 11): b's loss is voided if void_result is set
+        if (!b.void_result) record[b.member_id].losses++;
       } else if (b.points > a.points) {
         record[b.member_id].wins++;
-        record[a.member_id].losses++;
+        // Insurance (token 11): a's loss is voided if void_result is set
+        if (!a.void_result) record[a.member_id].losses++;
       } else {
         record[a.member_id].ties++;
         record[b.member_id].ties++;
