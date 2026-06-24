@@ -40,6 +40,10 @@ interface NegatedPlayerRow {
   players: { full_name: string } | null;
   restored_at: string | null;
 }
+interface PlayerPowerRow {
+  player_id: string;
+  power: string;
+}
 interface NewsItem { title: string; link: string; }
 interface TradeRow {
   id: string;
@@ -90,6 +94,21 @@ const POS_COLOR: Record<string, string> = {
   K:   "#f4f4f8",
   DEF: VILLAIN_COLOR,
   DST: VILLAIN_COLOR,
+};
+
+// Draft-mechanic slugs are excluded from roster badges (they fired during the draft)
+const SLUG_TO_POWER_INFO: Record<string, { emoji: string; name: string }> = {
+  gunslinger:           { emoji: "🎯", name: "Gunslinger" },
+  berserker_rage:       { emoji: "🔥", name: "Berserker Rage" },
+  reception_specialist: { emoji: "🙌", name: "Reception Specialist" },
+  iron_defense:         { emoji: "🛡️", name: "Iron Defense" },
+  red_zone_menace:      { emoji: "🚨", name: "Red Zone Menace" },
+  goal_line_hammer:     { emoji: "🔨", name: "Goal Line Hammer" },
+  seam_buster:          { emoji: "⚡", name: "Seam Buster" },
+  sniper:               { emoji: "🔭", name: "Sniper" },
+  power_negation:       { emoji: "❌", name: "Power Negation" },
+  time_stone:           { emoji: "⏳", name: "Time Stone" },
+  vampire_bite:         { emoji: "🦇", name: "Vampire Bite" },
 };
 
 const POWER_STATUS_STYLES: Record<string, { label: string; color: string; bg: string }> = {
@@ -365,6 +384,7 @@ export default async function RosterPage({
     { data: gameScheduleRows },
     { data: weeklyToken },
     { data: pastTokenRows },
+    { data: playerPowerRows },
   ] = await Promise.all([
     supabase
       .from("uff_roster_players")
@@ -425,6 +445,13 @@ export default async function RosterPage({
       .eq("league_id", leagueId)
       .eq("member_id", me.id)
       .eq("status", "used"),
+    // Season powers tied to specific players (excludes draft mechanics)
+    supabase
+      .from("player_draft_powers")
+      .select("player_id, power")
+      .eq("league_id", leagueId)
+      .eq("drafted_by_user_id", user.id)
+      .returns<PlayerPowerRow[]>(),
   ]);
 
   // ── Token 9 (Recon): reveal opponent's token ────────────────────────────────────────
@@ -543,6 +570,13 @@ export default async function RosterPage({
   const negatedPlayer  = negatedList[0] ?? null;
   const pastUsedTokenIds = (pastTokenRows ?? []).map((r: { token_id: number }) => r.token_id);
 
+  // Build player_id → { emoji, name } map for inline badges on lineup cards
+  const playerPowers: Record<string, { emoji: string; name: string }> = {};
+  for (const row of (playerPowerRows ?? [])) {
+    const info = SLUG_TO_POWER_INFO[row.power];
+    if (info) playerPowers[row.player_id] = info;
+  }
+
   const slotsConfig: Record<string, number> =
     (league.lineup_slots as Record<string, number>) ??
     { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DEF: 1 };
@@ -654,6 +688,7 @@ export default async function RosterPage({
             lockTime={getWeekLockTime(week).toISOString()}
             gameTimes={Object.keys(gameTimes).length > 0 ? gameTimes : undefined}
             seasonPts={seasonPts}
+            playerPowers={Object.keys(playerPowers).length > 0 ? playerPowers : undefined}
           />
         )}
 
@@ -811,14 +846,17 @@ export default async function RosterPage({
         {/* ── Bottom row: Powers | Activity | News ── */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
 
-          {/* Powers + chips */}
+          {/* Powers — compact chip row */}
           <section className="flex flex-col gap-3">
             <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Your Powers</h2>
+
+            {/* Restore chip action */}
             {availableChips > 0 && (
               <div className="rounded-lg border px-3 py-2" style={{ borderColor: HERO_COLOR, background: "rgba(0,87,255,0.07)" }}>
-                <p className="text-xs uppercase tracking-wide" style={{ color: HERO_COLOR }}>Power Restore Chips</p>
-                <p className="mt-0.5 text-sm font-semibold">{availableChips} chip{availableChips !== 1 ? "s" : ""} available</p>
-                {negatedPlayer && (
+                <p className="text-xs uppercase tracking-wide" style={{ color: HERO_COLOR }}>
+                  Power Restore Chips — {availableChips} available
+                </p>
+                {negatedPlayer ? (
                   <form action={useRestoreChip} className="mt-2">
                     <input type="hidden" name="leagueId" value={leagueId} />
                     <input type="hidden" name="chipId"   value={chipList[0].id} />
@@ -828,36 +866,39 @@ export default async function RosterPage({
                       Restore {negatedPlayer.players?.full_name?.split(" ").pop() ?? "player"}
                     </button>
                   </form>
+                ) : (
+                  <p className="mt-1 text-xs" style={{ color: "#f4f4f8" }}>No negated players — bank it or trade it.</p>
                 )}
-                {!negatedPlayer && <p className="mt-1 text-xs" style={{ color: "#f4f4f8" }}>No negated players &mdash; bank it or trade it.</p>}
               </div>
             )}
+
+            {/* Compact power chips — season-effect and tied-to-pick only (draft mechanics excluded) */}
             {powerList.length === 0 ? (
               <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#f4f4f8" }}>
-                Powers are assigned during the draft &mdash; none yet.
+                Powers are assigned during the draft — none yet.
               </p>
             ) : (
-              <div className="flex flex-col gap-2">
-                {powerList.map((p) => {
-                  const status    = p.team_active_powers?.[0]?.status ?? "pending";
-                  const isNegated = status === "negated";
-                  return (
-                    <div key={p.id} className="rounded-lg border p-3"
-                      style={{ borderColor: isNegated ? "rgba(204,0,0,0.4)" : "#2a2a40" }}>
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs uppercase tracking-wide" style={{ color: "#f4f4f8" }}>Round {p.round}</p>
-                        <PowerStatusBadge status={status} />
+              <div className="flex flex-wrap gap-2">
+                {powerList
+                  .filter((p) => p.draft_powers?.category !== "Draft Mechanic")
+                  .map((p) => {
+                    const status   = p.team_active_powers?.[0]?.status ?? "pending";
+                    const name     = p.draft_powers?.name ?? "Unknown";
+                    const slugKey  = Object.entries(SLUG_TO_POWER_INFO).find(([, v]) => v.name === name)?.[0];
+                    const emoji    = slugKey ? SLUG_TO_POWER_INFO[slugKey].emoji : "⚡";
+                    const s = POWER_STATUS_STYLES[status] ?? POWER_STATUS_STYLES.pending;
+                    return (
+                      <div
+                        key={p.id}
+                        title={`Round ${p.round} · ${status}`}
+                        className="flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold"
+                        style={{ borderColor: s.color + "55", background: s.bg, color: s.color }}
+                      >
+                        <span>{emoji}</span>
+                        <span>{name}</span>
                       </div>
-                      <p className="mt-1 text-sm font-semibold">{p.draft_powers?.name ?? "Unknown power"}</p>
-                      {isNegated && negatedPlayer && (
-                        <p className="mt-1 text-xs" style={{ color: VILLAIN_COLOR }}>
-                          {negatedPlayer.players?.full_name ?? "Your pick"} scoring halved.
-                          {availableChips > 0 ? " Use a chip above to restore." : " Earn a chip to restore."}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
               </div>
             )}
           </section>

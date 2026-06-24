@@ -193,18 +193,18 @@ export default function GuidePage() {
 
           {/* Draft Mechanics */}
           <h3 className="text-base font-bold uppercase tracking-wide mb-4" style={{ color: "#FFD700" }}>
-            ⚡ Draft Mechanics
+            ⚙️ Draft Mechanics
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-10">
             <PowerCard name="Foresight Coin" category="Draft Mechanic" icon="🪙"
               description="Instead of your round's dealt power, look ahead at your own next two rounds' powers and pick one to receive now. The power left behind shifts later in your order."
               tip="💡 Great for grabbing a Vampire Bite early when the draft board is richest."
               accent="#FFD700" />
-            <PowerCard name="Draft Heist" category="Draft Mechanic" icon="💥"
+            <PowerCard name="Draft Heist" category="Draft Mechanic" icon="🥷"
               description="Steal another manager's draft pick slot for this round (swap positions). They pick where you were; you pick where they were."
               tip="💡 Jump in front of a manager about to grab your target. Or strand a rival in a dead zone."
               accent="#FF6B35" />
-            <PowerCard name="Hero's Shield" category="Draft Mechanic" icon="🛡"
+            <PowerCard name="Hero's Shield" category="Draft Mechanic" icon="🦸"
               description="Paired with Draft Heist: when any manager is dealt Heist, a random Hero manager also receives Shield for that round. If that Hero is the Heist target, the steal is auto-blocked."
               tip="💡 Hold it quietly — it only activates if you're the target, but that block can swing a whole round."
               accent="#0057FF" />
@@ -212,7 +212,7 @@ export default function GuidePage() {
               description="Instantly reveals the power held by the next manager to pick in the draft sequence. Know what's coming before they act."
               tip="💡 Most useful when you suspect a Heist or Bite is coming in a high-value round."
               accent="#0057FF" />
-            <PowerCard name="Cloak" category="Draft Mechanic" icon="🌑"
+            <PowerCard name="Cloak" category="Draft Mechanic" icon="👤"
               description="Hides your power from the previous manager's Telepathy reveal. Anyone who checks your power sees only 'Power cloaked.'"
               tip="💡 Stack in rounds where a Bite or Heist surprise causes maximum damage."
               accent="#f4f4f8" />
@@ -220,10 +220,10 @@ export default function GuidePage() {
 
           {/* Season Effect */}
           <h3 className="text-base font-bold uppercase tracking-wide mb-4" style={{ color: "#a78bfa" }}>
-            🧛 Season Effect
+            🦇 Season Effect
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-10">
-            <PowerCard name="Vampire Bite" category="Season Effect" icon="🧛"
+            <PowerCard name="Vampire Bite" category="Season Effect" icon="🦇"
               description="Pick any already-drafted player (from any team, not yet bitten). Each week for the rest of the season, 10% of that player's fantasy score is added to yours. Each player can only be bitten once."
               tip="💡 Bite an elite WR or RB early — 10% of a 40-pt week adds up to 4 bonus points, every week."
               accent="#a78bfa" />
@@ -231,14 +231,14 @@ export default function GuidePage() {
 
           {/* Tied-to-Pick */}
           <h3 className="text-base font-bold uppercase tracking-wide mb-4" style={{ color: "#3DDC84" }}>
-            🎯 Tied-to-Pick Powers
+            🔗 Tied-to-Pick Powers
           </h3>
           <p className="text-sm mb-5" style={{ color: "#f4f4f8" }}>
             These powers activate only if your pick in that round matches the required position.
             Draft the wrong position and the power fizzles — no effect.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-10">
-            <PowerCard name="Gunslinger" category="Tied to Pick — QB" icon="🏈"
+            <PowerCard name="Gunslinger" category="Tied to Pick — QB" icon="🎯"
               description="If your pick is a QB, that QB gets +1 pt per passing TD on top of league scoring, season-long. Fizzles if not a QB."
               tip="💡 Worth targeting a QB earlier than usual in a round you hold this."
               accent="#3DDC84" />
@@ -246,27 +246,27 @@ export default function GuidePage() {
               description="If your pick is an RB, that RB gets +0.1 pt per rushing yard on top of league scoring, season-long. Fizzles if not an RB."
               tip="💡 On a workhorse 250-carry back, that's 25 extra pts over the season."
               accent="#3DDC84" />
-            <PowerCard name="Goal Line Hammer" category="Tied to Pick — RB" icon="🏃"
+            <PowerCard name="Goal Line Hammer" category="Tied to Pick — RB" icon="🔨"
               description="If your pick is an RB, that RB gets +1 pt per rushing TD on top of league scoring, season-long. Fizzles if not an RB."
               tip="💡 Stack with a goal-line vulture RB — they may score fewer yards but plenty of TDs."
               accent="#3DDC84" />
-            <PowerCard name="Reception Specialist" category="Tied to Pick — WR/RB/TE" icon="🤲"
+            <PowerCard name="Reception Specialist" category="Tied to Pick — WR/RB/TE" icon="🙌"
               description="If your pick is a WR, RB, or TE, that player gets +0.5 PPR on top of league scoring, season-long. Fizzles if QB, K, or D/ST."
               tip="💡 One of the most flexible tied powers — works on any skill position."
               accent="#3DDC84" />
-            <PowerCard name="Red Zone Menace" category="Tied to Pick — WR" icon="⚡"
+            <PowerCard name="Red Zone Menace" category="Tied to Pick — WR" icon="🚨"
               description="If your pick is a WR, that WR gets +1 pt per receiving TD on top of league scoring, season-long. Fizzles if not a WR."
               tip="💡 Targets a WR who sees heavy red-zone usage — touchdowns multiply fast."
               accent="#3DDC84" />
-            <PowerCard name="Seam Buster" category="Tied to Pick — TE" icon="🎯"
+            <PowerCard name="Seam Buster" category="Tied to Pick — TE" icon="⚡"
               description="If your pick is a TE, that TE gets +1 pt per receiving TD on top of league scoring, season-long. Fizzles if not a TE."
               tip="💡 A top TE who scores 8–10 TDs adds 8–10 free points on top of normal scoring."
               accent="#3DDC84" />
-            <PowerCard name="Iron Defense" category="Tied to Pick — D/ST" icon="🏰"
+            <PowerCard name="Iron Defense" category="Tied to Pick — D/ST" icon="🛡️"
               description="If your pick is a D/ST, that D/ST's scoring is doubled, season-long. Fizzles if not a D/ST."
               tip="💡 An elite defense with this power is worth a starting roster spot every single week."
               accent="#3DDC84" />
-            <PowerCard name="Sniper" category="Tied to Pick — K" icon="🎯"
+            <PowerCard name="Sniper" category="Tied to Pick — K" icon="🔭"
               description="If your pick is a K, that K's field goals of 50+ yards are worth double points, season-long. Fizzles if not a K."
               tip="💡 Pair with a deep-ball kicker on a dome team. Long FGs add up."
               accent="#3DDC84" />
@@ -281,7 +281,7 @@ export default function GuidePage() {
             ⚠️ Self-Cost Powers
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <PowerCard name="Power Negation" category="Self-Cost" icon="☠️"
+            <PowerCard name="Power Negation" category="Self-Cost" icon="❌"
               description="The player you draft this round has their fantasy scoring halved, season-long — until you or a teammate restores them with a Power Restore Chip. This is a cost power, not a benefit."
               tip="⚠️ If you pull this, draft a throwaway pick for this round — don't waste a top target."
               accent="#CC0000" />

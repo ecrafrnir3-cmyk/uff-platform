@@ -92,6 +92,7 @@ export default function DragDropLineup({
   lockTime,
   seasonPts,
   gameTimes,
+  playerPowers,
 }: {
   leagueId: string;
   week: number;
@@ -102,6 +103,7 @@ export default function DragDropLineup({
   lockTime: string;
   seasonPts?: Record<string, number>;
   gameTimes?: Record<string, string>;
+  playerPowers?: Record<string, { emoji: string; name: string }>;
 }) {
   const [assignments, setAssignments] = useState<Record<string, string>>(currentLineup);
   // selected: { id: player_id, source: slot-name | "bench" }
@@ -422,6 +424,14 @@ export default function DragDropLineup({
                     <p className="text-xs truncate" style={{ color: "#f4f4f8" }}>
                       <span style={{ color: posColor, fontWeight: 600 }}>{player.position}</span>
                       {player.team ? " · " + player.team : ""}
+                      {playerPowers?.[player.player_id] && (
+                        <span
+                          title={playerPowers[player.player_id].name}
+                          style={{ marginLeft: 6, fontSize: "0.85em" }}
+                        >
+                          {playerPowers[player.player_id].emoji}
+                        </span>
+                      )}
                     </p>
                   </div>
                   {seasonPts?.[player.player_id] != null && (
@@ -576,6 +586,14 @@ export default function DragDropLineup({
                     <p className="text-xs" style={{ color: "#f4f4f8" }}>
                       <span style={{ color: posColor + "aa", fontWeight: 600 }}>{p.position}</span>
                       {p.team ? " · " + p.team : ""}
+                      {playerPowers?.[p.player_id] && (
+                        <span
+                          title={playerPowers[p.player_id].name}
+                          style={{ marginLeft: 6, fontSize: "0.85em" }}
+                        >
+                          {playerPowers[p.player_id].emoji}
+                        </span>
+                      )}
                     </p>
                   </div>
                   {pts != null && (
