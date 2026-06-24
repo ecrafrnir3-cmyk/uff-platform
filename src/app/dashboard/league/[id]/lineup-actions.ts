@@ -142,7 +142,7 @@ export async function setLineup(formData: FormData) {
     p_league_id: leagueId,
     p_user_id:   user.id,
     p_week:      week,
-    p_slots:     JSON.stringify(finalSlots),
+    p_slots:     finalSlots,
   });
 
   if (error) {
