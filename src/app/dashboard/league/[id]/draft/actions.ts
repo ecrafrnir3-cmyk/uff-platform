@@ -186,3 +186,129 @@ export async function assignVampireBite(params: {
   revalidatePath(`/dashboard/league/${leagueId}/draft`);
   return {};
 }
+
+// ── Draft Mechanic: Telepathy ─────────────────────────────────────────────────
+// Called after a Telepathy holder picks. Reveals the next manager's power for
+// this round (unless they have Cloak, which blocks the reveal).
+export async function revealNextPower(params: {
+  leagueId: string;
+  nextMemberId: string;
+  currentRound: number;
+}): Promise<{ powerName: string | null; cloaked: boolean; error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { powerName: null, cloaked: false, error: "Not authenticated." };
+
+  const { leagueId, nextMemberId, currentRound } = params;
+
+  // Check if next manager has Cloak (power_id = 9) for this round
+  const { data: cloakCheck } = await supabase
+    .from("draft_power_assignments")
+    .select("power_id")
+    .eq("league_id", leagueId)
+    .eq("member_id", nextMemberId)
+    .eq("round", currentRound)
+    .eq("power_id", 9) // Cloak
+    .maybeSingle();
+
+  if (cloakCheck) return { powerName: null, cloaked: true };
+
+  // Fetch next manager's power for this round
+  const { data: assignment } = await supabase
+    .from("draft_power_assignments")
+    .select("draft_powers(name)")
+    .eq("league_id", leagueId)
+    .eq("member_id", nextMemberId)
+    .eq("round", currentRound)
+    .maybeSingle();
+
+  const powerName = (assignment?.draft_powers as { name: string } | null)?.name ?? null;
+  return { powerName, cloaked: false };
+}
+
+// ── Draft Mechanic: Draft Heist ───────────────────────────────────────────────
+// Fired BEFORE the heist holder picks. Swaps their draft_order position with
+// the target's for this round. Saves original order for restoration later.
+// Blocked if the target has Hero's Shield (power_id = 4) this round.
+export async function executeHeist(params: {
+  leagueId: string;
+  targetMemberId: string;
+  currentRound: number;
+  currentDraftOrder: string[];
+  myMemberId: string;
+}): Promise<{ blocked: boolean; blockerTeam?: string; error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { blocked: false, error: "Not authenticated." };
+
+  const { leagueId, targetMemberId, currentRound, currentDraftOrder, myMemberId } = params;
+
+  // Check if target has Hero's Shield this round
+  const { data: shieldCheck } = await supabase
+    .from("draft_power_assignments")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("member_id", targetMemberId)
+    .eq("round", currentRound)
+    .eq("power_id", 4) // Hero's Shield
+    .maybeSingle();
+
+  if (shieldCheck) {
+    const { data: targetMember } = await supabase
+      .from("league_members")
+      .select("team_name")
+      .eq("id", targetMemberId)
+      .maybeSingle();
+    return { blocked: true, blockerTeam: targetMember?.team_name ?? "that team" };
+  }
+
+  // Swap positions in draft_order
+  const myIdx = currentDraftOrder.indexOf(myMemberId);
+  const targetIdx = currentDraftOrder.indexOf(targetMemberId);
+  if (myIdx === -1 || targetIdx === -1) {
+    return { blocked: false, error: "Could not find draft positions." };
+  }
+
+  const newOrder = [...currentDraftOrder];
+  newOrder[myIdx] = targetMemberId;
+  newOrder[targetIdx] = myMemberId;
+
+  const heistState = {
+    round: currentRound,
+    memberA: myMemberId,
+    memberB: targetMemberId,
+    originalOrder: currentDraftOrder,
+  };
+
+  const { error } = await supabase.rpc("update_draft_heist_order", {
+    p_league_id:   leagueId,
+    p_new_order:   newOrder,
+    p_heist_state: heistState,
+  });
+
+  if (error) return { blocked: false, error: error.message };
+
+  revalidatePath(`/dashboard/league/${leagueId}/draft`);
+  return { blocked: false };
+}
+
+// ── Draft Mechanic: Restore Heist Order ──────────────────────────────────────
+// Called at the start of a new round (when round > heist_state.round).
+// Restores draft_order to the original pre-heist order and clears heist_state.
+export async function restoreHeistOrder(params: {
+  leagueId: string;
+  originalOrder: string[];
+}): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const { error } = await supabase.rpc("clear_heist_state", {
+    p_league_id:      params.leagueId,
+    p_original_order: params.originalOrder,
+  });
+
+  if (error) return { error: error.message };
+  revalidatePath(`/dashboard/league/${params.leagueId}/draft`);
+  return {};
+}

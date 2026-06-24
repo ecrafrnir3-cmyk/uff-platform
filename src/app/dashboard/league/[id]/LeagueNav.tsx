@@ -55,7 +55,7 @@ export default function LeagueNav({
               href={fullHref}
               className="shrink-0 px-3 py-3 text-sm font-medium transition-colors"
               style={{
-                color: isActive ? "#FFD700" : "#8a8a9a",
+                color: isActive ? "#FFD700" : "#f4f4f8",
                 borderBottom: isActive ? "2px solid #FFD700" : "2px solid transparent",
               }}
             >

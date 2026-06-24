@@ -122,7 +122,7 @@ export default async function MatchupsPage({
         )}
 
         {!hasSchedule && (
-          <div className="rounded-lg border p-5 text-sm text-zinc-400" style={{ borderColor: "#2a2a40" }}>
+          <div className="rounded-lg border p-5 text-sm text-white" style={{ borderColor: "#2a2a40" }}>
             No schedule yet.{" "}
             {league.commissioner_id === user.id ? (
               <Link href={`/dashboard/league/${leagueId}/settings`} className="underline" style={{ color: "#0057FF" }}>
@@ -144,7 +144,7 @@ export default async function MatchupsPage({
                   className="rounded px-3 py-1.5 text-xs font-semibold"
                   style={{
                     background: w === viewWeek ? "#0057FF" : "#1c1c2b",
-                    color: w === viewWeek ? "#f4f4f8" : "#8a8a9a",
+                    color: w === viewWeek ? "#f4f4f8" : "#f4f4f8",
                   }}
                 >
                   Week {w}
@@ -167,7 +167,7 @@ export default async function MatchupsPage({
                 <button
                   type="submit"
                   className="rounded-md px-4 py-2 text-sm font-semibold"
-                  style={{ background: "#1c1c2b", color: "#8a8a9a", border: "1px solid #2a2a40" }}
+                  style={{ background: "#1c1c2b", color: "#f4f4f8", border: "1px solid #2a2a40" }}
                 >
                   Finalize Week {viewWeek}
                 </button>

@@ -5,7 +5,7 @@ import { proposeTrade } from "../trade-actions";
 
 const POS_COLOR: Record<string, string> = {
   QB: "#0057FF", RB: "#3DDC84", WR: "#FFD700",
-  TE: "#FF6B35", K: "#8a8a9a", DEF: "#CC0000", DST: "#CC0000",
+  TE: "#FF6B35", K: "#f4f4f8", DEF: "#CC0000", DST: "#CC0000",
 };
 const POSITION_ORDER = ["QB", "RB", "WR", "TE", "K", "DEF", "DST"];
 
@@ -29,7 +29,7 @@ interface RosterPlayer {
 
 function PosBadge({ position }: { position: string | null }) {
   const pos = (position ?? "?").toUpperCase();
-  const color = POS_COLOR[pos] ?? "#8a8a9a";
+  const color = POS_COLOR[pos] ?? "#f4f4f8";
   return (
     <span
       className="inline-block w-8 rounded text-center text-xs font-bold leading-5 uppercase"
@@ -65,11 +65,11 @@ function PlayerCheckbox({
         <p className="text-sm font-semibold truncate" style={{ color: "#f4f4f8" }}>
           {p.full_name}
         </p>
-        <p className="text-xs" style={{ color: "#8a8a9a" }}>
+        <p className="text-xs" style={{ color: "#f4f4f8" }}>
           {p.team ?? "\u2014"}
         </p>
       </div>
-      <span className="text-xs capitalize" style={{ color: "#8a8a9a" }}>
+      <span className="text-xs capitalize" style={{ color: "#f4f4f8" }}>
         {player.slot === "ir" ? "IR" : player.slot}
       </span>
     </label>
@@ -160,7 +160,7 @@ export default async function TradePage({
           <Link
             href={`/dashboard/league/${leagueId}/roster`}
             className="text-sm font-semibold px-3 py-1 rounded-md transition-colors hover:bg-white/10"
-            style={{ color: "#8a8a9a", border: "1px solid #2a2a40" }}
+            style={{ color: "#f4f4f8", border: "1px solid #2a2a40" }}
           >
             ← Roster
           </Link>
@@ -192,7 +192,7 @@ export default async function TradePage({
             Step 1 — Pick a trade partner
           </h2>
           {members.length === 0 ? (
-            <p className="text-sm" style={{ color: "#8a8a9a" }}>
+            <p className="text-sm" style={{ color: "#f4f4f8" }}>
               No other teams in this league yet.
             </p>
           ) : (
@@ -242,12 +242,12 @@ export default async function TradePage({
                 <h2 className="text-base font-bold mb-1" style={{ color: "#f4f4f8" }}>
                   Step 2a — Players you send
                 </h2>
-                <p className="text-xs mb-3" style={{ color: "#8a8a9a" }}>
+                <p className="text-xs mb-3" style={{ color: "#f4f4f8" }}>
                   From{" "}
                   <span style={{ color: GOLD }}>{me.team_name}</span>
                 </p>
                 {myRoster.length === 0 ? (
-                  <p className="text-sm" style={{ color: "#8a8a9a" }}>
+                  <p className="text-sm" style={{ color: "#f4f4f8" }}>
                     No active players on your roster.
                   </p>
                 ) : (
@@ -271,12 +271,12 @@ export default async function TradePage({
                 <h2 className="text-base font-bold mb-1" style={{ color: "#f4f4f8" }}>
                   Step 2b — Players you receive
                 </h2>
-                <p className="text-xs mb-3" style={{ color: "#8a8a9a" }}>
+                <p className="text-xs mb-3" style={{ color: "#f4f4f8" }}>
                   From{" "}
                   <span style={{ color: GOLD }}>{receiverMember.team_name}</span>
                 </p>
                 {receiverRoster.length === 0 ? (
-                  <p className="text-sm" style={{ color: "#8a8a9a" }}>
+                  <p className="text-sm" style={{ color: "#f4f4f8" }}>
                     This team has no active players.
                   </p>
                 ) : (
@@ -309,7 +309,7 @@ export default async function TradePage({
             className="rounded-xl p-8 text-center"
             style={{ background: "#13132b", border: "1px solid #2a2a40" }}
           >
-            <p className="text-sm" style={{ color: "#8a8a9a" }}>
+            <p className="text-sm" style={{ color: "#f4f4f8" }}>
               Select a team above to see their roster and build your offer.
             </p>
           </div>

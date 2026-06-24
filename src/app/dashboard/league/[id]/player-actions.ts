@@ -172,3 +172,31 @@ export async function useRestoreChip(formData: FormData): Promise<void> {
   rosterPaths(leagueId).forEach((p) => revalidatePath(p));
   redirect(`/dashboard/league/${leagueId}/roster?restored=1`);
 }
+
+export async function addAndDropPlayer(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const leagueId    = formData.get("leagueId")    as string;
+  const addPlayerId = formData.get("addPlayerId")  as string;
+  const dropPlayerId = formData.get("dropPlayerId") as string;
+
+  if (!dropPlayerId) {
+    redirect(`/dashboard/league/${leagueId}/free-agents?error=${encodeURIComponent("Select a player to drop.")}`);
+  }
+
+  const { error } = await supabase.rpc("add_and_drop_player", {
+    p_league_id:      leagueId,
+    p_user_id:        user.id,
+    p_add_player_id:  addPlayerId,
+    p_drop_player_id: dropPlayerId,
+  });
+
+  if (error) {
+    redirect(`/dashboard/league/${leagueId}/free-agents?error=${encodeURIComponent(error.message)}`);
+  }
+
+  rosterPaths(leagueId).forEach((p) => revalidatePath(p));
+  redirect(`/dashboard/league/${leagueId}/free-agents?added=1&dropped=1`);
+}

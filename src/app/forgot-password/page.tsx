@@ -59,7 +59,7 @@ export default function ForgotPasswordPage() {
         ) : (
           <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
             <div className="flex flex-col gap-1">
-              <label htmlFor="email" className="text-xs uppercase tracking-wide text-zinc-400">
+              <label htmlFor="email" className="text-xs uppercase tracking-wide text-white">
                 Email
               </label>
               <input
@@ -92,7 +92,7 @@ export default function ForgotPasswordPage() {
               {loading ? "Sending..." : "Send reset link"}
             </button>
 
-            <p className="text-center text-sm text-zinc-400">
+            <p className="text-center text-sm text-white">
               <Link href="/login" className="underline" style={{ color: "#0057FF" }}>
                 Back to sign in
               </Link>

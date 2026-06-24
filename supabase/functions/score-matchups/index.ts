@@ -46,7 +46,7 @@ function applyDraftPower(
 // Powers counted toward Mirror Match opponent bonus (design doc spec)
 const MIRROR_MATCH_POWERS = new Set([
   'gunslinger','berserker_rage','reception_specialist','iron_defense',
-  'red_zone_menace','goal_line_hammer','sniper',
+  'red_zone_menace','goal_line_hammer','sniper','seam_buster',
 ]);
 
 // Flex-eligible positions for Mulligan replacement check

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { saveScoringSettings, generateSchedule } from "./actions";
+import { saveScoringSettings, generateSchedule, forceFinalize, syncPlayers } from "./actions";
+import { getCurrentNFLWeek } from "@/lib/nfl-utils";
 
 const PRESETS = {
   "Full PPR": {
@@ -100,7 +101,7 @@ export default async function SettingsPage({
 
   const { data: league } = await supabase
     .from("uff_leagues")
-    .select("id, name, commissioner_id, scoring_settings, draft_status")
+    .select("id, name, commissioner_id, scoring_settings, draft_status, season")
     .eq("id", leagueId)
     .maybeSingle();
 
@@ -116,6 +117,7 @@ export default async function SettingsPage({
     .limit(1);
 
   const scheduleExists = (scheduleCheck?.length ?? 0) > 0;
+  const currentNFLWeek = getCurrentNFLWeek();
   const savedSettings: Record<string, number> = league.scoring_settings ?? {};
 
   // Apply preset if requested via ?preset= query param
@@ -162,7 +164,7 @@ export default async function SettingsPage({
         <section className="flex flex-col gap-3 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>
           <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Matchup Schedule</h2>
           {scheduleExists ? (
-            <p className="text-sm text-zinc-400">
+            <p className="text-sm text-white">
               14-week regular season schedule is generated. &mdash; View it on the{" "}
               <Link href={`/dashboard/league/${leagueId}/matchups`} className="underline" style={{ color: "#0057FF" }}>
                 Matchups page
@@ -170,7 +172,7 @@ export default async function SettingsPage({
             </p>
           ) : (
             <>
-              <p className="text-sm text-zinc-400">
+              <p className="text-sm text-white">
                 Generates a round-robin 14-week regular season. Run this after the draft is complete.
               </p>
               <form action={generateSchedule}>
@@ -187,26 +189,75 @@ export default async function SettingsPage({
           )}
         </section>
 
+        {/* Force finalize */}
+        <section className="flex flex-col gap-3 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>
+          <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Force Finalize Week</h2>
+          <p className="text-sm text-white">
+            Manually finalize a week — marks matchups complete, applies Insurance tokens, awards the high-score
+            Power Restore Chip. Use if the Wednesday cron fails. Week {currentNFLWeek} is the current NFL week.
+          </p>
+          <form action={forceFinalize} className="flex items-center gap-3 flex-wrap">
+            <input type="hidden" name="leagueId" value={leagueId} />
+            <label htmlFor="finalize-week" className="text-sm text-white shrink-0">Week</label>
+            <input
+              id="finalize-week"
+              name="week"
+              type="number"
+              min={1}
+              max={18}
+              defaultValue={currentNFLWeek}
+              className="w-20 rounded border px-2 py-1 text-sm text-center tabular-nums"
+              style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
+            />
+            <button
+              type="submit"
+              className="rounded-md px-4 py-2 text-sm font-semibold"
+              style={{ background: "#CC0000", color: "#f4f4f8" }}
+            >
+              Finalize Week
+            </button>
+          </form>
+        </section>
+
+        {/* Sync player data */}
+        <section className="flex flex-col gap-3 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>
+          <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Sync Player Data</h2>
+          <p className="text-sm text-white">
+            Pulls the latest NFL roster from Sleeper — updates player names, teams, and injury status.
+            Run this when players are traded, cut, or signing status changes during the season.
+          </p>
+          <form action={syncPlayers}>
+            <input type="hidden" name="leagueId" value={leagueId} />
+            <button
+              type="submit"
+              className="rounded-md px-4 py-2 text-sm font-semibold"
+              style={{ background: "#1c1c2b", color: "#f4f4f8", border: "1px solid #3DDC84" }}
+            >
+              Sync Players
+            </button>
+          </form>
+        </section>
+
         {/* Scoring settings */}
         <section className="flex flex-col gap-6">
           <div className="flex flex-col gap-2">
             <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Scoring Settings</h2>
-            <p className="text-sm text-zinc-400">
+            <p className="text-sm text-white">
               Keys match Sleeper&rsquo;s stat format exactly — the live scoring engine uses these directly.
             </p>
             <div className="flex flex-wrap gap-2 mt-1">
-              <span className="text-xs text-zinc-500 self-center">Presets:</span>
+              <span className="text-xs text-white self-center">Presets:</span>
               {(["Full PPR", "Half PPR", "Standard"] as const).map((preset) => (
                 <a
                   key={preset}
                   href={`?preset=${encodeURIComponent(preset)}`}
                   className="rounded px-3 py-1 text-xs font-semibold"
-                  style={{ background: "#1c1c2b", color: "#8a8a9a" }}
+                  style={{ background: "#1c1c2b", color: "#f4f4f8" }}
                 >
                   {preset}
                 </a>
               ))}
-              <span className="text-xs self-center" style={{ color: "#8a8a9a" }}>(applies preset then save manually)</span>
+              <span className="text-xs self-center" style={{ color: "#f4f4f8" }}>(applies preset then save manually)</span>
             </div>
           </div>
 
@@ -221,7 +272,7 @@ export default async function SettingsPage({
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {group.fields.map(({ key, label }) => (
                     <div key={key} className="flex items-center justify-between gap-3">
-                      <label htmlFor={key} className="text-sm text-zinc-400 flex-1">
+                      <label htmlFor={key} className="text-sm text-white flex-1">
                         {label}
                       </label>
                       <input

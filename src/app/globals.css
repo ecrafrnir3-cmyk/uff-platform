@@ -20,3 +20,18 @@ body {
   color: var(--foreground);
   font-family: var(--font-body, 'Roboto Condensed', Arial, sans-serif);
 }
+
+/* Force all text to be readable — no gray */
+* {
+  color: inherit;
+}
+
+p, span, label, td, th, li, a, button, div {
+  color: inherit;
+}
+
+/* Lineup slot placeholders */
+.lineup-slot-empty {
+  color: #FFD700 !important;
+  border-color: #FFD700 !important;
+}

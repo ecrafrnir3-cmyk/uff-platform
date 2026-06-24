@@ -67,7 +67,7 @@ export default function TokenChoicePicker({
       <form ref={formRef} action={setTokenChoice} className="mt-2 flex items-center gap-2">
         <input type="hidden" name="leagueId" value={leagueId} />
         <input type="hidden" name="week"     value={week} />
-        <label className="text-xs" style={{ color: "#8a8a9a" }}>
+        <label className="text-xs" style={{ color: "#f4f4f8" }}>
           Choose position:
         </label>
         <select
@@ -82,7 +82,7 @@ export default function TokenChoicePicker({
             <option key={pos} value={pos}>{pos}</option>
           ))}
         </select>
-        {isPending && <span className="text-xs" style={{ color: "#8a8a9a" }}>Saving…</span>}
+        {isPending && <span className="text-xs" style={{ color: "#f4f4f8" }}>Saving…</span>}
       </form>
     );
   }
@@ -91,7 +91,7 @@ export default function TokenChoicePicker({
     // Second Wind: pick a past used token to replay
     if (pastUsedTokenIds.length === 0) {
       return (
-        <p className="mt-2 text-xs" style={{ color: "#8a8a9a" }}>
+        <p className="mt-2 text-xs" style={{ color: "#f4f4f8" }}>
           No prior tokens to replay yet — use Second Wind in a later week.
         </p>
       );
@@ -100,7 +100,7 @@ export default function TokenChoicePicker({
       <form ref={formRef} action={setTokenChoice} className="mt-2 flex items-center gap-2">
         <input type="hidden" name="leagueId" value={leagueId} />
         <input type="hidden" name="week"     value={week} />
-        <label className="text-xs" style={{ color: "#8a8a9a" }}>
+        <label className="text-xs" style={{ color: "#f4f4f8" }}>
           Replay token:
         </label>
         <select
@@ -117,7 +117,7 @@ export default function TokenChoicePicker({
             </option>
           ))}
         </select>
-        {isPending && <span className="text-xs" style={{ color: "#8a8a9a" }}>Saving…</span>}
+        {isPending && <span className="text-xs" style={{ color: "#f4f4f8" }}>Saving…</span>}
       </form>
     );
   }

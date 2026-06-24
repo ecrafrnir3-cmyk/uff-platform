@@ -24,7 +24,7 @@ export default function DropButton({
       <button
         type="button"
         className="rounded px-2 py-0.5 text-xs font-semibold"
-        style={{ background: "#1c1c2b", color: "#8a8a9a" }}
+        style={{ background: "#1c1c2b", color: "#f4f4f8" }}
         onClick={() => {
           if (window.confirm(`Drop ${playerName}? This cannot be undone.`)) {
             formRef.current?.requestSubmit();

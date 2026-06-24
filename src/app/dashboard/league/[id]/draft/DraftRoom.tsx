@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { makeDraftPick, assignPowerToPick, assignVampireBite, swapForesightCoin } from "./actions";
+import { makeDraftPick, assignPowerToPick, assignVampireBite, swapForesightCoin, executeHeist, restoreHeistOrder, revealNextPower } from "./actions";
 import { startDraft } from "../actions";
 
 const supabase = createClient();
@@ -55,7 +55,7 @@ interface PowerRow {
   } | null;
 }
 
-type PowerResultType = "applied" | "fizzled" | "meta" | "error";
+type PowerResultType = "applied" | "fizzled" | "meta" | "error" | "blocked";
 
 const POSITIONS = ["ALL", "QB", "RB", "WR", "TE", "K", "DEF"];
 
@@ -123,7 +123,7 @@ function VampireBiteModal({
           <h2 className="mt-1 text-xl font-bold" style={{ color: "#f4f4f8" }}>
             Choose your target
           </h2>
-          <p className="mt-1 text-sm text-zinc-400">
+          <p className="mt-1 text-sm text-white">
             10% of their weekly score drains to you every week, all season.
           </p>
         </div>
@@ -139,7 +139,7 @@ function VampireBiteModal({
 
         <div className="min-h-0 max-h-[40vh] flex-1 overflow-y-auto flex flex-col gap-1 pr-1">
           {filteredPicks.length === 0 && (
-            <p className="py-4 text-center text-sm text-zinc-500">No players match.</p>
+            <p className="py-4 text-center text-sm text-white">No players match.</p>
           )}
           {filteredPicks.map((pick) => {
             const isSelected = selected?.id === pick.player_id;
@@ -158,7 +158,7 @@ function VampireBiteModal({
                   <p className="text-sm font-semibold" style={{ color: "#f4f4f8" }}>
                     {pick.players?.full_name ?? pick.player_id}
                   </p>
-                  <p className="text-xs text-zinc-500">
+                  <p className="text-xs text-white">
                     {pick.players?.position ?? "?"} - {pick.players?.team ?? "FA"} - {owner?.team_name ?? "?"}
                   </p>
                 </div>
@@ -185,12 +185,12 @@ function VampireBiteModal({
             onClick={onSkip}
             disabled={submitting}
             className="rounded-md px-4 py-2.5 text-sm disabled:opacity-40"
-            style={{ background: "#1c1c2b", color: "#8a8a9a" }}
+            style={{ background: "#1c1c2b", color: "#f4f4f8" }}
           >
             Skip
           </button>
         </div>
-        <p className="mt-2 text-center text-xs" style={{ color: "#8a8a9a" }}>
+        <p className="mt-2 text-center text-xs" style={{ color: "#f4f4f8" }}>
           Skipping forfeits your Vampire Bite permanently.
         </p>
       </div>
@@ -224,7 +224,7 @@ function ForesightCoinModal({
       >
         <p className="text-xs uppercase tracking-[0.2em]" style={{ color: "#FFD700" }}>Foresight Coin</p>
         <h2 className="mt-1 text-xl font-bold" style={{ color: "#f4f4f8" }}>Choose your power</h2>
-        <p className="mt-1 mb-4 text-sm" style={{ color: "#8a8a9a" }}>
+        <p className="mt-1 mb-4 text-sm" style={{ color: "#f4f4f8" }}>
           Keep Round {currentRound}&apos;s power or swap it with a future round.
           The powers swap — you don&apos;t lose any.
         </p>
@@ -247,7 +247,7 @@ function ForesightCoinModal({
                   Round {round}{isCurrent ? " · current" : ""}
                 </p>
                 <p className="text-sm font-semibold" style={{ color: "#f4f4f8" }}>{power?.name ?? "Unknown"}</p>
-                <p className="text-xs mt-0.5" style={{ color: "#8a8a9a" }}>{power?.description ?? ""}</p>
+                <p className="text-xs mt-0.5" style={{ color: "#f4f4f8" }}>{power?.description ?? ""}</p>
                 {power?.tied_position && power.tied_position !== "ANY" && (
                   <p className="mt-1 text-xs font-semibold" style={{ color: "#FFD700" }}>
                     {power.tied_position} only
@@ -270,7 +270,7 @@ function ForesightCoinModal({
             ? "Keep current power"
             : `Swap — take Round ${selectedRound}'s power`}
         </button>
-        <p className="mt-2 text-center text-xs" style={{ color: "#8a8a9a" }}>
+        <p className="mt-2 text-center text-xs" style={{ color: "#f4f4f8" }}>
           You must choose before your next pick.
         </p>
       </div>
@@ -278,6 +278,86 @@ function ForesightCoinModal({
   );
 }
 
+
+// ---- Draft Heist modal -------------------------------------------------------
+function HeistModal({
+  members,
+  myMemberId,
+  memberMap,
+  pickedThisRound,
+  onSelect,
+  onSkip,
+  submitting,
+}: {
+  members: Member[];
+  myMemberId: string;
+  memberMap: Record<string, Member>;
+  pickedThisRound: Set<string>;
+  onSelect: (targetMemberId: string) => void;
+  onSkip: () => void;
+  submitting: boolean;
+}) {
+  const [selected, setSelected] = useState<string | null>(null);
+  // Only allow targeting managers who haven't picked yet this round.
+  // Swapping with an already-picked manager would let them pick twice and skip the heist holder.
+  const targets = members.filter((m) => m.id !== myMemberId && !pickedThisRound.has(m.id));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.85)" }}>
+      <div
+        className="relative mx-4 flex max-h-[90vh] w-full max-w-md flex-col rounded-xl border p-6"
+        style={{ background: "#0d0d1a", borderColor: "#CC0000" }}
+      >
+        <p className="text-xs uppercase tracking-[0.2em]" style={{ color: "#CC0000" }}>Draft Heist</p>
+        <h2 className="mt-1 text-xl font-bold" style={{ color: "#f4f4f8" }}>Steal a pick slot</h2>
+        <p className="mt-1 mb-4 text-sm text-white">
+          Choose a manager to swap draft positions with for this round only.
+        </p>
+        <div className="flex flex-col gap-2 overflow-y-auto max-h-[40vh] pr-1">
+          {targets.length === 0 && (
+            <p className="py-4 text-center text-sm" style={{ color: "#f4f4f8" }}>
+              All other managers have already picked this round — no valid targets.
+            </p>
+          )}
+          {targets.map((m) => {
+            const isSelected = selected === m.id;
+            const factionColor = m.faction === "hero" ? "#0057FF" : m.faction === "villain" ? "#CC0000" : "#f4f4f8";
+            return (
+              <button
+                key={m.id}
+                onClick={() => setSelected(m.id)}
+                className="flex items-center justify-between rounded-lg border px-3 py-2.5 text-left transition"
+                style={{ borderColor: isSelected ? "#CC0000" : "#2a2a40", background: isSelected ? "rgba(204,0,0,0.12)" : "#15151f" }}
+              >
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: "#f4f4f8" }}>{m.team_name}</p>
+                  <p className="text-xs" style={{ color: factionColor }}>
+                    {m.faction ?? "Unassigned"} · {m.profiles?.display_name ?? m.profiles?.username ?? ""}
+                  </p>
+                </div>
+                {isSelected && <span className="ml-2 shrink-0 text-xs font-bold" style={{ color: "#CC0000" }}>TARGET</span>}
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-4 flex gap-3">
+          <button
+            onClick={() => selected && onSelect(selected)}
+            disabled={!selected || submitting}
+            className="flex-1 rounded-md px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
+            style={{ background: "#CC0000", color: "#f4f4f8" }}
+          >
+            {submitting ? "Executing..." : selected ? `Steal ${memberMap[selected]?.team_name ?? ""}'s slot` : "Select a target"}
+          </button>
+          <button onClick={onSkip} disabled={submitting} className="rounded-md px-4 py-2.5 text-sm disabled:opacity-40" style={{ background: "#1c1c2b", color: "#f4f4f8" }}>
+            Skip
+          </button>
+        </div>
+        <p className="mt-2 text-center text-xs" style={{ color: "#f4f4f8" }}>Skipping forfeits Draft Heist for this round.</p>
+      </div>
+    </div>
+  );
+}
 // ---- Full 2-D draft board ----------------------------------------------------
 function DraftBoardGrid({
   picks,
@@ -286,6 +366,7 @@ function DraftBoardGrid({
   myMemberId,
   currentPickNo,
   isDraftComplete,
+  activeDraftOrder,
 }: {
   picks: Pick[];
   league: League;
@@ -293,6 +374,7 @@ function DraftBoardGrid({
   myMemberId: string;
   currentPickNo: number;
   isDraftComplete: boolean;
+  activeDraftOrder: string[];
 }) {
   const pickByNo: Record<number, Pick> = {};
   for (const p of picks) pickByNo[p.pick_no] = p;
@@ -304,7 +386,7 @@ function DraftBoardGrid({
         <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>
           Draft Board
         </h2>
-        <span className="text-sm text-zinc-500">
+        <span className="text-sm text-white">
           {picks.length} / {totalPicks} picks
           {isDraftComplete && " -- Final"}
         </span>
@@ -317,12 +399,12 @@ function DraftBoardGrid({
           <thead>
             <tr style={{ background: "#15151f" }}>
               <th
-                className="border px-2 py-2 text-left font-normal text-zinc-500"
+                className="border px-2 py-2 text-left font-normal text-white"
                 style={{ borderColor: "#2a2a40", minWidth: "36px" }}
               >
                 Rd
               </th>
-              {league.draft_order.map((memberId, idx) => {
+              {activeDraftOrder.map((memberId, idx) => {
                 const m = memberMap[memberId];
                 const isMe = memberId === myMemberId;
                 return (
@@ -331,7 +413,7 @@ function DraftBoardGrid({
                     className="border px-2 py-2 text-left"
                     style={{
                       borderColor: "#2a2a40",
-                      color: isMe ? "#0057FF" : "#c4c4d0",
+                      color: isMe ? "#0057FF" : "#f4f4f8",
                       minWidth: "88px",
                       maxWidth: "110px",
                       fontWeight: isMe ? 700 : 500,
@@ -340,7 +422,7 @@ function DraftBoardGrid({
                     <span className="block truncate" title={m?.team_name ?? `Team ${idx + 1}`}>
                       {m?.team_name ?? `T${idx + 1}`}
                     </span>
-                    <span className="block font-normal" style={{ fontSize: "9px", color: "#8a8a9a" }}>
+                    <span className="block font-normal" style={{ fontSize: "9px", color: "#f4f4f8" }}>
                       Pick {idx + 1}
                     </span>
                   </th>
@@ -356,7 +438,7 @@ function DraftBoardGrid({
               return (
                 <tr key={round}>
                   <td
-                    className="border px-2 py-1 text-zinc-500"
+                    className="border px-2 py-1 text-white"
                     style={{ borderColor: "#2a2a40", background: rowBg, whiteSpace: "nowrap" }}
                   >
                     {round}
@@ -381,7 +463,7 @@ function DraftBoardGrid({
                     }
 
                     const pos = pick?.players?.position ?? "";
-                    const posColor = POS_COLORS[pos] ?? "#8a8a9a";
+                    const posColor = POS_COLORS[pos] ?? "#f4f4f8";
 
                     return (
                       <td
@@ -393,7 +475,7 @@ function DraftBoardGrid({
                           <div>
                             <p
                               className="truncate font-semibold leading-tight"
-                              style={{ color: isMe ? "#8ab4ff" : "#e0e0ea" }}
+                              style={{ color: isMe ? "#8ab4ff" : "#f4f4f8" }}
                               title={pick.players?.full_name ?? ""}
                             >
                               {lastName(pick.players?.full_name ?? "?")}
@@ -453,7 +535,7 @@ function PreDraftLobby({
           <h1 className="text-3xl font-bold" style={{ color: "#0057FF" }}>
             Draft Lobby
           </h1>
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-white">
             {members.length} / {league.max_teams} managers
           </p>
         </header>
@@ -472,10 +554,10 @@ function PreDraftLobby({
                 <p className="font-semibold" style={{ color: "#f4f4f8" }}>
                   {m.team_name}
                   {m.id === myMemberId && (
-                    <span className="ml-2 text-xs text-zinc-500">(you)</span>
+                    <span className="ml-2 text-xs text-white">(you)</span>
                   )}
                 </p>
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-white">
                   {m.profiles?.display_name ?? m.profiles?.username ?? "Unknown"}
                 </p>
               </div>
@@ -490,7 +572,7 @@ function PreDraftLobby({
                   {m.faction}
                 </span>
               ) : (
-                <span className="text-xs" style={{ color: "#8a8a9a" }}>No faction</span>
+                <span className="text-xs" style={{ color: "#f4f4f8" }}>No faction</span>
               )}
             </div>
           ))}
@@ -506,7 +588,7 @@ function PreDraftLobby({
             </h2>
             {allFactionsSet ? (
               <>
-                <p className="text-sm text-zinc-400">
+                <p className="text-sm text-white">
                   All managers have factions. Ready to start the draft.
                 </p>
                 <form action={startDraft}>
@@ -521,7 +603,7 @@ function PreDraftLobby({
                 </form>
               </>
             ) : (
-              <p className="text-sm text-zinc-400">
+              <p className="text-sm text-white">
                 {unassigned} manager{unassigned !== 1 ? "s" : ""} still need
                 {unassigned === 1 ? "s" : ""} a faction.
                 Go back to the league page to randomize.
@@ -533,7 +615,7 @@ function PreDraftLobby({
             className="rounded-lg border px-5 py-4 text-center"
             style={{ borderColor: "#2a2a40", background: "#15151f" }}
           >
-            <p className="text-sm text-zinc-400">
+            <p className="text-sm text-white">
               Waiting for the commissioner to start the draft...
             </p>
           </div>
@@ -577,10 +659,26 @@ export default function DraftRoom({
   const [foresightSubmitting, setForesightSubmitting] = useState(false);
   const [foresightPickedRound, setForesightPickedRound] = useState<number>(0);
   const [myPowersState, setMyPowersState] = useState<PowerRow[]>(myPowers);
+  // Draft Heist
+  const [showHeistModal, setShowHeistModal] = useState(false);
+  const [heistSubmitting, setHeistSubmitting] = useState(false);
+  const [heistUsedRound, setHeistUsedRound] = useState<number | null>(null);
+  const [draftOrderState, setDraftOrderState] = useState<string[]>(league.draft_order);
+  const [heistOriginalOrder, setHeistOriginalOrder] = useState<string[] | null>(null);
+  // Telepathy
+  const [telepathyReveal, setTelepathyReveal] = useState<{ powerName: string | null; cloaked: boolean } | null>(null);
 
-  // ---- isDraftComplete (computed early so effects can guard on it) -----------
+  // ---- Pre-return derived state (must be here so effects can use them) ------
   const totalPicksEarly = league.max_teams * league.draft_rounds;
   const isDraftComplete = draftStatus === "completed" || picks.length >= totalPicksEarly;
+  const currentPickNo = picks.length + 1;
+  const currentRound = Math.ceil(currentPickNo / league.max_teams);
+  const activeDraftOrder = draftOrderState;
+  const slot = snakeDraftSlot(currentPickNo, league.max_teams);
+  const currentMemberId = isDraftComplete ? null : (activeDraftOrder[slot - 1] ?? null);
+  const isMyTurn = !isDraftComplete && currentMemberId === myMemberId;
+  const currentMember = members.find((m) => m.id === currentMemberId);
+  const myPowerThisRound = myPowersState.find((p) => p.round === currentRound);
 
   // ---- fetchPicks (used in effect below) -------------------------------------
   const fetchPicks = useCallback(async () => {
@@ -591,12 +689,28 @@ export default function DraftRoom({
       .order("pick_no", { ascending: true });
     if (data) setPicks(data as unknown as Pick[]);
 
+    // Also sync draft_order and heist_state so ALL clients see heist swaps
     const { data: leagueRow } = await supabase
       .from("uff_leagues")
-      .select("draft_status")
+      .select("draft_status, draft_order, heist_state")
       .eq("id", leagueId)
       .maybeSingle();
-    if (leagueRow) setDraftStatus(leagueRow.draft_status);
+    if (leagueRow) {
+      setDraftStatus(leagueRow.draft_status);
+      // Always trust DB draft_order (swapped during heist, restored after)
+      if (leagueRow.draft_order) {
+        setDraftOrderState(leagueRow.draft_order as string[]);
+      }
+      // Sync heist tracking state so restore effect works on all clients
+      const hs = leagueRow.heist_state as { round: number; memberA: string; memberB: string; originalOrder: string[] } | null;
+      if (hs) {
+        setHeistUsedRound(hs.round);
+        setHeistOriginalOrder(hs.originalOrder);
+      } else {
+        // Heist cleared in DB — clear client state too (handles cross-client restore)
+        setHeistOriginalOrder(null);
+      }
+    }
   }, [leagueId]);
 
   // ---- All effects (must be before any conditional returns) ------------------
@@ -605,6 +719,27 @@ export default function DraftRoom({
     const interval = setInterval(fetchPicks, 5000);
     return () => clearInterval(interval);
   }, [fetchPicks, isDraftComplete]);
+
+  // Restore heist order when round advances
+  useEffect(() => {
+    if (!heistOriginalOrder) return;
+    if (currentRound > (heistUsedRound ?? 0) && !isDraftComplete) {
+      restoreHeistOrder({ leagueId, originalOrder: heistOriginalOrder }).then(() => {
+        setDraftOrderState(heistOriginalOrder);
+        setHeistOriginalOrder(null);
+        setHeistUsedRound(null);
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentRound, heistOriginalOrder, heistUsedRound, isDraftComplete]);
+
+  // Show Draft Heist modal on our turn
+  useEffect(() => {
+    if (isMyTurn && myPowerThisRound?.draft_powers?.name === "Draft Heist" && heistUsedRound !== currentRound && !showHeistModal) {
+      setShowHeistModal(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMyTurn, myPowerThisRound?.draft_powers?.name, currentRound]);
 
   useEffect(() => {
     const fetchPlayers = async () => {
@@ -640,15 +775,8 @@ export default function DraftRoom({
     );
   }
 
-  // ---- Derived state ---------------------------------------------------------
+  // ---- Derived state (remaining) -------------------------------------------
   const totalPicks = totalPicksEarly; // already computed above
-  const currentPickNo = picks.length + 1;
-  const currentRound = Math.ceil(currentPickNo / league.max_teams);
-  const slot = snakeDraftSlot(currentPickNo, league.max_teams);
-  const currentMemberId = isDraftComplete ? null : (league.draft_order[slot - 1] ?? null);
-  const isMyTurn = !isDraftComplete && currentMemberId === myMemberId;
-  const currentMember = members.find((m) => m.id === currentMemberId);
-  const myPowerThisRound = myPowersState.find((p) => p.round === currentRound);
   const memberMap = Object.fromEntries(members.map((m) => [m.id, m]));
   const pickedIds = new Set(picks.map((p) => p.player_id));
   const availablePlayers = players.filter((p) => !pickedIds.has(p.id));
@@ -700,6 +828,32 @@ export default function DraftRoom({
 
           if (pr.result === "vampire_bite") {
             setShowVampireBiteModal(true);
+          } else if (pr.result === "meta" && dp.name === "Telepathy") {
+            const nextPickNo = picks.length + 2;
+            const nextRoundCheck = Math.ceil(nextPickNo / league.max_teams);
+            if (nextRoundCheck === currentRound) {
+              const nextSlot = snakeDraftSlot(nextPickNo, league.max_teams);
+              const nextMemberId = activeDraftOrder[nextSlot - 1] ?? null;
+              if (nextMemberId && nextMemberId !== myMemberId) {
+                const reveal = await revealNextPower({ leagueId, nextMemberId, currentRound });
+                setTelepathyReveal(reveal);
+                setTimeout(() => setTelepathyReveal(null), 10000);
+              }
+            }
+            const inSameRound = Math.ceil((picks.length + 2) / league.max_teams) === currentRound;
+            setPowerResult({
+              type: "meta",
+              message: inSameRound
+                ? "Telepathy activated — see the reveal below."
+                : "Telepathy activated — you're the last pick of this round, nothing to reveal.",
+            });
+            setTimeout(() => setPowerResult(null), 6000);
+          } else if (pr.result === "meta" && dp.name === "Cloak") {
+            setPowerResult({ type: "meta", message: "Cloak activated — your power is hidden from Telepathy this round." });
+            setTimeout(() => setPowerResult(null), 6000);
+          } else if (pr.result === "meta" && (dp.name === "Draft Heist" || dp.name === "Hero's Shield")) {
+            // Draft Heist is handled pre-pick via HeistModal; Hero's Shield is passive.
+            // Both return "meta" from assignPowerToPick — suppress the auto-applied banner.
           } else {
             setPowerResult({ type: pr.result as PowerResultType, message: pr.message });
             setTimeout(() => setPowerResult(null), 6000);
@@ -766,6 +920,7 @@ export default function DraftRoom({
     if (type === "applied")  return { borderColor: "#3DDC84", color: "#3DDC84", background: "#0e1a12" };
     if (type === "fizzled")  return { borderColor: "#FFD700", color: "#FFD700", background: "#1a190a" };
     if (type === "meta")     return { borderColor: "#0057FF", color: "#8ab4ff", background: "#0a0e1a" };
+    if (type === "blocked")  return { borderColor: "#FFD700", color: "#FFD700", background: "#1a190a" };
     return { borderColor: "#CC0000", color: "#ff8a8a", background: "#1a0e16" };
   }
 
@@ -793,6 +948,50 @@ export default function DraftRoom({
           submitting={foresightSubmitting}
         />
       )}
+      {showHeistModal && (
+        <HeistModal
+          members={members}
+          myMemberId={myMemberId}
+          memberMap={memberMap}
+          pickedThisRound={new Set(picks.filter((p) => p.round === currentRound).map((p) => p.member_id))}
+          onSelect={async (targetMemberId) => {
+            setHeistSubmitting(true);
+            const result = await executeHeist({
+              leagueId,
+              targetMemberId,
+              currentRound,
+              currentDraftOrder: activeDraftOrder,
+              myMemberId,
+            });
+            setHeistSubmitting(false);
+            setShowHeistModal(false);
+            setHeistUsedRound(currentRound);
+            if (result.error) {
+              setError(result.error);
+            } else if (result.blocked) {
+              setPowerResult({ type: "blocked", message: `Draft Heist blocked! ${result.blockerTeam ?? "That team"} has Hero\'s Shield this round.` });
+              setTimeout(() => setPowerResult(null), 8000);
+            } else {
+              const targetTeam = memberMap[targetMemberId]?.team_name ?? "target";
+              const newOrder = [...activeDraftOrder];
+              const myIdx = newOrder.indexOf(myMemberId);
+              const tIdx = newOrder.indexOf(targetMemberId);
+              if (myIdx !== -1 && tIdx !== -1) { newOrder[myIdx] = targetMemberId; newOrder[tIdx] = myMemberId; }
+              setHeistOriginalOrder(activeDraftOrder);
+              setDraftOrderState(newOrder);
+              setPowerResult({ type: "applied", message: `Draft Heist executed — swapped positions with ${targetTeam} for this round!` });
+              setTimeout(() => setPowerResult(null), 8000);
+            }
+          }}
+          onSkip={() => {
+            setShowHeistModal(false);
+            setHeistUsedRound(currentRound);
+            setPowerResult({ type: "fizzled", message: "Draft Heist skipped — power forfeited for this round." });
+            setTimeout(() => setPowerResult(null), 5000);
+          }}
+          submitting={heistSubmitting}
+        />
+      )}
 
       <div className="mx-auto max-w-6xl flex flex-col gap-6">
 
@@ -807,7 +1006,7 @@ export default function DraftRoom({
           <h1 className="text-3xl sm:text-4xl" style={{ fontFamily: "var(--font-display, sans-serif)", color: "#0057FF" }}>
             Draft Room
           </h1>
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-white">
             {isDraftComplete
               ? `Draft complete -- all ${totalPicks} picks locked in.`
               : `Round ${currentRound} of ${league.draft_rounds} - Pick ${picks.length + 1} of ${totalPicks}`}
@@ -830,27 +1029,32 @@ export default function DraftRoom({
                 </p>
                 {myPowerThisRound?.draft_powers && (
                   <div className="rounded-md border px-3 py-2" style={{ borderColor: "#2a2a40", background: "#0d0d1a" }}>
-                    <p className="text-xs uppercase tracking-wide text-zinc-500 mb-0.5">Your power this round</p>
+                    <p className="text-xs uppercase tracking-wide text-white mb-0.5">Your power this round</p>
                     <p className="text-sm font-semibold" style={{ color: "#f4f4f8" }}>
                       {myPowerThisRound.draft_powers.name}
                       {myPowerThisRound.draft_powers.tied_position &&
                         myPowerThisRound.draft_powers.tied_position !== "ANY" && (
                           <span
                             className="ml-2 rounded px-1.5 py-0.5 text-xs font-normal"
-                            style={{ background: "#1c1c2b", color: "#8a8a9a" }}
+                            style={{ background: "#1c1c2b", color: "#f4f4f8" }}
                           >
                             {myPowerThisRound.draft_powers.tied_position} only
                           </span>
                         )}
                     </p>
-                    <p className="mt-0.5 text-xs text-zinc-500">
+                    <p className="mt-0.5 text-xs text-white">
                       {myPowerThisRound.draft_powers.description}
                     </p>
+                    {myPowerThisRound.draft_powers.name === "Hero's Shield" && (
+                      <p className="mt-1.5 text-xs font-semibold" style={{ color: "#0057FF" }}>
+                        🛡 Your pick slot is shielded against Draft Heist this round.
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
             ) : (
-              <p className="text-sm text-zinc-400">
+              <p className="text-sm text-white">
                 Waiting on{" "}
                 <span className="font-semibold" style={{ color: "#f4f4f8" }}>
                   {currentMember?.team_name ?? "another manager"}
@@ -892,9 +1096,27 @@ export default function DraftRoom({
         )}
         {powerResult && (
           <p className="rounded-md border px-3 py-2 text-sm font-semibold" style={powerBannerStyle(powerResult.type)}>
-            {powerResult.type === "applied" ? "Power applied -- " : powerResult.type === "fizzled" ? "Fizzled -- " : ""}
+            {powerResult.type === "applied" ? "Power applied — " : powerResult.type === "fizzled" ? "Fizzled — " : ""}
             {powerResult.message}
           </p>
+        )}
+        {telepathyReveal && (
+          <div className="rounded-md border px-4 py-3 text-sm" style={{ borderColor: "#0057FF", background: "#0a0e1a" }}>
+            <p className="text-xs uppercase tracking-wide mb-1" style={{ color: "#0057FF" }}>
+              🧠 Telepathy — Next Manager&rsquo;s Power
+            </p>
+            {telepathyReveal.cloaked ? (
+              <p className="font-semibold" style={{ color: "#f4f4f8" }}>
+                Power is cloaked — Cloak is active on the next manager.
+              </p>
+            ) : telepathyReveal.powerName ? (
+              <p className="font-semibold" style={{ color: "#f4f4f8" }}>
+                {telepathyReveal.powerName}
+              </p>
+            ) : (
+              <p style={{ color: "#f4f4f8" }}>No power assigned for this round.</p>
+            )}
+          </div>
         )}
 
         {/* Two-column: available players + sidebar */}
@@ -922,7 +1144,7 @@ export default function DraftRoom({
                     className="rounded px-3 py-1.5 text-xs font-semibold transition"
                     style={{
                       background: posFilter === pos ? "#0057FF" : "#1c1c2b",
-                      color: posFilter === pos ? "#f4f4f8" : "#8a8a9a",
+                      color: posFilter === pos ? "#f4f4f8" : "#f4f4f8",
                     }}
                   >
                     {pos}
@@ -932,7 +1154,7 @@ export default function DraftRoom({
             </div>
             <div className="flex flex-col gap-1 max-h-[520px] overflow-y-auto pr-1">
               {(search.trim().length > 0 || posFilter !== "ALL") && availablePlayers.length === 0 && (
-                <p className="py-8 text-center text-sm text-zinc-500">No available players match.</p>
+                <p className="py-8 text-center text-sm text-white">No available players match.</p>
               )}
               {availablePlayers.map((p) => (
                 <div
@@ -942,7 +1164,7 @@ export default function DraftRoom({
                 >
                   <div>
                     <p className="text-sm font-semibold">{p.full_name}</p>
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-xs text-white">
                       {p.position ?? "?"} - {p.team ?? "FA"}
                       {p.status && p.status !== "Active" ? ` - ${p.status}` : ""}
                     </p>
@@ -968,7 +1190,7 @@ export default function DraftRoom({
               <h3 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "#FFD700" }}>
                 Draft Order
               </h3>
-              {league.draft_order.map((memberId, idx) => {
+              {activeDraftOrder.map((memberId, idx) => {
                 const m = memberMap[memberId];
                 const isPickingNow = !isDraftComplete && memberId === currentMemberId;
                 return (
@@ -980,7 +1202,7 @@ export default function DraftRoom({
                       border: isPickingNow ? "1px solid rgba(255,215,0,0.3)" : "1px solid transparent",
                     }}
                   >
-                    <span className="w-5 text-right text-xs" style={{ color: "#8a8a9a" }}>{idx + 1}.</span>
+                    <span className="w-5 text-right text-xs" style={{ color: "#f4f4f8" }}>{idx + 1}.</span>
                     <span
                       style={{
                         color: memberId === myMemberId ? "#8ab4ff" : "#f4f4f8",
@@ -989,7 +1211,7 @@ export default function DraftRoom({
                     >
                       {m?.team_name ?? memberId}
                       {memberId === myMemberId && (
-                        <span className="ml-1 text-xs text-zinc-500">(you)</span>
+                        <span className="ml-1 text-xs text-white">(you)</span>
                       )}
                     </span>
                     {isPickingNow && (
@@ -1007,7 +1229,7 @@ export default function DraftRoom({
                 My Powers
               </h3>
               {myPowersState.length === 0 && (
-                <p className="text-xs" style={{ color: "#8a8a9a" }}>No power assignments found.</p>
+                <p className="text-xs" style={{ color: "#f4f4f8" }}>No power assignments found.</p>
               )}
               {myPowersState.map((pw) => {
                 const dp = pw.draft_powers;
@@ -1023,7 +1245,7 @@ export default function DraftRoom({
                       opacity: isPast ? 0.45 : 1,
                     }}
                   >
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-xs text-white">
                       Rd {pw.round}
                       {isCurr && (
                         <span className="ml-1 font-bold" style={{ color: "#FFD700" }}>
@@ -1031,9 +1253,12 @@ export default function DraftRoom({
                         </span>
                       )}
                     </p>
-                    <p className="text-xs font-semibold" style={{ color: isCurr ? "#f4f4f8" : "#c4c4d0" }}>
+                    <p className="text-xs font-semibold" style={{ color: isCurr ? "#f4f4f8" : "#f4f4f8" }}>
                       {dp?.name ?? "Unknown"}
                     </p>
+                    {isCurr && dp?.name === "Hero's Shield" && (
+                      <p className="mt-0.5 text-xs" style={{ color: "#0057FF" }}>🛡 Shielded</p>
+                    )}
                   </div>
                 );
               })}
@@ -1049,6 +1274,7 @@ export default function DraftRoom({
           myMemberId={myMemberId}
           currentPickNo={currentPickNo}
           isDraftComplete={isDraftComplete}
+          activeDraftOrder={activeDraftOrder}
         />
 
       </div>

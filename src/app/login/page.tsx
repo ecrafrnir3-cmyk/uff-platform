@@ -87,7 +87,7 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
           {mode === "sign-up" && (
             <div className="flex flex-col gap-1">
-              <label htmlFor="displayName" className="text-xs uppercase tracking-wide text-zinc-400">
+              <label htmlFor="displayName" className="text-xs uppercase tracking-wide text-white">
                 Display name
               </label>
               <input
@@ -103,7 +103,7 @@ export default function LoginPage() {
           )}
 
           <div className="flex flex-col gap-1">
-            <label htmlFor="email" className="text-xs uppercase tracking-wide text-zinc-400">
+            <label htmlFor="email" className="text-xs uppercase tracking-wide text-white">
               Email
             </label>
             <input
@@ -119,7 +119,7 @@ export default function LoginPage() {
           </div>
 
           <div className="flex flex-col gap-1">
-            <label htmlFor="password" className="text-xs uppercase tracking-wide text-zinc-400">
+            <label htmlFor="password" className="text-xs uppercase tracking-wide text-white">
               Password
             </label>
             <input
@@ -137,7 +137,7 @@ export default function LoginPage() {
 
           {mode === "sign-in" && (
             <div className="flex justify-end -mt-2">
-              <Link href="/forgot-password" className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+              <Link href="/forgot-password" className="text-xs text-white hover:text-white transition-colors">
                 Forgot password?
               </Link>
             </div>
@@ -164,7 +164,7 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-zinc-400">
+        <p className="mt-6 text-center text-sm text-white">
           {mode === "sign-in" ? (
             <>
               Need an account?{" "}
@@ -198,6 +198,12 @@ export default function LoginPage() {
               </button>
             </>
           )}
+        </p>
+
+        <p className="mt-6 text-center text-xs" style={{ color: "#f4f4f8" }}>
+          <Link href="/about" className="hover:underline" style={{ color: "#f4f4f8" }}>About UFF</Link>
+          {" · "}
+          <Link href="/guide" className="hover:underline" style={{ color: "#f4f4f8" }}>Powers &amp; Guide</Link>
         </p>
       </div>
     </div>

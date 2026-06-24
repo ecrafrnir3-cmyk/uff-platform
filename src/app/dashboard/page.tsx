@@ -28,7 +28,7 @@ function FactionTag({ faction }: { faction: "hero" | "villain" | null }) {
   if (faction === "villain") {
     return <span style={{ color: VILLAIN_COLOR }}>Villain</span>;
   }
-  return <span className="text-zinc-500">No faction yet</span>;
+  return <span className="text-white">No faction yet</span>;
 }
 
 export default async function DashboardPage({
@@ -85,7 +85,7 @@ export default async function DashboardPage({
           </h2>
 
           {leagues.length === 0 ? (
-            <p className="text-sm text-zinc-400">
+            <p className="text-sm text-white">
               You&rsquo;re not in any leagues yet — create one or join with a code below.
             </p>
           ) : (
@@ -94,7 +94,7 @@ export default async function DashboardPage({
                 <Link
                   key={m.uff_leagues?.id}
                   href={`/dashboard/league/${m.uff_leagues?.id}`}
-                  className="flex items-center justify-between rounded-lg border px-4 py-3 transition hover:border-zinc-500"
+                  className="flex items-center justify-between rounded-lg border px-4 py-3 transition hover:border-white"
                   style={{ borderColor: "#2a2a40" }}
                 >
                   <div>
@@ -106,14 +106,14 @@ export default async function DashboardPage({
                         </span>
                       )}
                     </p>
-                    <p className="text-sm text-zinc-400">
+                    <p className="text-sm text-white">
                       Team: {m.team_name} &middot; Season {m.uff_leagues?.season} &middot;{" "}
                       {m.uff_leagues?.status} &middot; <FactionTag faction={m.faction} />
                     </p>
                   </div>
                   {m.is_commissioner && (
                     <div className="text-right">
-                      <p className="text-xs uppercase tracking-wide text-zinc-500">Join code</p>
+                      <p className="text-xs uppercase tracking-wide text-white">Join code</p>
                       <p className="font-mono text-lg" style={{ color: "#0057FF" }}>
                         {m.uff_leagues?.join_code}
                       </p>
@@ -151,7 +151,7 @@ export default async function DashboardPage({
                 style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
               />
               <div className="flex flex-col gap-1">
-                <label htmlFor="maxTeams" className="text-xs uppercase tracking-wide text-zinc-400">
+                <label htmlFor="maxTeams" className="text-xs uppercase tracking-wide text-white">
                   League size (must be even &mdash; split Hero/Villain)
                 </label>
                 <select
@@ -169,7 +169,7 @@ export default async function DashboardPage({
                 </select>
               </div>
               <div className="flex flex-col gap-1">
-                <label htmlFor="faction" className="text-xs uppercase tracking-wide text-zinc-400">
+                <label htmlFor="faction" className="text-xs uppercase tracking-wide text-white">
                   Your faction
                 </label>
                 <select
@@ -219,7 +219,7 @@ export default async function DashboardPage({
                 style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
               />
               <div className="flex flex-col gap-1">
-                <label htmlFor="joinFaction" className="text-xs uppercase tracking-wide text-zinc-400">
+                <label htmlFor="joinFaction" className="text-xs uppercase tracking-wide text-white">
                   Your faction
                 </label>
                 <select

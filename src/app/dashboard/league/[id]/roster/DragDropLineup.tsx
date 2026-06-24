@@ -23,7 +23,7 @@ const SLOT_ELIGIBLE: Record<string, string[]> = {
 
 const POS_COLOR: Record<string, string> = {
   QB: "#0057FF", RB: "#3DDC84", WR: "#FFD700",
-  TE: "#FF6B35", K: "#8a8a9a", DEF: "#CC0000", DST: "#CC0000",
+  TE: "#FF6B35", K: "#f4f4f8", DEF: "#CC0000", DST: "#CC0000",
 };
 
 const HERO_COLOR    = "#0057FF";
@@ -38,7 +38,7 @@ function PlayerAvatar({ playerId, name, position, size = 36 }: {
 }) {
   const isTeam = position === "DEF" || position === "DST";
   const initials = name.split(" ").map((w: string) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
-  const posColor = POS_COLOR[position] ?? "#8a8a9a";
+  const posColor = POS_COLOR[position] ?? "#f4f4f8";
 
   if (isTeam) {
     return (
@@ -74,7 +74,7 @@ function PlayerAvatar({ playerId, name, position, size = 36 }: {
       <div style={{
         display: "none", position: "absolute", inset: 0, borderRadius: "50%",
         background: "#1c1c2b", alignItems: "center", justifyContent: "center",
-        fontSize: size * 0.32, fontWeight: 700, color: "#8a8a9a",
+        fontSize: size * 0.32, fontWeight: 700, color: "#f4f4f8",
       }}>
         {initials}
       </div>
@@ -260,7 +260,7 @@ export default function DragDropLineup({
               Auto-Fill
             </button>
           )}
-          <span className="text-xs" style={{ color: "#8a8a9a" }}>
+          <span className="text-xs" style={{ color: "#f4f4f8" }}>
             {locked
               ? `Locked ${lockDisplay}`
               : `${filledCount} / ${slots.length} starters set`}
@@ -272,11 +272,11 @@ export default function DragDropLineup({
       {!locked ? (
         <div
           className="px-4 py-1.5 text-xs"
-          style={{ background: "#0f0f1c", color: "#5a5a7a", borderBottom: "1px solid #1a1a2e" }}
+          style={{ background: "#0f0f1c", color: "#f4f4f8", borderBottom: "1px solid #1a1a2e" }}
         >
           {gameTimes
             ? nextKickoffDisplay
-              ? <>Drag players into slots &middot; Players lock at kickoff &middot; First game: <span style={{ color: "#8a8a9a" }}>{nextKickoffDisplay}</span></>
+              ? <>Drag players into slots &middot; Players lock at kickoff &middot; First game: <span style={{ color: "#f4f4f8" }}>{nextKickoffDisplay}</span></>
               : "Drag players into slots · Players lock individually at their game time"
             : `Drag players into slots · Drop onto Bench to remove · Locks ${lockDisplay}`}
         </div>
@@ -295,7 +295,7 @@ export default function DragDropLineup({
           const pid    = assignments[slot] ?? "";
           const player = pid ? activeRoster.find((p) => p.player_id === pid) : null;
           const base   = slotBase(slot);
-          const posColor  = POS_COLOR[base] ?? "#8a8a9a";
+          const posColor  = POS_COLOR[base] ?? "#f4f4f8";
           const isOver    = overSlot === slot;
           const isInvalid = invalidSlot === slot;
           const dropOk    = draggedId ? eligible(draggedId, slot) : true;
@@ -329,7 +329,7 @@ export default function DragDropLineup({
                 style={{
                   width: 44, padding: "3px 0",
                   background: player ? posColor + "22" : "#1a1a2e",
-                  color: player ? posColor : "#3a3a50",
+                  color: player ? posColor : "#f4f4f8",
                   letterSpacing: "0.04em",
                 }}
               >
@@ -357,10 +357,10 @@ export default function DragDropLineup({
                     size={38}
                   />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate" style={{ color: playerLocked ? "#9a9aaa" : "#f4f4f8" }}>
+                    <p className="text-sm font-semibold truncate" style={{ color: playerLocked ? "#f4f4f8" : "#f4f4f8" }}>
                       {player.full_name}
                     </p>
-                    <p className="text-xs truncate" style={{ color: "#8a8a9a" }}>
+                    <p className="text-xs truncate" style={{ color: "#f4f4f8" }}>
                       <span style={{ color: posColor, fontWeight: 600 }}>{player.position}</span>
                       {player.team ? " · " + player.team : ""}
                     </p>
@@ -370,7 +370,7 @@ export default function DragDropLineup({
                       <p className="text-sm font-bold tabular-nums" style={{ color: "#FFD700" }}>
                         {pts.toFixed(1)}
                       </p>
-                      <p className="text-xs" style={{ color: "#5a5a7a" }}>pts</p>
+                      <p className="text-xs" style={{ color: "#f4f4f8" }}>pts</p>
                     </div>
                   )}
                   {/* Lock icon when game started, × button when moveable */}
@@ -389,7 +389,7 @@ export default function DragDropLineup({
                         setAssignments((prev) => ({ ...prev, [slot]: "" }));
                       }}
                       className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-base transition-colors hover:text-red-400"
-                      style={{ color: "#5a5a7a", background: "transparent" }}
+                      style={{ color: "#f4f4f8", background: "transparent" }}
                       title="Remove from lineup"
                       aria-label="Remove from lineup"
                     >
@@ -399,7 +399,7 @@ export default function DragDropLineup({
                 </div>
               ) : (
                 <div
-                  className="flex-1 flex items-center rounded-lg px-3 text-xs"
+                  className="lineup-slot-empty flex-1 flex items-center rounded-lg px-3 text-sm font-semibold"
                   style={{
                     height: 46,
                     border: "1px dashed",
@@ -407,9 +407,10 @@ export default function DragDropLineup({
                       ? VILLAIN_COLOR
                       : isOver
                         ? HERO_COLOR
-                        : "#2a2a40",
-                    color: isInvalid || (isOver && !dropOk) ? VILLAIN_COLOR : "#3a3a50",
-                    transition: "border-color 0.1s, color 0.1s",
+                        : "#FFD700",
+                    background: isOver && dropOk ? "rgba(0,87,255,0.1)" : "rgba(255,215,0,0.04)",
+                    color: isInvalid || (isOver && !dropOk) ? VILLAIN_COLOR : "#FFD700",
+                    transition: "border-color 0.1s, color 0.1s, background 0.1s",
                   }}
                 >
                   {isOver && !dropOk ? "Wrong position for this slot" : `Drop ${base} here`}
@@ -437,20 +438,20 @@ export default function DragDropLineup({
           className="px-4 py-2 flex items-center justify-between"
           style={{ borderBottom: benchPlayers.length > 0 ? "1px solid #1a1a2e" : undefined }}
         >
-          <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "#5a5a7a" }}>
+          <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "#f4f4f8" }}>
             Bench &mdash; {benchPlayers.length} player{benchPlayers.length !== 1 ? "s" : ""}
           </span>
           {overBench && !locked && (
-            <span className="text-xs" style={{ color: "#8a8a9a" }}>Drop here to bench</span>
+            <span className="text-xs" style={{ color: "#f4f4f8" }}>Drop here to bench</span>
           )}
         </div>
 
         {benchPlayers.length === 0 ? (
-          <p className="px-4 py-3 text-xs" style={{ color: "#3a3a50" }}>All players starting</p>
+          <p className="px-4 py-3 text-xs" style={{ color: "#f4f4f8" }}>All players starting</p>
         ) : (
           <div className="flex flex-col">
             {benchPlayers.map((p, i) => {
-              const posColor = POS_COLOR[p.position] ?? "#8a8a9a";
+              const posColor = POS_COLOR[p.position] ?? "#f4f4f8";
               const pts = seasonPts?.[p.player_id] ?? null;
               const playerLocked = isPlayerLocked(p);
               return (
@@ -472,7 +473,7 @@ export default function DragDropLineup({
                     className="flex-shrink-0 rounded text-center text-xs font-bold uppercase"
                     style={{
                       width: 44, padding: "3px 0",
-                      background: "#1a1a2e", color: "#5a5a7a",
+                      background: "#1a1a2e", color: "#f4f4f8",
                       letterSpacing: "0.04em",
                     }}
                   >
@@ -485,16 +486,16 @@ export default function DragDropLineup({
                     size={36}
                   />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate" style={{ color: "#8a8a9a" }}>
+                    <p className="text-sm font-semibold truncate" style={{ color: "#f4f4f8" }}>
                       {p.full_name}
                     </p>
-                    <p className="text-xs" style={{ color: "#5a5a6a" }}>
+                    <p className="text-xs" style={{ color: "#f4f4f8" }}>
                       <span style={{ color: posColor + "aa", fontWeight: 600 }}>{p.position}</span>
                       {p.team ? " · " + p.team : ""}
                     </p>
                   </div>
                   {pts != null && (
-                    <p className="text-sm tabular-nums flex-shrink-0 pr-1" style={{ color: "#5a5a7a" }}>
+                    <p className="text-sm tabular-nums flex-shrink-0 pr-1" style={{ color: "#f4f4f8" }}>
                       {pts.toFixed(1)}
                     </p>
                   )}

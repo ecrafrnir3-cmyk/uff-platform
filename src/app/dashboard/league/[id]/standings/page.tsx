@@ -33,7 +33,7 @@ const VILLAIN_COLOR = "#CC0000";
 function factionColor(faction: "hero" | "villain" | null) {
   if (faction === "hero") return HERO_COLOR;
   if (faction === "villain") return VILLAIN_COLOR;
-  return "#8a8a9a";
+  return "#f4f4f8";
 }
 
 export default async function StandingsPage({
@@ -148,18 +148,18 @@ export default async function StandingsPage({
           <h1 className="text-3xl sm:text-4xl" style={{ fontFamily: "var(--font-display, sans-serif)", color: "#0057FF" }}>
             Standings
           </h1>
-          <p className="text-sm text-zinc-400">Season {league.season} · Regular season W/L record</p>
+          <p className="text-sm text-white">Season {league.season} · Regular season W/L record</p>
         </header>
 
         {!hasGames ? (
-          <div className="rounded-lg border p-5 text-sm text-zinc-400" style={{ borderColor: "#2a2a40" }}>
+          <div className="rounded-lg border p-5 text-sm text-white" style={{ borderColor: "#2a2a40" }}>
             No finalized games yet. Standings will appear after the commissioner finalizes each week&rsquo;s matchups.
           </div>
         ) : (
           <div className="flex flex-col gap-2">
             {/* Header row */}
             <div
-              className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-3 px-4 py-2 text-xs uppercase tracking-wide text-zinc-500"
+              className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-3 px-4 py-2 text-xs uppercase tracking-wide text-white"
             >
               <span className="w-6 text-center">#</span>
               <span>Team</span>
@@ -184,7 +184,7 @@ export default async function StandingsPage({
                   {/* Rank */}
                   <span
                     className="w-6 text-center text-sm font-bold tabular-nums"
-                    style={{ color: row.rank === 1 ? "#FFD700" : "#8a8a9a" }}
+                    style={{ color: row.rank === 1 ? "#FFD700" : "#f4f4f8" }}
                   >
                     {row.rank}
                   </span>
@@ -193,12 +193,12 @@ export default async function StandingsPage({
                   <div>
                     <p className="font-semibold" style={{ color: isMe ? "#FFD700" : "#f4f4f8" }}>
                       {row.member.team_name}
-                      {isMe && <span className="ml-1 text-xs font-normal text-zinc-500">(you)</span>}
+                      {isMe && <span className="ml-1 text-xs font-normal text-white">(you)</span>}
                     </p>
                     <p className="text-xs" style={{ color }}>
                       {row.member.faction ?? "Unassigned"}
                       {" · "}
-                      <span className="text-zinc-500">
+                      <span className="text-white">
                         {row.member.profiles?.display_name ?? row.member.profiles?.username ?? ""}
                       </span>
                     </p>
@@ -210,12 +210,12 @@ export default async function StandingsPage({
                   </span>
 
                   {/* Points For */}
-                  <span className="w-20 text-right text-sm tabular-nums text-zinc-300">
+                  <span className="w-20 text-right text-sm tabular-nums text-white">
                     {row.pointsFor.toFixed(2)}
                   </span>
 
                   {/* Points Against */}
-                  <span className="w-20 text-right text-sm tabular-nums text-zinc-500">
+                  <span className="w-20 text-right text-sm tabular-nums text-white">
                     {row.pointsAgainst.toFixed(2)}
                   </span>
                 </div>
@@ -238,7 +238,7 @@ export default async function StandingsPage({
                   <span className="font-semibold capitalize" style={{ color: factionColor(faction) }}>
                     {faction === "hero" ? "⚡ Heroes (AFC)" : "💀 Villains (NFC)"}
                   </span>
-                  <span className="tabular-nums text-zinc-300">
+                  <span className="tabular-nums text-white">
                     {totalWins}W–{totalLosses}L · {totalPF.toFixed(1)} pts
                   </span>
                 </div>

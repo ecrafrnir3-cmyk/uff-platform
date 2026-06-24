@@ -32,7 +32,7 @@ type MatchupPair = MatchupRow[];
 function factionColor(faction: "hero" | "villain" | null) {
   if (faction === "hero") return HERO_COLOR;
   if (faction === "villain") return VILLAIN_COLOR;
-  return "#8a8a9a";
+  return "#f4f4f8";
 }
 
 function ScoreCard({
@@ -60,7 +60,7 @@ function ScoreCard({
       </p>
       <p className="text-sm font-semibold text-center" style={{ color: isMe ? "#FFD700" : "#f4f4f8" }}>
         {row.league_members?.team_name ?? "Unknown"}
-        {isMe && <span className="ml-1 text-xs font-normal text-zinc-500">(you)</span>}
+        {isMe && <span className="ml-1 text-xs font-normal text-white">(you)</span>}
       </p>
       <p
         className="text-3xl font-bold tabular-nums"
@@ -69,7 +69,7 @@ function ScoreCard({
         {row.points.toFixed(2)}
       </p>
       {row.projected != null && !row.is_complete && (
-        <p className="text-xs tabular-nums" style={{ color: "#8a8a9a" }}>
+        <p className="text-xs tabular-nums" style={{ color: "#f4f4f8" }}>
           proj {row.projected.toFixed(2)}
         </p>
       )}
@@ -153,7 +153,7 @@ export default function MatchupView({
 
   if (pairs.length === 0) {
     return (
-      <p className="rounded-lg border p-5 text-sm text-zinc-400" style={{ borderColor: "#2a2a40" }}>
+      <p className="rounded-lg border p-5 text-sm text-white" style={{ borderColor: "#2a2a40" }}>
         No matchups scheduled for Week {week}.
       </p>
     );
@@ -166,12 +166,12 @@ export default function MatchupView({
           Week {week}
         </h2>
         {lastUpdated && (
-          <p className="text-xs" style={{ color: "#8a8a9a" }}>
+          <p className="text-xs" style={{ color: "#f4f4f8" }}>
             Live &middot; updated {lastUpdated.toLocaleTimeString()}
           </p>
         )}
         {!lastUpdated && (
-          <p className="text-xs" style={{ color: "#8a8a9a" }}>Live &middot; scores update every ~15 min during games</p>
+          <p className="text-xs" style={{ color: "#f4f4f8" }}>Live &middot; scores update every ~15 min during games</p>
         )}
       </div>
 
@@ -198,12 +198,12 @@ export default function MatchupView({
               <div className="flex items-stretch gap-3">
                 <ScoreCard row={a} isMe={a.member_id === myMemberId} isWinner={aWins} token={tokenMap[a.member_id]} />
                 <div className="flex flex-col items-center justify-center px-1">
-                  <span className="text-sm font-bold" style={{ color: "#8a8a9a" }}>vs</span>
+                  <span className="text-sm font-bold" style={{ color: "#f4f4f8" }}>vs</span>
                 </div>
                 <ScoreCard row={b} isMe={b.member_id === myMemberId} isWinner={bWins} token={tokenMap[b.member_id]} />
               </div>
               {a.is_complete && (
-                <p className="mt-2 text-center text-xs" style={{ color: "#8a8a9a" }}>Final</p>
+                <p className="mt-2 text-center text-xs" style={{ color: "#f4f4f8" }}>Final</p>
               )}
             </div>
           );

@@ -34,18 +34,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: error.message, week: weekToFinalize }, { status: 500 });
   }
 
-  // Mark this week's tokens as 'used' now that the week is finalized.
-  const { data: tokensMarked, error: tokenErr } = await supabase.rpc(
-    "mark_week_tokens_used_all",
-    { p_week: weekToFinalize }
-  );
-  if (tokenErr) console.error("mark_week_tokens_used_all error:", tokenErr.message);
-
   console.log(`Finalized week ${weekToFinalize}:`, data);
+  // Note: finalize_all_active_leagues already marks tokens used internally (step 2).
   return NextResponse.json({
     ok: true,
     week: weekToFinalize,
     result: data,
-    tokens_marked_used: tokensMarked ?? 0,
   });
 }

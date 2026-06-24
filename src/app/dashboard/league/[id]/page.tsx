@@ -33,7 +33,7 @@ function FactionBadge({ faction }: { faction: "hero" | "villain" | null }) {
     );
   }
   return (
-    <span className="rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-500"
+    <span className="rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-white"
       style={{ background: "#1c1c2b" }}>
       Unassigned
     </span>
@@ -99,7 +99,7 @@ export default async function LeagueDetailPage({
           <h1 className="text-3xl sm:text-4xl" style={{ fontFamily: "var(--font-display, sans-serif)", color: "#0057FF" }}>
             {league.name}
           </h1>
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-white">
             Season {league.season} &middot; {memberList.length} / {league.max_teams} teams &middot; 16-round snake draft &middot; Draft: {league.draft_status.replaceAll("_", " ")}
           </p>
           <div className="mt-1 flex flex-wrap gap-2">
@@ -131,7 +131,7 @@ export default async function LeagueDetailPage({
         {!draftLocked && (
           <section className="flex flex-col gap-4 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>
             <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Pick Your Faction</h2>
-            <p className="text-sm text-zinc-400">
+            <p className="text-sm text-white">
               AFC teams are <span style={{ color: HERO_COLOR }}>Heroes</span>. NFC teams are{" "}
               <span style={{ color: VILLAIN_COLOR }}>Villains</span>. Your faction determines which NFL
               players give you bonus points each week.
@@ -189,7 +189,7 @@ export default async function LeagueDetailPage({
                 >
                   Randomize remaining factions
                 </button>
-                <p className="mt-1 text-xs text-zinc-500">
+                <p className="mt-1 text-xs text-white">
                   Auto-balances any managers who haven&rsquo;t picked a side yet.
                 </p>
               </form>
@@ -214,9 +214,9 @@ export default async function LeagueDetailPage({
                         Commissioner
                       </span>
                     )}
-                    {m.user_id === user.id && <span className="ml-1 text-xs text-zinc-500">(you)</span>}
+                    {m.user_id === user.id && <span className="ml-1 text-xs text-white">(you)</span>}
                   </p>
-                  <p className="text-sm text-zinc-400">{m.profiles?.display_name ?? m.profiles?.username}</p>
+                  <p className="text-sm text-white">{m.profiles?.display_name ?? m.profiles?.username}</p>
                 </div>
                 <FactionBadge faction={m.faction} />
               </div>
@@ -230,7 +230,7 @@ export default async function LeagueDetailPage({
           {league.draft_status === "not_started" && isCommissioner && (
             allFactionsAssigned ? (
               <div className="flex flex-col gap-3">
-                <p className="text-sm text-zinc-400">All {memberList.length} managers have factions. Ready to start.</p>
+                <p className="text-sm text-white">All {memberList.length} managers have factions. Ready to start.</p>
                 <form action={startDraft}>
                   <input type="hidden" name="leagueId" value={leagueId} />
                   <button type="submit" className="rounded-md px-4 py-2 text-sm font-semibold"
@@ -240,19 +240,19 @@ export default async function LeagueDetailPage({
                 </form>
               </div>
             ) : (
-              <p className="text-sm text-zinc-400">
+              <p className="text-sm text-white">
                 {unassignedCount} manager{unassignedCount !== 1 ? "s" : ""} still need a faction before the draft can start.
               </p>
             )
           )}
 
           {league.draft_status === "not_started" && !isCommissioner && (
-            <p className="text-sm text-zinc-400">Waiting for the commissioner to start the draft.</p>
+            <p className="text-sm text-white">Waiting for the commissioner to start the draft.</p>
           )}
 
           {league.draft_status === "in_progress" && (
             <div className="flex flex-col gap-3">
-              <p className="text-sm text-zinc-400">The draft is in progress.</p>
+              <p className="text-sm text-white">The draft is in progress.</p>
               <Link href={`/dashboard/league/${leagueId}/draft`}
                 className="inline-flex w-fit items-center rounded-md px-4 py-2 text-sm font-semibold"
                 style={{ background: "#FFD700", color: "#0d0d1a" }}>
@@ -262,7 +262,7 @@ export default async function LeagueDetailPage({
           )}
 
           {league.draft_status === "completed" && (
-            <p className="text-sm text-zinc-400">The draft is complete. Good luck this season!</p>
+            <p className="text-sm text-white">The draft is complete. Good luck this season!</p>
           )}
         </section>
       </main>

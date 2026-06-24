@@ -13,7 +13,7 @@ export default function LeagueError({
     <div className="min-h-screen flex items-center justify-center px-6" style={{ background: "#0d0d1a", color: "#f4f4f8" }}>
       <div className="flex flex-col gap-4 text-center max-w-md">
         <p className="text-sm uppercase tracking-widest" style={{ color: "#FFD700" }}>Something went wrong</p>
-        <p className="text-sm text-zinc-400">{error.message ?? "Could not load this league."}</p>
+        <p className="text-sm text-white">{error.message ?? "Could not load this league."}</p>
         <div className="flex gap-3 justify-center">
           <button
             onClick={reset}

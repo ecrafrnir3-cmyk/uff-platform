@@ -41,7 +41,7 @@ export default async function DashboardLayout({
             >
               UFF
             </span>
-            <span className="text-xs uppercase tracking-widest text-zinc-500 hidden sm:inline">
+            <span className="text-xs uppercase tracking-widest text-white hidden sm:inline">
               Ultimate Fantasy Football
             </span>
           </Link>
@@ -50,19 +50,19 @@ export default async function DashboardLayout({
           <div className="flex items-center gap-5">
             <Link
               href="/dashboard"
-              className="text-sm font-medium text-zinc-300 hover:text-white transition-colors"
+              className="text-sm font-medium text-white hover:text-white transition-colors"
             >
               My Leagues
             </Link>
 
-            <span className="text-sm text-zinc-500 hidden sm:inline truncate max-w-[160px]">
+            <span className="text-sm text-white hidden sm:inline truncate max-w-[160px]">
               {displayName}
             </span>
 
             <form action={signOut}>
               <button
                 type="submit"
-                className="text-sm font-medium text-zinc-500 hover:text-white transition-colors"
+                className="text-sm font-medium text-white hover:text-white transition-colors"
               >
                 Sign out
               </button>

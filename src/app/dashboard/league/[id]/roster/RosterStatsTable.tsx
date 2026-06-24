@@ -42,14 +42,14 @@ const POS_COLOR: Record<string, string> = {
   RB:  "#3DDC84",
   WR:  "#FFD700",
   TE:  "#FF6B35",
-  K:   "#8a8a9a",
+  K:   "#f4f4f8",
   DEF: VILLAIN_COLOR,
   DST: VILLAIN_COLOR,
 };
 
 function PosBadge({ position }: { position: string | null }) {
   const pos   = (position ?? "?").toUpperCase();
-  const color = POS_COLOR[pos] ?? "#8a8a9a";
+  const color = POS_COLOR[pos] ?? "#f4f4f8";
   return (
     <span
       className="inline-block w-8 rounded text-center text-xs font-bold leading-5 uppercase"
@@ -97,7 +97,7 @@ export default async function RosterStatsTable({
             Active Roster (0 / {draftRounds})
           </h2>
         </div>
-        <p className="rounded-lg border p-5 text-sm" style={{ borderColor: "#2a2a40", color: "#8a8a9a" }}>
+        <p className="rounded-lg border p-5 text-sm" style={{ borderColor: "#2a2a40", color: "#f4f4f8" }}>
           No active players &mdash; draft players or add from free agency.
         </p>
       </section>
@@ -129,7 +129,7 @@ export default async function RosterStatsTable({
       <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "#2a2a40" }}>
         <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
           <thead>
-            <tr style={{ background: "#15151f", color: "#8a8a9a" }}>
+            <tr style={{ background: "#15151f", color: "#f4f4f8" }}>
               <th className="px-3 py-2 text-left font-semibold uppercase tracking-wider text-xs">Player</th>
               <th className="px-2 py-2 text-center text-xs">Slot</th>
               <th className="px-2 py-2 text-right text-xs" title="2024 Season Fantasy Pts (PPR)">2024 Pts</th>
@@ -158,7 +158,7 @@ export default async function RosterStatsTable({
                       <PosBadge position={player?.position ?? null} />
                       <div className="min-w-0">
                         <p className="font-semibold truncate">{player?.full_name ?? r.player_id}</p>
-                        <p className="text-xs truncate" style={{ color: "#8a8a9a" }}>
+                        <p className="text-xs truncate" style={{ color: "#f4f4f8" }}>
                           {player?.team ?? "FA"}
                           {player?.status && player.status !== "Active" && (
                             <span
@@ -177,7 +177,7 @@ export default async function RosterStatsTable({
                       className="inline-block rounded px-1.5 text-xs font-bold"
                       style={{
                         background: isStarter ? "rgba(61,220,132,0.15)" : "#1c1c2b",
-                        color:      isStarter ? "#3DDC84"               : "#8a8a9a",
+                        color:      isStarter ? "#3DDC84"               : "#f4f4f8",
                       }}
                     >
                       {isStarter ? "S" : "B"}
@@ -218,7 +218,7 @@ export default async function RosterStatsTable({
           </tbody>
         </table>
       </div>
-      <p className="text-xs" style={{ color: "#3a3a50" }}>
+      <p className="text-xs" style={{ color: "#f4f4f8" }}>
         2024 PPR season totals (via Sleeper). Live scoring begins Week 1, 2026.
       </p>
     </section>

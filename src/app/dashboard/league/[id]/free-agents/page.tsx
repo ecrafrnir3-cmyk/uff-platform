@@ -54,15 +54,29 @@ export default async function FreeAgentsPage({
   if (!me) redirect("/dashboard?error=" + encodeURIComponent("You're not a member of that league."));
 
   // My roster counts
-  const { data: myRoster } = await supabase
+  const { data: myRosterRaw } = await supabase
     .from("uff_roster_players")
-    .select("player_id, slot")
+    .select("player_id, slot, players(full_name, position)")
     .eq("member_id", me.id)
     .is("dropped_at", null);
 
-  const myActiveCount = (myRoster ?? []).filter((r) => r.slot === "active").length;
-  const myIRCount = (myRoster ?? []).filter((r) => r.slot === "ir").length;
+  const myRoster = (myRosterRaw ?? []) as unknown as {
+    player_id: string;
+    slot: string;
+    players: { full_name: string; position: string | null } | null;
+  }[];
+
+  const myActiveCount = myRoster.filter((r) => r.slot === "active").length;
+  const myIRCount = myRoster.filter((r) => r.slot === "ir").length;
   const rosterFull = myActiveCount >= league.draft_rounds;
+
+  const myActiveRoster = myRoster
+    .filter((r) => r.slot === "active")
+    .map((r) => ({
+      player_id: r.player_id,
+      full_name: r.players?.full_name ?? r.player_id,
+      position:  r.players?.position ?? null,
+    }));
 
   // All rostered player IDs in this league (direct league_id column - - no join needed)
   const { data: allRostered } = await supabase
@@ -110,7 +124,7 @@ export default async function FreeAgentsPage({
           <h1 className="text-3xl sm:text-4xl" style={{ fontFamily: "var(--font-display, sans-serif)", color: "#0057FF" }}>
             Free Agents
           </h1>
-          <div className="flex flex-wrap gap-4 text-sm text-zinc-400">
+          <div className="flex flex-wrap gap-4 text-sm text-white">
             <span>
               Active roster:{" "}
               <span className="font-semibold" style={{ color: rosterFull ? "#CC0000" : "#f4f4f8" }}>
@@ -124,7 +138,7 @@ export default async function FreeAgentsPage({
               </span>
             </span>
             {!hasProjections && (
-              <span style={{ color: "#8a8a9a" }}>
+              <span style={{ color: "#f4f4f8" }}>
                 Projections available once the season starts (Sept 9)
               </span>
             )}
@@ -155,6 +169,7 @@ export default async function FreeAgentsPage({
           rosterFull={rosterFull}
           maxActive={league.draft_rounds}
           week={week}
+          myActiveRoster={myActiveRoster}
         />
       </main>
     </div>

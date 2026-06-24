@@ -56,7 +56,7 @@ export default function ResetPasswordPage() {
 
         <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
           <div className="flex flex-col gap-1">
-            <label htmlFor="password" className="text-xs uppercase tracking-wide text-zinc-400">
+            <label htmlFor="password" className="text-xs uppercase tracking-wide text-white">
               New password
             </label>
             <input
@@ -73,7 +73,7 @@ export default function ResetPasswordPage() {
           </div>
 
           <div className="flex flex-col gap-1">
-            <label htmlFor="confirm" className="text-xs uppercase tracking-wide text-zinc-400">
+            <label htmlFor="confirm" className="text-xs uppercase tracking-wide text-white">
               Confirm password
             </label>
             <input

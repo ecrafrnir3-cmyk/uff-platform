@@ -87,17 +87,17 @@ const POS_COLOR: Record<string, string> = {
   RB:  "#3DDC84",
   WR:  "#FFD700",
   TE:  "#FF6B35",
-  K:   "#8a8a9a",
+  K:   "#f4f4f8",
   DEF: VILLAIN_COLOR,
   DST: VILLAIN_COLOR,
 };
 
 const POWER_STATUS_STYLES: Record<string, { label: string; color: string; bg: string }> = {
   active:   { label: "Active",   color: "#3DDC84", bg: "rgba(61,220,132,0.15)" },
-  fizzled:  { label: "Fizzled",  color: "#8a8a9a", bg: "#1c1c2b" },
+  fizzled:  { label: "Fizzled",  color: "#f4f4f8", bg: "#1c1c2b" },
   negated:  { label: "Negated",  color: VILLAIN_COLOR, bg: "rgba(204,0,0,0.15)" },
   restored: { label: "Restored", color: HERO_COLOR,    bg: "rgba(0,87,255,0.15)" },
-  pending:  { label: "Pending",  color: "#8a8a9a", bg: "#1c1c2b" },
+  pending:  { label: "Pending",  color: "#f4f4f8", bg: "#1c1c2b" },
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -153,12 +153,12 @@ function FactionBadge({ faction }: { faction: "hero" | "villain" | null }) {
     return <span className="rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide" style={{ background: "rgba(0,87,255,0.15)", color: HERO_COLOR }}>Hero</span>;
   if (faction === "villain")
     return <span className="rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide" style={{ background: "rgba(204,0,0,0.15)", color: VILLAIN_COLOR }}>Villain</span>;
-  return <span className="rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide" style={{ background: "#1c1c2b", color: "#8a8a9a" }}>&mdash;</span>;
+  return <span className="rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide" style={{ background: "#1c1c2b", color: "#f4f4f8" }}>&mdash;</span>;
 }
 
 function PosBadge({ position }: { position: string | null }) {
   const pos   = (position ?? "?").toUpperCase();
-  const color = POS_COLOR[pos] ?? "#8a8a9a";
+  const color = POS_COLOR[pos] ?? "#f4f4f8";
   return (
     <span className="inline-block w-8 rounded text-center text-xs font-bold leading-5 uppercase"
       style={{ background: color + "22", color }}>
@@ -203,33 +203,33 @@ function WeeklyTokenCard({
     >
       <div className="flex items-center gap-2">
         <span className="text-base">⚡</span>
-        <span className="text-sm font-bold uppercase tracking-wide" style={{ color: dimmed ? "#8a8a9a" : "#FFD700" }}>
+        <span className="text-sm font-bold uppercase tracking-wide" style={{ color: dimmed ? "#f4f4f8" : "#FFD700" }}>
           Weekly Power Token
         </span>
         <span
           className="ml-auto rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide"
           style={{
             background: isUsed ? "rgba(61,220,132,0.15)" : isExpired ? "#1c1c2b" : "rgba(255,215,0,0.15)",
-            color:      isUsed ? "#3DDC84"               : isExpired ? "#8a8a9a" : "#FFD700",
+            color:      isUsed ? "#3DDC84"               : isExpired ? "#f4f4f8" : "#FFD700",
           }}
         >
           {isUsed ? "Used" : isExpired ? "Expired" : "Active"}
         </span>
       </div>
-      <p className="text-lg font-bold" style={{ color: dimmed ? "#8a8a9a" : "#f4f4f8" }}>
+      <p className="text-lg font-bold" style={{ color: dimmed ? "#f4f4f8" : "#f4f4f8" }}>
         {info.name}
         {choice && tokenId === 7 && (
-          <span className="ml-2 text-sm font-normal" style={{ color: "#8a8a9a" }}>
+          <span className="ml-2 text-sm font-normal" style={{ color: "#f4f4f8" }}>
             (chosen pos: {choice})
           </span>
         )}
         {choice && tokenId === 18 && (
-          <span className="ml-2 text-sm font-normal" style={{ color: "#8a8a9a" }}>
+          <span className="ml-2 text-sm font-normal" style={{ color: "#f4f4f8" }}>
             (replaying: {TOKEN_INFO[parseInt(choice)]?.name ?? choice})
           </span>
         )}
       </p>
-      <p className="text-sm" style={{ color: "#8a8a9a" }}>{info.effect}</p>
+      <p className="text-sm" style={{ color: "#f4f4f8" }}>{info.effect}</p>
       {needsChoice && (
         <TokenChoicePicker
           leagueId={leagueId}
@@ -250,12 +250,12 @@ function WeeklyTokenCard({
               <p className="mt-1 text-sm font-bold" style={{ color: "#f4f4f8" }}>
                 {TOKEN_INFO[opponentTokenId]?.name ?? `Token #${opponentTokenId}`}
               </p>
-              <p className="text-xs" style={{ color: "#8a8a9a" }}>
+              <p className="text-xs" style={{ color: "#f4f4f8" }}>
                 {TOKEN_INFO[opponentTokenId]?.effect}
               </p>
             </>
           ) : (
-            <p className="mt-1 text-xs" style={{ color: "#8a8a9a" }}>
+            <p className="mt-1 text-xs" style={{ color: "#f4f4f8" }}>
               Opponent has no token assigned yet this week.
             </p>
           )}
@@ -285,7 +285,7 @@ function RosterStatsSkeleton({ count, draftRounds }: { count: number; draftRound
       <div className="overflow-x-auto rounded-lg border animate-pulse" style={{ borderColor: "#2a2a40" }}>
         <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
           <thead>
-            <tr style={{ background: "#15151f", color: "#8a8a9a" }}>
+            <tr style={{ background: "#15151f", color: "#f4f4f8" }}>
               <th className="px-3 py-2 text-left font-semibold uppercase tracking-wider text-xs">Player</th>
               <th className="px-2 py-2 text-center text-xs">Slot</th>
               <th className="px-2 py-2 text-right text-xs">2024 Pts</th>
@@ -588,19 +588,19 @@ export default async function RosterPage({
         {restored && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: HERO_COLOR, color: "#8ab4ff", background: "#0a0e1a" }}>Power Restore Chip used &mdash; scoring restored!</p>}
         {tradeMsg === "proposed"  && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#FFD700", color: "#FFD700", background: "#1a1a0e" }}>Trade offer sent!</p>}
         {tradeMsg === "accepted"  && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#3DDC84", color: "#3DDC84", background: "#0e1a12" }}>Trade accepted &mdash; rosters updated!</p>}
-        {tradeMsg === "rejected"  && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#8a8a9a", color: "#8a8a9a", background: "#13131f" }}>Trade rejected.</p>}
-        {tradeMsg === "cancelled" && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#8a8a9a", color: "#8a8a9a", background: "#13131f" }}>Trade offer cancelled.</p>}
+        {tradeMsg === "rejected"  && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#f4f4f8", color: "#f4f4f8", background: "#13131f" }}>Trade rejected.</p>}
+        {tradeMsg === "cancelled" && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#f4f4f8", color: "#f4f4f8", background: "#13131f" }}>Trade offer cancelled.</p>}
 
         {/* ── Team header ── */}
         <div className="overflow-hidden rounded-xl border" style={{ borderColor: "#2a2a40" }}>
           <div style={{ height: 4, background: factionAccent }} />
           <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col gap-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.25em]" style={{ color: "#8a8a9a" }}>My Team</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.25em]" style={{ color: "#f4f4f8" }}>My Team</p>
               <h1 className="text-3xl font-bold sm:text-4xl" style={{ fontFamily: "var(--font-display, sans-serif)", color: factionAccent }}>
                 {me.team_name}
               </h1>
-              <div className="flex flex-wrap items-center gap-2 text-sm" style={{ color: "#8a8a9a" }}>
+              <div className="flex flex-wrap items-center gap-2 text-sm" style={{ color: "#f4f4f8" }}>
                 <FactionBadge faction={me.faction} />
                 <span>&middot;</span>
                 <span>Season {league.season}</span>
@@ -664,7 +664,7 @@ export default async function RosterPage({
 
             {incomingTrades.length > 0 && (
               <div className="flex flex-col gap-3">
-                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8a8a9a" }}>Incoming offers</p>
+                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#f4f4f8" }}>Incoming offers</p>
                 {incomingTrades.map((t) => (
                   <div key={t.id} className="rounded-xl border p-4" style={{ borderColor: "#2a2a40", background: "#13132b" }}>
                     <p className="text-sm font-bold mb-2" style={{ color: "#f4f4f8" }}>
@@ -672,7 +672,7 @@ export default async function RosterPage({
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3 text-sm">
                       <div>
-                        <p className="text-xs font-semibold uppercase mb-1" style={{ color: "#8a8a9a" }}>They send</p>
+                        <p className="text-xs font-semibold uppercase mb-1" style={{ color: "#f4f4f8" }}>They send</p>
                         <ul className="flex flex-col gap-0.5">
                           {t.proposer_player_ids.map(pid => (
                             <li key={pid} style={{ color: "#3DDC84" }}>{tradePlayerNames[pid] ?? pid}</li>
@@ -680,7 +680,7 @@ export default async function RosterPage({
                         </ul>
                       </div>
                       <div>
-                        <p className="text-xs font-semibold uppercase mb-1" style={{ color: "#8a8a9a" }}>You send</p>
+                        <p className="text-xs font-semibold uppercase mb-1" style={{ color: "#f4f4f8" }}>You send</p>
                         <ul className="flex flex-col gap-0.5">
                           {t.receiver_player_ids.map(pid => (
                             <li key={pid} style={{ color: "#FF6B35" }}>{tradePlayerNames[pid] ?? pid}</li>
@@ -711,7 +711,7 @@ export default async function RosterPage({
 
             {outgoingTrades.length > 0 && (
               <div className="flex flex-col gap-3">
-                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#8a8a9a" }}>Pending offers you sent</p>
+                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#f4f4f8" }}>Pending offers you sent</p>
                 {outgoingTrades.map((t) => (
                   <div key={t.id} className="rounded-xl border p-4" style={{ borderColor: "#2a2a40", background: "#13132b" }}>
                     <p className="text-sm font-bold mb-2" style={{ color: "#f4f4f8" }}>
@@ -719,7 +719,7 @@ export default async function RosterPage({
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3 text-sm">
                       <div>
-                        <p className="text-xs font-semibold uppercase mb-1" style={{ color: "#8a8a9a" }}>You send</p>
+                        <p className="text-xs font-semibold uppercase mb-1" style={{ color: "#f4f4f8" }}>You send</p>
                         <ul className="flex flex-col gap-0.5">
                           {t.proposer_player_ids.map(pid => (
                             <li key={pid} style={{ color: "#FF6B35" }}>{tradePlayerNames[pid] ?? pid}</li>
@@ -727,7 +727,7 @@ export default async function RosterPage({
                         </ul>
                       </div>
                       <div>
-                        <p className="text-xs font-semibold uppercase mb-1" style={{ color: "#8a8a9a" }}>You receive</p>
+                        <p className="text-xs font-semibold uppercase mb-1" style={{ color: "#f4f4f8" }}>You receive</p>
                         <ul className="flex flex-col gap-0.5">
                           {t.receiver_player_ids.map(pid => (
                             <li key={pid} style={{ color: "#3DDC84" }}>{tradePlayerNames[pid] ?? pid}</li>
@@ -770,12 +770,12 @@ export default async function RosterPage({
           <h2 className="text-lg font-semibold" style={{ color: VILLAIN_COLOR }}>
             Injured Reserve ({irSlotsUsed} / {irSlotsTotal})
           </h2>
-          <p className="text-xs" style={{ color: "#8a8a9a" }}>
+          <p className="text-xs" style={{ color: "#f4f4f8" }}>
             IR players do not score or count toward your active roster cap.
             Must have an official Injured Reserve designation.
           </p>
           {irRoster.length === 0 ? (
-            <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#8a8a9a" }}>No players on IR.</p>
+            <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#f4f4f8" }}>No players on IR.</p>
           ) : (
             <div className="flex flex-col gap-2">
               {irRoster.map((r) => {
@@ -829,11 +829,11 @@ export default async function RosterPage({
                     </button>
                   </form>
                 )}
-                {!negatedPlayer && <p className="mt-1 text-xs" style={{ color: "#8a8a9a" }}>No negated players &mdash; bank it or trade it.</p>}
+                {!negatedPlayer && <p className="mt-1 text-xs" style={{ color: "#f4f4f8" }}>No negated players &mdash; bank it or trade it.</p>}
               </div>
             )}
             {powerList.length === 0 ? (
-              <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#8a8a9a" }}>
+              <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#f4f4f8" }}>
                 Powers are assigned during the draft &mdash; none yet.
               </p>
             ) : (
@@ -845,7 +845,7 @@ export default async function RosterPage({
                     <div key={p.id} className="rounded-lg border p-3"
                       style={{ borderColor: isNegated ? "rgba(204,0,0,0.4)" : "#2a2a40" }}>
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs uppercase tracking-wide" style={{ color: "#8a8a9a" }}>Round {p.round}</p>
+                        <p className="text-xs uppercase tracking-wide" style={{ color: "#f4f4f8" }}>Round {p.round}</p>
                         <PowerStatusBadge status={status} />
                       </div>
                       <p className="mt-1 text-sm font-semibold">{p.draft_powers?.name ?? "Unknown power"}</p>
@@ -866,7 +866,7 @@ export default async function RosterPage({
           <section className="flex flex-col gap-3">
             <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>League Activity</h2>
             {pickList.length === 0 ? (
-              <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#8a8a9a" }}>No draft picks yet.</p>
+              <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#f4f4f8" }}>No draft picks yet.</p>
             ) : (
               <div className="flex flex-col gap-2">
                 {pickList.map((pick) => (
@@ -876,7 +876,7 @@ export default async function RosterPage({
                       drafted <span className="font-semibold">{pick.players?.full_name ?? "a player"}</span>
                       {pick.players?.position ? ` (${pick.players.position}${pick.players.team ? " · " + pick.players.team : ""})` : ""}
                     </p>
-                    <p className="mt-1 text-xs" style={{ color: "#8a8a9a" }}>
+                    <p className="mt-1 text-xs" style={{ color: "#f4f4f8" }}>
                       Round {pick.round}, Pick {pick.pick_no} &middot; {timeAgo(pick.picked_at)}
                     </p>
                   </div>
@@ -889,7 +889,7 @@ export default async function RosterPage({
           <section className="flex flex-col gap-3">
             <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>NFL News</h2>
             {news.length === 0 ? (
-              <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#8a8a9a" }}>Headlines unavailable.</p>
+              <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#f4f4f8" }}>Headlines unavailable.</p>
             ) : (
               <div className="flex flex-col gap-2">
                 {news.map((item) => (
@@ -899,7 +899,7 @@ export default async function RosterPage({
                     {item.title}
                   </a>
                 ))}
-                <p className="text-xs" style={{ color: "#3a3a50" }}>Source: ESPN NFL headlines</p>
+                <p className="text-xs" style={{ color: "#f4f4f8" }}>Source: ESPN NFL headlines</p>
               </div>
             )}
           </section>

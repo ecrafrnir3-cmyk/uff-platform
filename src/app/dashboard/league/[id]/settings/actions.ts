@@ -52,3 +52,57 @@ export async function generateSchedule(formData: FormData) {
   revalidatePath(`/dashboard/league/${leagueId}`);
   redirect(`/dashboard/league/${leagueId}/settings?saved=1`);
 }
+
+export async function forceFinalize(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const leagueId = formData.get("leagueId") as string;
+  const week = parseInt(formData.get("week") as string, 10);
+
+  if (isNaN(week) || week < 1 || week > 18) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("Invalid week (must be 1–18).")}`);
+  }
+
+  const { error } = await supabase.rpc("finalize_week", {
+    p_league_id: leagueId,
+    p_user_id:   user.id,
+    p_week:      week,
+  });
+
+  if (error) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath(`/dashboard/league/${leagueId}/standings`);
+  revalidatePath(`/dashboard/league/${leagueId}/matchups`);
+  redirect(`/dashboard/league/${leagueId}/settings?saved=1`);
+}
+
+export async function syncPlayers(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const leagueId = formData.get("leagueId") as string;
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const syncSecret  = process.env.SYNC_SECRET ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !syncSecret) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("Missing server configuration.")}`);
+  }
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/sync-players`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${syncSecret}` },
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: "Sync failed" }));
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent((body as { error?: string }).error ?? "Sync failed.")}`);
+  }
+
+  redirect(`/dashboard/league/${leagueId}/settings?saved=1`);
+}
