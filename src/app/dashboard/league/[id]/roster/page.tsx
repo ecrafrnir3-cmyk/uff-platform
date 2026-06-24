@@ -8,6 +8,7 @@ import DragDropLineup from "./DragDropLineup";
 import PlayerPhoto from "./PlayerPhoto";
 import RosterStatsTable from "./RosterStatsTable";
 import TokenChoicePicker from "./TokenChoicePicker";
+import DropButton from "./DropButton";
 import { getCurrentNFLWeek, isLineupLocked, getWeekLockTime } from "@/lib/nfl-utils";
 
 interface GameScheduleRow { team: string; kickoff_utc: string; }
@@ -737,13 +738,11 @@ export default async function RosterPage({
                       <button type="submit" className="rounded px-2 py-1 text-xs font-semibold"
                         style={{ background: "rgba(0,87,255,0.2)", color: "#6fa3ff" }}>Activate</button>
                     </form>
-                    <form action={dropPlayer}>
-                      <input type="hidden" name="leagueId" value={leagueId} />
-                      <input type="hidden" name="playerId" value={r.player_id} />
-                      <input type="hidden" name="returnTo" value="roster" />
-                      <button type="submit" className="rounded px-2 py-1 text-xs font-semibold"
-                        style={{ background: "#1c1c2b", color: "#8a8a9a" }}>Drop</button>
-                    </form>
+                    <DropButton
+                      leagueId={leagueId}
+                      playerId={r.player_id}
+                      playerName={player?.full_name ?? r.player_id}
+                    />
                   </div>
                 );
               })}

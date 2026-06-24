@@ -1,8 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/finalize-week",
-      "schedule": "0 7 * * 3"
-    }
-  ]
-}
+{}
