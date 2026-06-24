@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { makeDraftPick, assignPowerToPick, assignVampireBite, swapForesightCoin, executeHeist, restoreHeistOrder, revealNextPower } from "./actions";
+import { addToQueue, removeFromQueue, saveQueueOrder, executeAutodraft } from "./queue-actions";
 import { startDraft } from "../actions";
 
 const supabase = createClient();
@@ -15,6 +16,13 @@ interface Player {
   team: string | null;
   status: string | null;
   adp: number | null;
+}
+
+interface QueueItem {
+  id: string;
+  player_id: string;
+  position: number;
+  players: { full_name: string; position: string | null; team: string | null } | null;
 }
 
 interface Pick {
@@ -667,6 +675,9 @@ export default function DraftRoom({
   const [heistOriginalOrder, setHeistOriginalOrder] = useState<string[] | null>(null);
   // Telepathy
   const [telepathyReveal, setTelepathyReveal] = useState<{ powerName: string | null; cloaked: boolean } | null>(null);
+  // Draft Queue
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [autodraftSubmitting, setAutodraftSubmitting] = useState(false);
 
   // ---- Pre-return derived state (must be here so effects can use them) ------
   const totalPicksEarly = league.max_teams * league.draft_rounds;
@@ -712,6 +723,17 @@ export default function DraftRoom({
       }
     }
   }, [leagueId]);
+
+  // ---- fetchQueue ------------------------------------------------------------
+  const fetchQueue = useCallback(async () => {
+    const { data } = await supabase
+      .from("draft_queue")
+      .select("id, player_id, position, players(full_name, position, team)")
+      .eq("league_id", leagueId)
+      .eq("member_id", myMemberId)
+      .order("position", { ascending: true });
+    if (data) setQueue(data as unknown as QueueItem[]);
+  }, [leagueId, myMemberId]);
 
   // ---- All effects (must be before any conditional returns) ------------------
   useEffect(() => {
@@ -763,6 +785,11 @@ export default function DraftRoom({
     return () => clearTimeout(timer);
   }, [search, posFilter]);
 
+  // Load queue on mount (and whenever myMemberId changes)
+  useEffect(() => {
+    if (draftStatus !== "not_started") fetchQueue();
+  }, [fetchQueue, draftStatus]);
+
   // ---- Early return: pre-draft lobby -----------------------------------------
   if (draftStatus === "not_started") {
     return (
@@ -780,6 +807,104 @@ export default function DraftRoom({
   const memberMap = Object.fromEntries(members.map((m) => [m.id, m]));
   const pickedIds = new Set(picks.map((p) => p.player_id));
   const availablePlayers = players.filter((p) => !pickedIds.has(p.id));
+  const queuedIds = new Set(queue.map((q) => q.player_id));
+
+  // ---- Queue handlers --------------------------------------------------------
+  async function handleAddToQueue(player: Player) {
+    const newItem: QueueItem = {
+      id: "temp-" + player.id,
+      player_id: player.id,
+      position: queue.length,
+      players: { full_name: player.full_name, position: player.position, team: player.team },
+    };
+    setQueue((prev) => [...prev, newItem]);
+    const result = await addToQueue(leagueId, player.id);
+    if (result.error) {
+      setQueue((prev) => prev.filter((q) => q.player_id !== player.id));
+      setError(result.error);
+    }
+  }
+
+  async function handleRemoveFromQueue(playerId: string) {
+    setQueue((prev) => prev.filter((q) => q.player_id !== playerId));
+    const result = await removeFromQueue(leagueId, playerId);
+    if (result.error) {
+      fetchQueue();
+      setError(result.error);
+    }
+  }
+
+  function handleMoveUp(playerId: string) {
+    setQueue((prev) => {
+      const idx = prev.findIndex((q) => q.player_id === playerId);
+      if (idx <= 0) return prev;
+      const next = [...prev];
+      [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+      saveQueueOrder(leagueId, next.map((q) => q.player_id));
+      return next;
+    });
+  }
+
+  function handleMoveDown(playerId: string) {
+    setQueue((prev) => {
+      const idx = prev.findIndex((q) => q.player_id === playerId);
+      if (idx === -1 || idx >= prev.length - 1) return prev;
+      const next = [...prev];
+      [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+      saveQueueOrder(leagueId, next.map((q) => q.player_id));
+      return next;
+    });
+  }
+
+  async function handleAutodraft() {
+    setError(null);
+    setPowerResult(null);
+    setAutodraftSubmitting(true);
+    setSubmitting(true);
+    try {
+      const result = await executeAutodraft(leagueId);
+      if (result.error) {
+        setError(result.error);
+      } else if (result.player) {
+        const pickedPlayer = result.player;
+        const pickedRound = currentRound;
+        setSuccess(`Autodraft: ${pickedPlayer.full_name} selected!`);
+        setQueue((prev) => prev.filter((q) => q.player_id !== pickedPlayer.id));
+        await fetchPicks();
+        setTimeout(() => setSuccess(null), 4000);
+
+        // Powers — skip interactive ones (they need manual activation)
+        if (myPowerThisRound?.draft_powers) {
+          const dp = myPowerThisRound.draft_powers;
+          const interactivePowers = ["Vampire Bite", "Foresight Coin", "Draft Heist"];
+          if (interactivePowers.includes(dp.name)) {
+            setPowerResult({
+              type: "fizzled",
+              message: `Autodraft used — ${dp.name} requires manual activation and was forfeited this round.`,
+            });
+            setTimeout(() => setPowerResult(null), 8000);
+          } else {
+            const pr = await assignPowerToPick({
+              leagueId,
+              playerId: pickedPlayer.id,
+              playerPosition: pickedPlayer.position ?? "",
+              powerName: dp.name,
+              powerCategory: dp.category ?? "",
+              powerTiedPosition: dp.tied_position,
+              round: pickedRound,
+            });
+            setPowerResult({ type: pr.result as PowerResultType, message: pr.message });
+            setTimeout(() => setPowerResult(null), 6000);
+          }
+        }
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Autodraft failed.");
+    } finally {
+      setAutodraftSubmitting(false);
+      setSubmitting(false);
+    }
+  }
 
   // ---- Pick handler ----------------------------------------------------------
   async function handlePick(playerId: string, playerPosition: string) {
@@ -1156,37 +1281,128 @@ export default function DraftRoom({
               {(search.trim().length > 0 || posFilter !== "ALL") && availablePlayers.length === 0 && (
                 <p className="py-8 text-center text-sm text-white">No available players match.</p>
               )}
-              {availablePlayers.map((p) => (
-                <div
-                  key={p.id}
-                  className="flex items-center justify-between rounded-lg border px-3 py-2"
-                  style={{ borderColor: "#2a2a40" }}
-                >
-                  <div>
-                    <p className="text-sm font-semibold">{p.full_name}</p>
-                    <p className="text-xs text-white">
-                      {p.position ?? "?"} - {p.team ?? "FA"}
-                      {p.status && p.status !== "Active" ? ` - ${p.status}` : ""}
-                    </p>
+              {availablePlayers.map((p) => {
+                const inQueue = queuedIds.has(p.id);
+                return (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between rounded-lg border px-3 py-2"
+                    style={{ borderColor: "#2a2a40" }}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <button
+                        onClick={() => inQueue ? handleRemoveFromQueue(p.id) : handleAddToQueue(p)}
+                              title={inQueue ? "Remove from queue" : "Add to queue"}
+                        className="shrink-0 text-base leading-none transition-colors"
+                        style={{ color: inQueue ? "#FFD700" : "#2a2a40" }}
+                      >
+                        &#9733;
+                      </button>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold truncate">{p.full_name}</p>
+                        <p className="text-xs text-white">
+                          {p.position ?? "?"} - {p.team ?? "FA"}
+                          {p.status && p.status !== "Active" ? ` - ${p.status}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    {isMyTurn && (
+                      <button
+                        onClick={() => handlePick(p.id, p.position ?? "")}
+                        disabled={submitting}
+                        className="ml-3 shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                        style={{ background: "#0057FF", color: "#f4f4f8" }}
+                      >
+                        {submitting ? "..." : "Draft"}
+                      </button>
+                    )}
                   </div>
-                  {isMyTurn && (
-                    <button
-                      onClick={() => handlePick(p.id, p.position ?? "")}
-                      disabled={submitting}
-                      className="ml-3 shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
-                      style={{ background: "#0057FF", color: "#f4f4f8" }}
-                    >
-                      {submitting ? "..." : "Draft"}
-                    </button>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
 
-          {/* Right: draft order + my powers */}
+          {/* Right: queue + draft order + my powers */}
           <aside className="flex flex-col gap-5">
+
+            {/* Queue */}
             <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "#FFD700" }}>
+                  Queue {queue.length > 0 && <span className="ml-1 text-xs font-normal" style={{ color: "#f4f4f8" }}>({queue.length})</span>}
+                </h3>
+                {isMyTurn && !isDraftComplete && queue.filter((q) => !pickedIds.has(q.player_id)).length > 0 && (
+                  <button
+                    onClick={handleAutodraft}
+                    disabled={autodraftSubmitting || submitting}
+                    className="rounded px-2.5 py-1 text-xs font-bold disabled:opacity-40 transition-opacity"
+                    style={{ background: "#FFD700", color: "#0d0d1a" }}
+                  >
+                    {autodraftSubmitting ? "Picking..." : "Autodraft"}
+                  </button>
+                )}
+              </div>
+              {queue.length === 0 ? (
+                <p className="text-xs" style={{ color: "#f4f4f8" }}>
+                  Star players to add them to your queue.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  {queue.map((item, idx) => {
+                    const isDrafted = pickedIds.has(item.player_id);
+                    return (
+                      <div
+                        key={item.player_id}
+                        className="flex items-center gap-1 rounded border px-2 py-1.5"
+                        style={{
+                          borderColor: isDrafted ? "#1a1a2e" : "#2a2a40",
+                          background: isDrafted ? "rgba(255,255,255,0.02)" : "transparent",
+                          opacity: isDrafted ? 0.45 : 1,
+                        }}
+                      >
+                        <div className="flex flex-col gap-0.5 shrink-0">
+                          <button
+                            onClick={() => handleMoveUp(item.player_id)}
+                            disabled={idx === 0 || isDrafted}
+                            className="text-xs leading-none disabled:opacity-25"
+                            style={{ color: "#f4f4f8" }}
+                          >
+                            &#9650;
+                          </button>
+                          <button
+                            onClick={() => handleMoveDown(item.player_id)}
+                            disabled={idx === queue.length - 1 || isDrafted}
+                            className="text-xs leading-none disabled:opacity-25"
+                            style={{ color: "#f4f4f8" }}
+                          >
+                            &#9660;
+                          </button>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold truncate" style={{ color: "#f4f4f8" }}>
+                            {item.players?.full_name ?? item.player_id}
+                          </p>
+                          <p className="text-xs" style={{ color: isDrafted ? "#CC0000" : "#f4f4f8" }}>
+                            {item.players?.position ?? "?"} &middot; {item.players?.team ?? "FA"}
+                            {isDrafted && " · Drafted"}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleRemoveFromQueue(item.player_id)}
+                          className="ml-1 shrink-0 text-xs leading-none"
+                          style={{ color: "#CC0000" }}
+                          title="Remove from queue"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t pt-4 flex flex-col gap-2" style={{ borderColor: "#2a2a40" }}>
               <h3 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "#FFD700" }}>
                 Draft Order
               </h3>
@@ -1253,11 +1469,11 @@ export default function DraftRoom({
                         </span>
                       )}
                     </p>
-                    <p className="text-xs font-semibold" style={{ color: isCurr ? "#f4f4f8" : "#f4f4f8" }}>
+                    <p className="text-xs font-semibold" style={{ color: "#f4f4f8" }}>
                       {dp?.name ?? "Unknown"}
                     </p>
                     {isCurr && dp?.name === "Hero's Shield" && (
-                      <p className="mt-0.5 text-xs" style={{ color: "#0057FF" }}>🛡 Shielded</p>
+                      <p className="mt-0.5 text-xs" style={{ color: "#0057FF" }}>&nbsp;Shielded</p>
                     )}
                   </div>
                 );

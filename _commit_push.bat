@@ -4,6 +4,6 @@ if exist ".git\index.lock" del ".git\index.lock"
 if exist ".git\HEAD.lock" del ".git\HEAD.lock"
 if exist ".git\refs\heads\main.lock" del ".git\refs\heads\main.lock"
 git add -A
-git commit -m "fix: lineup save — remove JSON.stringify on p_slots, fix RPC DEF/DST eligibility"
+git commit -m "feat: draft queue + autodraft — star players to queue, autodraft picks top available"
 git push origin main
 pause
