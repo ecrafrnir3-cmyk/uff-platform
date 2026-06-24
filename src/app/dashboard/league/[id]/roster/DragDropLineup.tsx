@@ -2,12 +2,15 @@
 
 import { useState } from "react";
 import { setLineup } from "../lineup-actions";
+import { moveToIR } from "../player-actions";
+import DropButton from "./DropButton";
 
 interface RosterPlayer {
   player_id: string;
   full_name: string;
   position: string;
   team?: string;
+  status?: string;
 }
 
 const SLOT_ELIGIBLE: Record<string, string[]> = {
@@ -93,6 +96,7 @@ export default function DragDropLineup({
   seasonPts,
   gameTimes,
   playerPowers,
+  irSlotsAvailable = 0,
 }: {
   leagueId: string;
   week: number;
@@ -104,6 +108,7 @@ export default function DragDropLineup({
   seasonPts?: Record<string, number>;
   gameTimes?: Record<string, string>;
   playerPowers?: Record<string, { emoji: string; name: string }>;
+  irSlotsAvailable?: number;
 }) {
   const [assignments, setAssignments] = useState<Record<string, string>>(currentLineup);
   // selected: { id: player_id, source: slot-name | "bench" }
@@ -424,6 +429,14 @@ export default function DragDropLineup({
                     <p className="text-xs truncate" style={{ color: "#f4f4f8" }}>
                       <span style={{ color: posColor, fontWeight: 600 }}>{player.position}</span>
                       {player.team ? " · " + player.team : ""}
+                      {gameTimes && player.team && !gameTimes[player.team] && (
+                        <span style={{ color: "#FFD700", fontWeight: 700 }}> · BYE</span>
+                      )}
+                      {player.status && player.status !== "Active" && (
+                        <span style={{ color: player.status === "Injured Reserve" ? VILLAIN_COLOR : "#FFD700", fontWeight: 600 }}>
+                          {" · "}{player.status === "Injured Reserve" ? "IR" : player.status}
+                        </span>
+                      )}
                       {playerPowers?.[player.player_id] && (
                         <span
                           title={playerPowers[player.player_id].name}
@@ -586,6 +599,14 @@ export default function DragDropLineup({
                     <p className="text-xs" style={{ color: "#f4f4f8" }}>
                       <span style={{ color: posColor + "aa", fontWeight: 600 }}>{p.position}</span>
                       {p.team ? " · " + p.team : ""}
+                      {gameTimes && p.team && !gameTimes[p.team] && (
+                        <span style={{ color: "#FFD700", fontWeight: 700 }}> · BYE</span>
+                      )}
+                      {p.status && p.status !== "Active" && (
+                        <span style={{ color: p.status === "Injured Reserve" ? VILLAIN_COLOR : "#FFD700", fontWeight: 600 }}>
+                          {" · "}{p.status === "Injured Reserve" ? "IR" : p.status}
+                        </span>
+                      )}
                       {playerPowers?.[p.player_id] && (
                         <span
                           title={playerPowers[p.player_id].name}
@@ -610,6 +631,24 @@ export default function DragDropLineup({
                       &#128274;
                     </span>
                   )}
+                  {/* Move to IR — only when player has official IR designation and slots are open */}
+                  {p.status === "Injured Reserve" && irSlotsAvailable > 0 && (
+                    <form action={moveToIR} onClick={(e) => e.stopPropagation()}>
+                      <input type="hidden" name="leagueId" value={leagueId} />
+                      <input type="hidden" name="playerId" value={p.player_id} />
+                      <button
+                        type="submit"
+                        className="rounded px-2 py-0.5 text-xs font-semibold flex-shrink-0"
+                        style={{ background: "rgba(204,0,0,0.2)", color: "#ff8a8a" }}
+                      >
+                        → IR
+                      </button>
+                    </form>
+                  )}
+                  {/* Drop button */}
+                  <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
+                    <DropButton leagueId={leagueId} playerId={p.player_id} playerName={p.full_name} />
+                  </div>
                 </div>
               );
             })}

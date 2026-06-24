@@ -1,12 +1,9 @@
-import { Suspense } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { dropPlayer, moveFromIR, useRestoreChip } from "../player-actions";
+import { moveFromIR, moveToIR, useRestoreChip } from "../player-actions";
 import { respondToTrade, cancelTrade } from "../trade-actions";
 import DragDropLineup from "./DragDropLineup";
-import PlayerPhoto from "./PlayerPhoto";
-import RosterStatsTable from "./RosterStatsTable";
 import TokenChoicePicker from "./TokenChoicePicker";
 import DropButton from "./DropButton";
 import { getCurrentNFLWeek, isLineupLocked, getWeekLockTime } from "@/lib/nfl-utils";
@@ -44,7 +41,6 @@ interface PlayerPowerRow {
   player_id: string;
   power: string;
 }
-interface NewsItem { title: string; link: string; }
 interface TradeRow {
   id: string;
   proposer_id: string;
@@ -54,12 +50,6 @@ interface TradeRow {
   status: string;
   created_at: string;
 }
-interface DraftPickRow {
-  id: string; round: number; pick_no: number; picked_at: string;
-  players: { full_name: string; position: string | null; team: string | null } | null;
-  league_members: { team_name: string } | null;
-}
-
 // ─── Constants ───────────────────────────────────────────────────────────────
 const HERO_COLOR    = "#0057FF";
 const VILLAIN_COLOR = "#CC0000";
@@ -126,15 +116,6 @@ function positionRank(pos: string | null) {
   return idx === -1 ? POSITION_ORDER.length : idx;
 }
 
-function timeAgo(iso: string): string {
-  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (mins < 1)  return "just now";
-  if (mins < 60) return mins + "m ago";
-  const h = Math.floor(mins / 60);
-  if (h < 24)    return h + "h ago";
-  return Math.floor(h / 24) + "d ago";
-}
-
 function expandSlots(config: Record<string, number>): string[] {
   const order = ["QB", "RB", "WR", "TE", "FLEX", "K", "DEF"];
   const result: string[] = [];
@@ -144,26 +125,6 @@ function expandSlots(config: Record<string, number>): string[] {
     else for (let i = 1; i <= n; i++) result.push(pos + "_" + i);
   }
   return result;
-}
-
-async function getNflNews(): Promise<NewsItem[]> {
-  try {
-    const res = await fetch("https://www.espn.com/espn/rss/nfl/news", {
-      next: { revalidate: 1800 },
-    });
-    if (!res.ok) return [];
-    const xml   = await res.text();
-    const items: NewsItem[] = [];
-    const re = /<item>([\s\S]*?)<\/item>/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(xml)) && items.length < 5) {
-      const b     = m[1];
-      const title = b.match(/<title>([\s\S]*?)<\/title>/)?.[1]?.replace(/<\!\[CDATA\[|\]\]>/g, "").trim();
-      const link  = b.match(/<link>([\s\S]*?)<\/link>/)?.[1]?.replace(/<\!\[CDATA\[|\]\]>/g, "").trim();
-      if (title && link) items.push({ title, link });
-    }
-    return items;
-  } catch { return []; }
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -284,61 +245,6 @@ function WeeklyTokenCard({
   );
 }
 
-function PowerStatusBadge({ status }: { status: string }) {
-  const s = POWER_STATUS_STYLES[status] ?? POWER_STATUS_STYLES.pending;
-  return (
-    <span className="rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide"
-      style={{ background: s.bg, color: s.color }}>{s.label}</span>
-  );
-}
-
-// ─── Roster Stats Skeleton (shown while Sleeper stats load) ───────────────────
-function RosterStatsSkeleton({ count, draftRounds }: { count: number; draftRounds: number }) {
-  return (
-    <section className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>
-          Active Roster ({count} / {draftRounds})
-        </h2>
-      </div>
-      <div className="overflow-x-auto rounded-lg border animate-pulse" style={{ borderColor: "#2a2a40" }}>
-        <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ background: "#15151f", color: "#f4f4f8" }}>
-              <th className="px-3 py-2 text-left font-semibold uppercase tracking-wider text-xs">Player</th>
-              <th className="px-2 py-2 text-center text-xs">Slot</th>
-              <th className="px-2 py-2 text-right text-xs">2024 Pts</th>
-              <th className="px-2 py-2 text-xs"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {Array.from({ length: Math.min(count, 8) }).map((_, i) => (
-              <tr key={i} className="border-t" style={{ borderColor: "#2a2a40" }}>
-                <td className="px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <div className="h-8 w-8 rounded-full" style={{ background: "#2a2a40" }} />
-                    <div className="h-4 w-8 rounded" style={{ background: "#2a2a40" }} />
-                    <div className="h-4 w-28 rounded" style={{ background: "#2a2a40" }} />
-                  </div>
-                </td>
-                <td className="px-2 py-2 text-center">
-                  <div className="mx-auto h-4 w-5 rounded" style={{ background: "#2a2a40" }} />
-                </td>
-                <td className="px-2 py-2 text-right">
-                  <div className="ml-auto h-4 w-10 rounded" style={{ background: "#2a2a40" }} />
-                </td>
-                <td className="px-2 py-2">
-                  <div className="h-5 w-10 rounded" style={{ background: "#2a2a40" }} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default async function RosterPage({
   params,
@@ -376,11 +282,9 @@ export default async function RosterPage({
     { data: teams },
     { data: bonus },
     { data: powers },
-    { data: picks },
     { data: lineupRows },
     { data: chips },
     { data: negatedPlayers },
-    news,
     { data: gameScheduleRows },
     { data: weeklyToken },
     { data: pastTokenRows },
@@ -401,13 +305,6 @@ export default async function RosterPage({
       .eq("member_id", me.id)
       .order("round", { ascending: true })
       .returns<PowerRow[]>(),
-    supabase
-      .from("uff_draft_picks")
-      .select("id, round, pick_no, picked_at, players(full_name, position, team), league_members(team_name)")
-      .eq("league_id", leagueId)
-      .order("picked_at", { ascending: false })
-      .limit(8)
-      .returns<DraftPickRow[]>(),
     supabase.from("uff_lineups").select("slot, player_id").eq("member_id", me.id).eq("week", week),
     supabase
       .from("power_restore_chips")
@@ -424,7 +321,6 @@ export default async function RosterPage({
       .eq("power", "power_negation")
       .is("restored_at", null)
       .returns<NegatedPlayerRow[]>(),
-    getNflNews(),
     supabase
       .from("uff_game_schedule")
       .select("team, kickoff_utc")
@@ -563,7 +459,6 @@ export default async function RosterPage({
   const bonusPoints  = typeof bonus === "number" ? bonus : Number(bonus ?? 0);
 
   const powerList      = powers ?? [];
-  const pickList       = picks  ?? [];
   const chipList       = chips  ?? [];
   const negatedList    = negatedPlayers ?? [];
   const availableChips = chipList.length;
@@ -592,6 +487,7 @@ export default async function RosterPage({
       full_name: r.players!.full_name,
       position:  r.players!.position!,
       team:      r.players!.team ?? undefined,
+      status:    r.players!.status ?? undefined,
     }));
 
   // Build team -> kickoff map for per-player lock UI
@@ -689,6 +585,7 @@ export default async function RosterPage({
             gameTimes={Object.keys(gameTimes).length > 0 ? gameTimes : undefined}
             seasonPts={seasonPts}
             playerPowers={Object.keys(playerPowers).length > 0 ? playerPowers : undefined}
+            irSlotsAvailable={irSlotsTotal - irSlotsUsed}
           />
         )}
 
@@ -785,21 +682,6 @@ export default async function RosterPage({
           </section>
         )}
 
-        {/* ── Active Roster — streams in after DB shell renders ── */}
-        <Suspense fallback={<RosterStatsSkeleton count={activeRoster.length} draftRounds={league.draft_rounds} />}>
-          <RosterStatsTable
-            activeRoster={activeRoster}
-            leagueId={leagueId}
-            draftRounds={league.draft_rounds}
-            irSlotsUsed={irSlotsUsed}
-            irSlotsTotal={irSlotsTotal}
-            currentLineup={currentLineup}
-            teams={teams ?? []}
-            memberFaction={me.faction}
-            factionAccent={factionAccent}
-          />
-        </Suspense>
-
         {/* ── IR Section ── */}
         <section id="ir-section" className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold" style={{ color: VILLAIN_COLOR }}>
@@ -843,109 +725,63 @@ export default async function RosterPage({
           )}
         </section>
 
-        {/* ── Bottom row: Powers | Activity | News ── */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* ── Your Powers ── */}
+        <section className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Your Powers</h2>
 
-          {/* Powers — compact chip row */}
-          <section className="flex flex-col gap-3">
-            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Your Powers</h2>
-
-            {/* Restore chip action */}
-            {availableChips > 0 && (
-              <div className="rounded-lg border px-3 py-2" style={{ borderColor: HERO_COLOR, background: "rgba(0,87,255,0.07)" }}>
-                <p className="text-xs uppercase tracking-wide" style={{ color: HERO_COLOR }}>
-                  Power Restore Chips — {availableChips} available
-                </p>
-                {negatedPlayer ? (
-                  <form action={useRestoreChip} className="mt-2">
-                    <input type="hidden" name="leagueId" value={leagueId} />
-                    <input type="hidden" name="chipId"   value={chipList[0].id} />
-                    <input type="hidden" name="playerId" value={negatedPlayer.player_id} />
-                    <button type="submit" className="w-full rounded-md px-3 py-1.5 text-xs font-semibold"
-                      style={{ background: HERO_COLOR, color: "#f4f4f8" }}>
-                      Restore {negatedPlayer.players?.full_name?.split(" ").pop() ?? "player"}
-                    </button>
-                  </form>
-                ) : (
-                  <p className="mt-1 text-xs" style={{ color: "#f4f4f8" }}>No negated players — bank it or trade it.</p>
-                )}
-              </div>
-            )}
-
-            {/* Compact power chips — season-effect and tied-to-pick only (draft mechanics excluded) */}
-            {powerList.length === 0 ? (
-              <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#f4f4f8" }}>
-                Powers are assigned during the draft — none yet.
+          {/* Restore chip action */}
+          {availableChips > 0 && (
+            <div className="rounded-lg border px-3 py-2" style={{ borderColor: HERO_COLOR, background: "rgba(0,87,255,0.07)" }}>
+              <p className="text-xs uppercase tracking-wide" style={{ color: HERO_COLOR }}>
+                Power Restore Chips — {availableChips} available
               </p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {powerList
-                  .filter((p) => p.draft_powers?.category !== "Draft Mechanic")
-                  .map((p) => {
-                    const status   = p.team_active_powers?.[0]?.status ?? "pending";
-                    const name     = p.draft_powers?.name ?? "Unknown";
-                    const slugKey  = Object.entries(SLUG_TO_POWER_INFO).find(([, v]) => v.name === name)?.[0];
-                    const emoji    = slugKey ? SLUG_TO_POWER_INFO[slugKey].emoji : "⚡";
-                    const s = POWER_STATUS_STYLES[status] ?? POWER_STATUS_STYLES.pending;
-                    return (
-                      <div
-                        key={p.id}
-                        title={`Round ${p.round} · ${status}`}
-                        className="flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold"
-                        style={{ borderColor: s.color + "55", background: s.bg, color: s.color }}
-                      >
-                        <span>{emoji}</span>
-                        <span>{name}</span>
-                      </div>
-                    );
-                  })}
-              </div>
-            )}
-          </section>
+              {negatedPlayer ? (
+                <form action={useRestoreChip} className="mt-2">
+                  <input type="hidden" name="leagueId" value={leagueId} />
+                  <input type="hidden" name="chipId"   value={chipList[0].id} />
+                  <input type="hidden" name="playerId" value={negatedPlayer.player_id} />
+                  <button type="submit" className="w-full rounded-md px-3 py-1.5 text-xs font-semibold"
+                    style={{ background: HERO_COLOR, color: "#f4f4f8" }}>
+                    Restore {negatedPlayer.players?.full_name?.split(" ").pop() ?? "player"}
+                  </button>
+                </form>
+              ) : (
+                <p className="mt-1 text-xs" style={{ color: "#f4f4f8" }}>No negated players — bank it or trade it.</p>
+              )}
+            </div>
+          )}
 
-          {/* League Activity */}
-          <section className="flex flex-col gap-3">
-            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>League Activity</h2>
-            {pickList.length === 0 ? (
-              <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#f4f4f8" }}>No draft picks yet.</p>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {pickList.map((pick) => (
-                  <div key={pick.id} className="rounded-lg border p-3" style={{ borderColor: "#2a2a40" }}>
-                    <p className="text-sm">
-                      <span className="font-semibold">{pick.league_members?.team_name ?? "A manager"}</span>{" "}
-                      drafted <span className="font-semibold">{pick.players?.full_name ?? "a player"}</span>
-                      {pick.players?.position ? ` (${pick.players.position}${pick.players.team ? " · " + pick.players.team : ""})` : ""}
-                    </p>
-                    <p className="mt-1 text-xs" style={{ color: "#f4f4f8" }}>
-                      Round {pick.round}, Pick {pick.pick_no} &middot; {timeAgo(pick.picked_at)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
+          {/* Compact power chips — season-effect and tied-to-pick only */}
+          {powerList.filter((p) => p.draft_powers?.category !== "Draft Mechanic").length === 0 ? (
+            <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#f4f4f8" }}>
+              Powers are assigned during the draft — none yet.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {powerList
+                .filter((p) => p.draft_powers?.category !== "Draft Mechanic")
+                .map((p) => {
+                  const status  = p.team_active_powers?.[0]?.status ?? "pending";
+                  const name    = p.draft_powers?.name ?? "Unknown";
+                  const slugKey = Object.entries(SLUG_TO_POWER_INFO).find(([, v]) => v.name === name)?.[0];
+                  const emoji   = slugKey ? SLUG_TO_POWER_INFO[slugKey].emoji : "⚡";
+                  const s = POWER_STATUS_STYLES[status] ?? POWER_STATUS_STYLES.pending;
+                  return (
+                    <div
+                      key={p.id}
+                      title={`Round ${p.round} · ${status}`}
+                      className="flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold"
+                      style={{ borderColor: s.color + "55", background: s.bg, color: s.color }}
+                    >
+                      <span>{emoji}</span>
+                      <span>{name}</span>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </section>
 
-          {/* NFL News */}
-          <section className="flex flex-col gap-3">
-            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>NFL News</h2>
-            {news.length === 0 ? (
-              <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#f4f4f8" }}>Headlines unavailable.</p>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {news.map((item) => (
-                  <a key={item.link} href={item.link} target="_blank" rel="noopener noreferrer"
-                    className="rounded-lg border p-3 text-sm underline-offset-2 hover:underline"
-                    style={{ borderColor: "#2a2a40" }}>
-                    {item.title}
-                  </a>
-                ))}
-                <p className="text-xs" style={{ color: "#f4f4f8" }}>Source: ESPN NFL headlines</p>
-              </div>
-            )}
-          </section>
-
-        </div>
       </main>
     </div>
   );
