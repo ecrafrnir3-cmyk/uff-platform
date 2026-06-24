@@ -101,18 +101,16 @@ export default function DragDropLineup({
   locked: boolean;
   lockTime: string;
   seasonPts?: Record<string, number>;
-  gameTimes?: Record<string, string>; // team abbr → ISO kickoff UTC
+  gameTimes?: Record<string, string>;
 }) {
   const [assignments, setAssignments] = useState<Record<string, string>>(currentLineup);
-  const [draggedId,   setDraggedId]   = useState<string | null>(null);
-  const [dragSource,  setDragSource]  = useState<string | null>(null);
-  const [overSlot,    setOverSlot]    = useState<string | null>(null);
-  const [overBench,   setOverBench]   = useState(false);
-  const [invalidSlot, setInvalidSlot] = useState<string | null>(null);
+  // selected: { id: player_id, source: slot-name | "bench" }
+  const [selected, setSelected] = useState<{ id: string; source: string } | null>(null);
+  // invalidTarget: slot name or "bench:pid" — briefly flashes red
+  const [invalidTarget, setInvalidTarget] = useState<string | null>(null);
 
-  // ── Per-player lock: game has started for this player's team ────────────────
   function isPlayerLocked(player: RosterPlayer): boolean {
-    if (locked) return true; // global lock overrides
+    if (locked) return true;
     if (!gameTimes || !player.team) return false;
     const kickoff = gameTimes[player.team];
     return kickoff ? Date.now() >= new Date(kickoff).getTime() : false;
@@ -128,49 +126,102 @@ export default function DragDropLineup({
     return (SLOT_ELIGIBLE[slotBase(slot)] ?? []).includes(player.position);
   }
 
-  function onDragStart(pid: string, src: string) {
+  function flashInvalid(target: string) {
+    setInvalidTarget(target);
+    setTimeout(() => setInvalidTarget(null), 500);
+  }
+
+  // ── Click a player (starter or bench) ───────────────────────────────────────
+  function handleClickPlayer(pid: string, source: string) {
+    if (locked) return;
     const player = activeRoster.find((p) => p.player_id === pid);
-    if (!player || isPlayerLocked(player)) return; // per-player lock
-    setDraggedId(pid);
-    setDragSource(src);
+    if (!player || isPlayerLocked(player)) return;
+
+    // Deselect if clicking the same player
+    if (selected?.id === pid) {
+      setSelected(null);
+      return;
+    }
+
+    // Nothing selected yet — select this player
+    if (!selected) {
+      setSelected({ id: pid, source });
+      return;
+    }
+
+    const A = selected;
+    const B = { id: pid, source };
+
+    // Both on bench — just switch selection to B
+    if (A.source === "bench" && B.source === "bench") {
+      setSelected(B);
+      return;
+    }
+
+    // A on bench, B in starter slot → try to move A into B's slot, B → bench
+    if (A.source === "bench") {
+      if (!eligible(A.id, B.source)) {
+        flashInvalid(B.source);
+        return; // keep A selected
+      }
+      setAssignments((prev) => ({ ...prev, [B.source]: A.id }));
+      setSelected(null);
+      return;
+    }
+
+    // A in starter slot, B on bench → try to move B into A's slot, A → bench
+    if (B.source === "bench") {
+      if (!eligible(B.id, A.source)) {
+        flashInvalid("bench:" + B.id);
+        return; // keep A selected
+      }
+      setAssignments((prev) => ({ ...prev, [A.source]: B.id }));
+      setSelected(null);
+      return;
+    }
+
+    // Both in starter slots → A goes to B's slot (must be eligible)
+    if (!eligible(A.id, B.source)) {
+      flashInvalid(B.source);
+      return; // keep A selected, flash target
+    }
+    setAssignments((prev) => {
+      const next = { ...prev };
+      next[B.source] = A.id;
+      // B goes to A's slot if eligible, else bench (slot clears)
+      next[A.source] = eligible(B.id, A.source) ? B.id : "";
+      return next;
+    });
+    setSelected(null);
   }
 
-  function onDragEnd() {
-    setDraggedId(null);
-    setDragSource(null);
-    setOverSlot(null);
-    setOverBench(false);
-    setInvalidSlot(null);
-  }
-
-  function dropOnSlot(slot: string) {
-    if (!draggedId) return;
-    if (!eligible(draggedId, slot)) {
-      setInvalidSlot(slot);
-      setTimeout(() => setInvalidSlot(null), 600);
-      setOverSlot(null);
+  // ── Click an empty starter slot ──────────────────────────────────────────────
+  function handleClickEmptySlot(slot: string) {
+    if (locked || !selected) return;
+    if (!eligible(selected.id, slot)) {
+      flashInvalid(slot);
       return;
     }
     setAssignments((prev) => {
       const next = { ...prev };
-      const displaced = next[slot];
-      // Don't displace into bench if displaced player is locked
-      if (dragSource && dragSource !== "bench") {
-        const displacedPlayer = displaced ? activeRoster.find((p) => p.player_id === displaced) : null;
-        if (!displacedPlayer || !isPlayerLocked(displacedPlayer)) {
-          next[dragSource] = displaced ?? "";
-        }
-      }
-      next[slot] = draggedId!;
+      next[slot] = selected.id;
+      if (selected.source !== "bench") next[selected.source] = "";
       return next;
     });
-    setOverSlot(null);
+    setSelected(null);
   }
 
-  function dropOnBench() {
-    if (!draggedId || !dragSource || dragSource === "bench") return;
-    setAssignments((prev) => ({ ...prev, [dragSource!]: "" }));
-    setOverBench(false);
+  // ── Move selected starter to bench ──────────────────────────────────────────
+  function handleMoveToBench() {
+    if (!selected || selected.source === "bench") return;
+    setAssignments((prev) => ({ ...prev, [selected.source]: "" }));
+    setSelected(null);
+  }
+
+  // ── Remove a starter from their slot (× button) ─────────────────────────────
+  function removeFromSlot(slot: string) {
+    if (selected?.source === slot) setSelected(null);
+    setAssignments((prev) => ({ ...prev, [slot]: "" }));
   }
 
   function autoFill() {
@@ -182,12 +233,9 @@ export default function DragDropLineup({
         if (next[slot]) continue;
         const base = slotBase(slot);
         const eligiblePos = SLOT_ELIGIBLE[base] ?? [];
-        // Prefer unlocked players for auto-fill
-        const candidate = activeRoster.find(
-          (p) => eligiblePos.includes(p.position) && !usedIds.has(p.player_id) && !isPlayerLocked(p)
-        ) ?? activeRoster.find(
-          (p) => eligiblePos.includes(p.position) && !usedIds.has(p.player_id)
-        );
+        const candidate =
+          activeRoster.find((p) => eligiblePos.includes(p.position) && !usedIds.has(p.player_id) && !isPlayerLocked(p)) ??
+          activeRoster.find((p) => eligiblePos.includes(p.position) && !usedIds.has(p.player_id));
         if (candidate) {
           next[slot] = candidate.player_id;
           usedIds.add(candidate.player_id);
@@ -195,6 +243,7 @@ export default function DragDropLineup({
       }
       return next;
     });
+    setSelected(null);
   }
 
   const benchPlayers = activeRoster.filter((p) => !assignedIds.has(p.player_id));
@@ -207,7 +256,6 @@ export default function DragDropLineup({
     timeZone: "America/New_York",
   });
 
-  // Find the earliest upcoming kickoff to show in hint bar
   const nextKickoff = gameTimes
     ? Object.values(gameTimes)
         .map((t) => new Date(t))
@@ -225,6 +273,14 @@ export default function DragDropLineup({
   async function handleSave(fd: FormData) {
     await setLineup(fd);
   }
+
+  // Whether a starter slot row should be highlighted as a valid target
+  function slotIsValidTarget(slot: string): boolean {
+    if (!selected) return false;
+    return eligible(selected.id, slot);
+  }
+
+  const starterIsSelected = selected && selected.source !== "bench";
 
   return (
     <section
@@ -274,11 +330,13 @@ export default function DragDropLineup({
           className="px-4 py-1.5 text-xs"
           style={{ background: "#0f0f1c", color: "#f4f4f8", borderBottom: "1px solid #1a1a2e" }}
         >
-          {gameTimes
-            ? nextKickoffDisplay
-              ? <>Drag players into slots &middot; Players lock at kickoff &middot; First game: <span style={{ color: "#f4f4f8" }}>{nextKickoffDisplay}</span></>
-              : "Drag players into slots · Players lock individually at their game time"
-            : `Drag players into slots · Drop onto Bench to remove · Locks ${lockDisplay}`}
+          {selected
+            ? <span style={{ color: "#FFD700" }}>Player selected — tap a slot or player to swap, or tap again to cancel</span>
+            : gameTimes
+              ? nextKickoffDisplay
+                ? <>Tap a player to move them &middot; Players lock at kickoff &middot; First game: <span style={{ color: "#f4f4f8" }}>{nextKickoffDisplay}</span></>
+                : "Tap a player to select, then tap a slot or another player to swap"
+              : `Tap a player to select, then tap a slot or another player to swap · Locks ${lockDisplay}`}
         </div>
       ) : (
         <div
@@ -289,35 +347,31 @@ export default function DragDropLineup({
         </div>
       )}
 
-      {/* Starters */}
+      {/* ── STARTERS ─────────────────────────────────────────────────────────── */}
       <div className="flex flex-col" style={{ background: "#0d0d1a" }}>
         {slots.map((slot, i) => {
-          const pid    = assignments[slot] ?? "";
-          const player = pid ? activeRoster.find((p) => p.player_id === pid) : null;
-          const base   = slotBase(slot);
+          const pid       = assignments[slot] ?? "";
+          const player    = pid ? activeRoster.find((p) => p.player_id === pid) : null;
+          const base      = slotBase(slot);
           const posColor  = POS_COLOR[base] ?? "#f4f4f8";
-          const isOver    = overSlot === slot;
-          const isInvalid = invalidSlot === slot;
-          const dropOk    = draggedId ? eligible(draggedId, slot) : true;
-          const pts       = player ? (seasonPts?.[player.player_id] ?? null) : null;
-          const playerLocked = player ? isPlayerLocked(player) : false;
+          const isSelected = selected?.id === pid && pid !== "";
+          const isInvalid  = invalidTarget === slot;
+          const isValidTarget = selected && !isSelected && slotIsValidTarget(slot);
+          const playerLocked  = player ? isPlayerLocked(player) : false;
+
+          // Row background
+          let rowBg = "transparent";
+          if (isInvalid) rowBg = "rgba(204,0,0,0.07)";
+          else if (isSelected) rowBg = "rgba(255,215,0,0.05)";
+          else if (isValidTarget && !player) rowBg = "rgba(0,87,255,0.07)";
 
           return (
             <div
               key={slot}
-              onDragOver={(e) => { if (!playerLocked) { e.preventDefault(); setOverSlot(slot); } }}
-              onDragLeave={(e) => {
-                if (!e.currentTarget.contains(e.relatedTarget as Node)) setOverSlot(null);
-              }}
-              onDrop={() => dropOnSlot(slot)}
               className="flex items-center gap-3 px-3 py-2"
               style={{
                 borderBottom: i < slots.length - 1 ? "1px solid #1a1a2e" : undefined,
-                background: isInvalid
-                  ? "rgba(204,0,0,0.07)"
-                  : isOver
-                    ? (dropOk ? "rgba(0,87,255,0.07)" : "rgba(204,0,0,0.07)")
-                    : "transparent",
+                background: rowBg,
                 transition: "background 0.1s",
                 minHeight: 62,
                 opacity: locked ? 0.85 : 1,
@@ -336,18 +390,23 @@ export default function DragDropLineup({
                 {base}
               </div>
 
-              {/* Player card or empty drop zone */}
+              {/* Player card or empty slot */}
               {player ? (
                 <div
-                  draggable={!playerLocked}
-                  onDragStart={() => onDragStart(player.player_id, slot)}
-                  onDragEnd={onDragEnd}
+                  onClick={() => handleClickPlayer(player.player_id, slot)}
                   className="flex flex-1 items-center gap-3 rounded-lg px-2 py-1.5"
                   style={{
-                    cursor: playerLocked ? "default" : "grab",
-                    background: playerLocked ? "#0f0f1e" : "#13132b",
-                    border: `1px solid ${playerLocked ? "#3a1a1a" : "#2a2a40"}`,
+                    cursor: playerLocked ? "default" : "pointer",
+                    background: isSelected ? "#1a1620" : playerLocked ? "#0f0f1e" : "#13132b",
+                    border: isSelected
+                      ? `2px solid #FFD700`
+                      : isInvalid
+                        ? `1px solid ${VILLAIN_COLOR}`
+                        : (isValidTarget
+                            ? `1px solid ${HERO_COLOR}`
+                            : `1px solid ${playerLocked ? "#3a1a1a" : "#2a2a40"}`),
                     userSelect: "none",
+                    transition: "border-color 0.1s, background 0.1s",
                   }}
                 >
                   <PlayerAvatar
@@ -357,7 +416,7 @@ export default function DragDropLineup({
                     size={38}
                   />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate" style={{ color: playerLocked ? "#f4f4f8" : "#f4f4f8" }}>
+                    <p className="text-sm font-semibold truncate" style={{ color: "#f4f4f8" }}>
                       {player.full_name}
                     </p>
                     <p className="text-xs truncate" style={{ color: "#f4f4f8" }}>
@@ -365,55 +424,66 @@ export default function DragDropLineup({
                       {player.team ? " · " + player.team : ""}
                     </p>
                   </div>
-                  {pts != null && (
+                  {seasonPts?.[player.player_id] != null && (
                     <div className="text-right flex-shrink-0 pr-1">
                       <p className="text-sm font-bold tabular-nums" style={{ color: "#FFD700" }}>
-                        {pts.toFixed(1)}
+                        {seasonPts[player.player_id].toFixed(1)}
                       </p>
                       <p className="text-xs" style={{ color: "#f4f4f8" }}>pts</p>
                     </div>
                   )}
-                  {/* Lock icon when game started, × button when moveable */}
                   {playerLocked ? (
                     <span
                       className="flex-shrink-0 text-sm"
-                      title={`${player.team ?? "Game"} has kicked off — this player is locked`}
+                      title={`${player.team ?? "Game"} has kicked off — locked`}
                       style={{ color: VILLAIN_COLOR + "aa", paddingRight: 2 }}
                     >
                       &#128274;
                     </span>
                   ) : (
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setAssignments((prev) => ({ ...prev, [slot]: "" }));
-                      }}
+                      onClick={(e) => { e.stopPropagation(); removeFromSlot(slot); }}
                       className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-base transition-colors hover:text-red-400"
                       style={{ color: "#f4f4f8", background: "transparent" }}
-                      title="Remove from lineup"
-                      aria-label="Remove from lineup"
+                      title="Move to bench"
+                      aria-label="Move to bench"
                     >
                       &times;
                     </button>
                   )}
                 </div>
               ) : (
+                /* Empty slot — clickable target when player is selected */
                 <div
+                  onClick={() => handleClickEmptySlot(slot)}
                   className="lineup-slot-empty flex-1 flex items-center rounded-lg px-3 text-sm font-semibold"
                   style={{
                     height: 46,
                     border: "1px dashed",
-                    borderColor: isInvalid || (isOver && !dropOk)
+                    borderColor: isInvalid
                       ? VILLAIN_COLOR
-                      : isOver
+                      : isValidTarget
                         ? HERO_COLOR
                         : "#FFD700",
-                    background: isOver && dropOk ? "rgba(0,87,255,0.1)" : "rgba(255,215,0,0.04)",
-                    color: isInvalid || (isOver && !dropOk) ? VILLAIN_COLOR : "#FFD700",
+                    background: isValidTarget
+                      ? "rgba(0,87,255,0.1)"
+                      : isInvalid
+                        ? "rgba(204,0,0,0.05)"
+                        : "rgba(255,215,0,0.04)",
+                    color: isInvalid
+                      ? VILLAIN_COLOR
+                      : isValidTarget
+                        ? HERO_COLOR
+                        : "#FFD700",
+                    cursor: selected && isValidTarget ? "pointer" : "default",
                     transition: "border-color 0.1s, color 0.1s, background 0.1s",
                   }}
                 >
-                  {isOver && !dropOk ? "Wrong position for this slot" : `Drop ${base} here`}
+                  {isValidTarget
+                    ? `→ Move ${base} here`
+                    : isInvalid
+                      ? "Wrong position for this slot"
+                      : `Drop ${base} here`}
                 </div>
               )}
             </div>
@@ -421,19 +491,24 @@ export default function DragDropLineup({
         })}
       </div>
 
-      {/* Bench drop zone */}
-      <div
-        onDragOver={(e) => { e.preventDefault(); setOverBench(true); }}
-        onDragLeave={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node)) setOverBench(false);
-        }}
-        onDrop={dropOnBench}
-        style={{
-          background: overBench ? "rgba(138,138,154,0.05)" : "#080812",
-          borderTop: "2px solid #2a2a40",
-          transition: "background 0.1s",
-        }}
-      >
+      {/* ── BENCH ─────────────────────────────────────────────────────────────── */}
+      <div style={{ background: "#080812", borderTop: "2px solid #2a2a40" }}>
+
+        {/* "Move to bench" strip — visible when a starter is selected */}
+        {starterIsSelected && !locked && (
+          <div
+            onClick={handleMoveToBench}
+            className="flex items-center justify-center gap-2 py-2 text-xs font-semibold cursor-pointer transition-colors"
+            style={{
+              background: "rgba(255,215,0,0.06)",
+              borderBottom: "1px solid rgba(255,215,0,0.2)",
+              color: "#FFD700",
+            }}
+          >
+            ↓ Move to bench
+          </div>
+        )}
+
         <div
           className="px-4 py-2 flex items-center justify-between"
           style={{ borderBottom: benchPlayers.length > 0 ? "1px solid #1a1a2e" : undefined }}
@@ -441,8 +516,8 @@ export default function DragDropLineup({
           <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "#f4f4f8" }}>
             Bench &mdash; {benchPlayers.length} player{benchPlayers.length !== 1 ? "s" : ""}
           </span>
-          {overBench && !locked && (
-            <span className="text-xs" style={{ color: "#f4f4f8" }}>Drop here to bench</span>
+          {selected && !starterIsSelected && (
+            <span className="text-xs" style={{ color: "#f4f4f8" }}>Tap a starter slot to swap</span>
           )}
         </div>
 
@@ -451,22 +526,31 @@ export default function DragDropLineup({
         ) : (
           <div className="flex flex-col">
             {benchPlayers.map((p, i) => {
-              const posColor = POS_COLOR[p.position] ?? "#f4f4f8";
-              const pts = seasonPts?.[p.player_id] ?? null;
+              const posColor   = POS_COLOR[p.position] ?? "#f4f4f8";
+              const pts        = seasonPts?.[p.player_id] ?? null;
               const playerLocked = isPlayerLocked(p);
+              const isSelected   = selected?.id === p.player_id;
+              const isInvalidBench = invalidTarget === "bench:" + p.player_id;
+
               return (
                 <div
                   key={p.player_id}
-                  draggable={!playerLocked}
-                  onDragStart={() => onDragStart(p.player_id, "bench")}
-                  onDragEnd={onDragEnd}
+                  onClick={() => handleClickPlayer(p.player_id, "bench")}
                   className="flex items-center gap-3 px-3 py-2"
                   style={{
                     borderBottom: i < benchPlayers.length - 1 ? "1px solid #1a1a2e" : undefined,
-                    cursor: playerLocked ? "default" : "grab",
+                    cursor: playerLocked ? "default" : "pointer",
                     userSelect: "none",
                     minHeight: 54,
                     opacity: playerLocked ? 0.65 : 1,
+                    background: isSelected
+                      ? "rgba(255,215,0,0.05)"
+                      : isInvalidBench
+                        ? "rgba(204,0,0,0.07)"
+                        : "transparent",
+                    outline: isSelected ? `2px solid #FFD700` : "none",
+                    outlineOffset: "-2px",
+                    transition: "background 0.1s",
                   }}
                 >
                   <div
@@ -515,7 +599,7 @@ export default function DragDropLineup({
         )}
       </div>
 
-      {/* Save bar */}
+      {/* ── SAVE BAR ──────────────────────────────────────────────────────────── */}
       {!locked && (
         <div
           className="flex items-center justify-between px-4 py-3 gap-3 flex-wrap"
