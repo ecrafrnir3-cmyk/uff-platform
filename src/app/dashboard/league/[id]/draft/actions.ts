@@ -222,7 +222,7 @@ export async function revealNextPower(params: {
     .eq("round", currentRound)
     .maybeSingle();
 
-  const powerName = (assignment?.draft_powers as { name: string } | null)?.name ?? null;
+  const powerName = (assignment?.draft_powers as unknown as { name: string } | null)?.name ?? null;
   return { powerName, cloaked: false };
 }
 
