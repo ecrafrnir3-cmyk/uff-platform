@@ -4,12 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const BASE_NAV = [
-  { label: "League",      href: "" },
-  { label: "Roster",      href: "/roster" },
-  { label: "Matchups",    href: "/matchups" },
-  { label: "Standings",   href: "/standings" },
-  { label: "Free Agents", href: "/free-agents" },
-  { label: "Trade",       href: "/trade" },
+  { label: "League",        href: "" },
+  { label: "Roster",        href: "/roster" },
+  { label: "Matchups",      href: "/matchups" },
+  { label: "Standings",     href: "/standings" },
+  { label: "Free Agents",   href: "/free-agents" },
+  { label: "Trade",         href: "/trade" },
+  { label: "Transactions",  href: "/transactions" },
 ];
 
 const COMMISSIONER_NAV = [
