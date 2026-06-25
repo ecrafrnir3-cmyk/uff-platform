@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { randomizeFactions, setMyFaction, startDraft } from "./actions";
+import NewsletterCard from "./NewsletterCard";
 
 interface MemberRow {
   id: string;
@@ -80,6 +81,17 @@ export default async function LeagueDetailPage({
 
   if (!me) redirect("/dashboard?error=" + encodeURIComponent("You're not a member of that league."));
 
+  // Fetch the most recent newsletter for this league (if any)
+  const { data: newsletter } = league.draft_status === "completed"
+    ? await supabase
+        .from("league_newsletters")
+        .select("week, content, generated_at")
+        .eq("league_id", leagueId)
+        .order("week", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    : { data: null };
+
   const isCommissioner = league.commissioner_id === user.id;
   const myFaction = me.faction;
   const allFactionsAssigned = memberList.every((m) => m.faction !== null);
@@ -110,6 +122,24 @@ export default async function LeagueDetailPage({
             >
               My Team
             </Link>
+            {league.draft_status === "completed" && (
+              <>
+                <Link
+                  href={`/dashboard/league/${league.id}/matchups`}
+                  className="inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold"
+                  style={{ background: "#FFD700", color: "#0d0d1a" }}
+                >
+                  Matchups
+                </Link>
+                <Link
+                  href={`/dashboard/league/${league.id}/standings`}
+                  className="inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold"
+                  style={{ background: "#1c1c2b", color: "#f4f4f8", border: "1px solid #2a2a40" }}
+                >
+                  Standings
+                </Link>
+              </>
+            )}
             {league.draft_status !== "completed" && (
               <Link
                 href={`/dashboard/league/${league.id}/draft`}
@@ -265,6 +295,43 @@ export default async function LeagueDetailPage({
             <p className="text-sm text-white">The draft is complete. Good luck this season!</p>
           )}
         </section>
+
+        {league.draft_status === "completed" && newsletter && (
+          <section className="flex flex-col gap-2">
+            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Oracle Dispatch</h2>
+            <NewsletterCard
+              week={newsletter.week}
+              content={newsletter.content}
+              generatedAt={newsletter.generated_at}
+            />
+          </section>
+        )}
+
+        {league.draft_status === "completed" && (
+          <section className="flex flex-col gap-3">
+            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Season</h2>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {[
+                { label: "My Team",    href: `/dashboard/league/${leagueId}/roster`,      emoji: "🏟️" },
+                { label: "Matchups",   href: `/dashboard/league/${leagueId}/matchups`,     emoji: "⚔️" },
+                { label: "Standings",  href: `/dashboard/league/${leagueId}/standings`,    emoji: "🏆" },
+                { label: "Free Agents",href: `/dashboard/league/${leagueId}/free-agents`,  emoji: "🔍" },
+                { label: "Trade",      href: `/dashboard/league/${leagueId}/trade`,         emoji: "🔄" },
+                { label: "Settings",   href: `/dashboard/league/${leagueId}/settings`,      emoji: "⚙️" },
+              ].map(({ label, href, emoji }) => (
+                <Link
+                  key={label}
+                  href={href}
+                  className="flex items-center gap-2 rounded-lg border px-4 py-3 text-sm font-semibold transition-colors hover:border-blue-500"
+                  style={{ borderColor: "#2a2a40", color: "#f4f4f8" }}
+                >
+                  <span>{emoji}</span>
+                  {label}
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
       </main>
     </div>
   );

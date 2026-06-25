@@ -23,7 +23,9 @@ interface MatchupRow {
   member_id: string;
   points: number;
   projected: number | null;
+  token_bonus: number;
   is_complete: boolean;
+  oracle_recap: string | null;
   league_members: { team_name: string; faction: "hero" | "villain" | null } | null;
 }
 
@@ -79,20 +81,27 @@ function ScoreCard({
         </p>
       )}
       {token && (
-        <div
-          className="mt-1 flex items-center gap-1 rounded-full px-2 py-0.5"
-          style={{
-            background: token.status === "used" ? "rgba(61,220,132,0.12)" : "rgba(255,215,0,0.1)",
-            border: `1px solid ${token.status === "used" ? "#3DDC84" : "#FFD700"}33`,
-          }}
-        >
-          <span className="text-xs">⚡</span>
-          <span
-            className="text-xs font-semibold"
-            style={{ color: token.status === "used" ? "#3DDC84" : "#FFD700" }}
+        <div className="mt-1 flex flex-col items-center gap-0.5">
+          <div
+            className="flex items-center gap-1 rounded-full px-2 py-0.5"
+            style={{
+              background: token.status === "used" ? "rgba(61,220,132,0.12)" : "rgba(255,215,0,0.1)",
+              border: `1px solid ${token.status === "used" ? "#3DDC84" : "#FFD700"}33`,
+            }}
           >
-            {TOKEN_NAMES[token.tokenId] ?? `Token ${token.tokenId}`}
-          </span>
+            <span className="text-xs">⚡</span>
+            <span
+              className="text-xs font-semibold"
+              style={{ color: token.status === "used" ? "#3DDC84" : "#FFD700" }}
+            >
+              {TOKEN_NAMES[token.tokenId] ?? `Token ${token.tokenId}`}
+            </span>
+          </div>
+          {row.token_bonus > 0 && (
+            <p className="text-xs tabular-nums" style={{ color: token.status === "used" ? "#3DDC84" : "#FFD700" }}>
+              +{row.token_bonus.toFixed(2)} pts
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -114,6 +123,52 @@ export default function MatchupView({
 }) {
   const [pairs, setPairs] = useState<MatchupPair[]>(initialPairs);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  // Preview state: matchup_id → { preview, loading, error }
+  const [previewState, setPreviewState] = useState<Record<number, { preview?: string; loading: boolean; error?: string }>>({});
+  // Oracle state: matchup_id → { recap, loading, error }
+  const [oracleState, setOracleState] = useState<Record<number, { recap?: string; loading: boolean; error?: string }>>(() => {
+    // Pre-populate from server-fetched recaps
+    const init: Record<number, { recap?: string; loading: boolean; error?: string }> = {};
+    for (const pair of initialPairs) {
+      const first = pair[0];
+      if (first?.oracle_recap) init[first.matchup_id] = { recap: first.oracle_recap, loading: false };
+    }
+    return init;
+  });
+
+  async function getPreview(matchup_id: number) {
+    setPreviewState((prev) => ({ ...prev, [matchup_id]: { loading: true } }));
+    try {
+      const res = await fetch("/api/matchup-preview", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ matchup_id, league_id: leagueId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Preview failed");
+      setPreviewState((prev) => ({ ...prev, [matchup_id]: { preview: data.preview, loading: false } }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setPreviewState((prev) => ({ ...prev, [matchup_id]: { loading: false, error: msg } }));
+    }
+  }
+
+  async function consultOracle(matchup_id: number) {
+    setOracleState((prev) => ({ ...prev, [matchup_id]: { loading: true } }));
+    try {
+      const res = await fetch("/api/oracle", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ matchup_id, league_id: leagueId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Oracle failed");
+      setOracleState((prev) => ({ ...prev, [matchup_id]: { recap: data.recap, loading: false } }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setOracleState((prev) => ({ ...prev, [matchup_id]: { loading: false, error: msg } }));
+    }
+  }
 
   useEffect(() => {
     if (initialPairs.length === 0) return; // no matchups this week — skip subscription
@@ -136,7 +191,9 @@ export default function MatchupView({
                   ...row,
                   points: payload.new.points,
                   projected: payload.new.projected ?? row.projected,
+                  token_bonus: payload.new.token_bonus ?? row.token_bonus,
                   is_complete: payload.new.is_complete,
+                  oracle_recap: payload.new.oracle_recap ?? row.oracle_recap,
                 };
               })
             )
@@ -205,6 +262,86 @@ export default function MatchupView({
               {a.is_complete && (
                 <p className="mt-2 text-center text-xs" style={{ color: "#f4f4f8" }}>Final</p>
               )}
+              {!a.is_complete && (() => {
+                const pv = previewState[a.matchup_id];
+                if (pv?.preview) {
+                  return (
+                    <div
+                      className="mt-3 rounded-lg border px-4 py-3"
+                      style={{ borderColor: "#0057FF33", background: "rgba(0,87,255,0.04)" }}
+                    >
+                      <p className="mb-1.5 text-xs font-semibold uppercase tracking-widest" style={{ color: "#0057FF" }}>
+                        🔭 Oracle&apos;s Pre-Game Vision
+                      </p>
+                      <p className="text-sm leading-relaxed" style={{ color: "#d4d4e8", fontStyle: "italic" }}>
+                        {pv.preview}
+                      </p>
+                    </div>
+                  );
+                }
+                if (pv?.loading) {
+                  return (
+                    <div className="mt-3 flex items-center justify-center gap-2 py-2">
+                      <span className="text-sm">🔭</span>
+                      <span className="text-xs" style={{ color: "#0057FF" }}>The Oracle gazes into this week&apos;s battle…</span>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="mt-3 flex flex-col items-center gap-1.5">
+                    {pv?.error && (
+                      <p className="text-xs" style={{ color: "#ff8a8a" }}>{pv.error}</p>
+                    )}
+                    <button
+                      onClick={() => getPreview(a.matchup_id)}
+                      className="rounded-full px-4 py-1.5 text-xs font-semibold transition hover:opacity-80"
+                      style={{ background: "rgba(0,87,255,0.1)", color: "#0057FF", border: "1px solid #0057FF33" }}
+                    >
+                      🔭 Oracle Pre-Game Preview
+                    </button>
+                  </div>
+                );
+              })()}
+              {a.is_complete && (() => {
+                const oracle = oracleState[a.matchup_id];
+                if (oracle?.recap) {
+                  return (
+                    <div
+                      className="mt-3 rounded-lg border px-4 py-3"
+                      style={{ borderColor: "#FFD70033", background: "rgba(255,215,0,0.04)" }}
+                    >
+                      <p className="mb-1.5 text-xs font-semibold uppercase tracking-widest" style={{ color: "#FFD700" }}>
+                        🔮 Oracle&apos;s Vision
+                      </p>
+                      <p className="text-sm leading-relaxed" style={{ color: "#d4d4e8", fontStyle: "italic" }}>
+                        {oracle.recap}
+                      </p>
+                    </div>
+                  );
+                }
+                if (oracle?.loading) {
+                  return (
+                    <div className="mt-3 flex items-center justify-center gap-2 py-2">
+                      <span className="text-sm" style={{ color: "#FFD700" }}>🔮</span>
+                      <span className="text-xs" style={{ color: "#FFD700" }}>The Oracle peers into the void…</span>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="mt-3 flex flex-col items-center gap-1.5">
+                    {oracle?.error && (
+                      <p className="text-xs" style={{ color: "#ff8a8a" }}>{oracle.error}</p>
+                    )}
+                    <button
+                      onClick={() => consultOracle(a.matchup_id)}
+                      className="rounded-full px-4 py-1.5 text-xs font-semibold transition hover:opacity-80"
+                      style={{ background: "rgba(255,215,0,0.1)", color: "#FFD700", border: "1px solid #FFD70033" }}
+                    >
+                      🔮 Consult the Oracle
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
           );
         })}

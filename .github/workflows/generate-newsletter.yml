@@ -1,0 +1,29 @@
+name: Generate Weekly Newsletter (Auto)
+
+# Runs Wednesday at 07:30 UTC — 30 minutes after finalize-week (07:00 UTC).
+# Generates AI-powered weekly newsletter for all active leagues.
+# Fires after finalize so all matchups are marked complete and records are settled.
+on:
+  schedule:
+    - cron: "30 7 * * 3"
+  workflow_dispatch: {}   # allow manual trigger for testing
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate weekly newsletter
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ secrets.NEXT_PUBLIC_APP_URL }}/api/cron/generate-newsletter" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json")
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          STATUS=$(echo "$RESPONSE" | tail -n 1)
+          echo "Response body: $BODY"
+          echo "Response status: $STATUS"
+          # 200 = all ok, 207 = partial success (some leagues failed) — both acceptable
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "207" ]; then
+            echo "Unexpected status $STATUS"
+            exit 1
+          fi

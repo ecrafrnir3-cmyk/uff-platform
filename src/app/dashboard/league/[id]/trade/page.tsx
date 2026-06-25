@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { proposeTrade } from "../trade-actions";
+import TradeEvaluator from "./TradeEvaluator";
 
 const POS_COLOR: Record<string, string> = {
   QB: "#0057FF", RB: "#3DDC84", WR: "#FFD700",
@@ -226,6 +227,33 @@ export default async function TradePage({
             </form>
           )}
         </div>
+
+        {/* Oracle Trade Evaluator */}
+        {receiverMember && (
+          <div className="mb-6">
+            <TradeEvaluator
+              leagueId={leagueId}
+              myPlayers={myRoster
+                .filter((r) => r.players != null)
+                .map((r) => ({
+                  player_id: r.player_id,
+                  full_name: r.players?.full_name ?? "",
+                  position: r.players?.position ?? null,
+                  team: r.players?.team ?? null,
+                }))}
+              theirPlayers={receiverRoster
+                .filter((r) => r.players != null)
+                .map((r) => ({
+                  player_id: r.player_id,
+                  full_name: r.players?.full_name ?? "",
+                  position: r.players?.position ?? null,
+                  team: r.players?.team ?? null,
+                }))}
+              partnerName={receiverMember.team_name}
+              partnerMemberId={receiverMember.id}
+            />
+          </div>
+        )}
 
         {/* Step 2: Build the offer */}
         {receiverMember ? (

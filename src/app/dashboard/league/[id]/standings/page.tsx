@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import PowerRankingsCard from "./PowerRankingsCard";
 
 interface MatchupRow {
   matchup_id: number;
@@ -157,15 +158,15 @@ export default async function StandingsPage({
           </div>
         ) : (
           <div className="flex flex-col gap-2">
-            {/* Header row */}
+            {/* Header row — mobile: 4 cols (no PA), sm+: 5 cols */}
             <div
-              className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-3 px-4 py-2 text-xs uppercase tracking-wide text-white"
+              className="grid grid-cols-[auto_1fr_auto_auto] sm:grid-cols-[auto_1fr_auto_auto_auto] items-center gap-2 sm:gap-3 px-4 py-2 text-xs uppercase tracking-wide text-white"
             >
               <span className="w-6 text-center">#</span>
               <span>Team</span>
-              <span className="w-20 text-center">W–L–T</span>
-              <span className="w-20 text-right">PF</span>
-              <span className="w-20 text-right">PA</span>
+              <span className="w-14 sm:w-20 text-center">W–L–T</span>
+              <span className="w-14 sm:w-20 text-right">PF</span>
+              <span className="hidden sm:inline sm:w-20 sm:text-right">PA</span>
             </div>
 
             {standings.map((row) => {
@@ -175,7 +176,7 @@ export default async function StandingsPage({
               return (
                 <div
                   key={row.member.id}
-                  className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-3 rounded-lg border px-4 py-3"
+                  className="grid grid-cols-[auto_1fr_auto_auto] sm:grid-cols-[auto_1fr_auto_auto_auto] items-center gap-2 sm:gap-3 rounded-lg border px-4 py-3"
                   style={{
                     borderColor: isMe ? "#FFD700" : "#2a2a40",
                     background: isMe ? "rgba(255,215,0,0.04)" : "#0d0d1a",
@@ -190,12 +191,12 @@ export default async function StandingsPage({
                   </span>
 
                   {/* Team name + faction */}
-                  <div>
-                    <p className="font-semibold" style={{ color: isMe ? "#FFD700" : "#f4f4f8" }}>
+                  <div className="min-w-0">
+                    <p className="font-semibold truncate" style={{ color: isMe ? "#FFD700" : "#f4f4f8" }}>
                       {row.member.team_name}
                       {isMe && <span className="ml-1 text-xs font-normal text-white">(you)</span>}
                     </p>
-                    <p className="text-xs" style={{ color }}>
+                    <p className="text-xs truncate" style={{ color }}>
                       {row.member.faction ?? "Unassigned"}
                       {" · "}
                       <span className="text-white">
@@ -205,23 +206,28 @@ export default async function StandingsPage({
                   </div>
 
                   {/* W–L–T */}
-                  <span className="w-20 text-center text-sm font-semibold tabular-nums" style={{ color: "#f4f4f8" }}>
+                  <span className="w-14 sm:w-20 text-center text-sm font-semibold tabular-nums" style={{ color: "#f4f4f8" }}>
                     {record}
                   </span>
 
                   {/* Points For */}
-                  <span className="w-20 text-right text-sm tabular-nums text-white">
+                  <span className="w-14 sm:w-20 text-right text-sm tabular-nums text-white">
                     {row.pointsFor.toFixed(2)}
                   </span>
 
-                  {/* Points Against */}
-                  <span className="w-20 text-right text-sm tabular-nums text-white">
+                  {/* Points Against — hidden on mobile */}
+                  <span className="hidden sm:inline sm:w-20 sm:text-right text-sm tabular-nums text-white">
                     {row.pointsAgainst.toFixed(2)}
                   </span>
                 </div>
               );
             })}
           </div>
+        )}
+
+        {/* Power Rankings — AI true-strength ranking */}
+        {hasGames && (
+          <PowerRankingsCard leagueId={leagueId} />
         )}
 
         {/* Hero vs Villain breakdown */}

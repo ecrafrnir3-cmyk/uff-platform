@@ -6,6 +6,7 @@ import { respondToTrade, cancelTrade } from "../trade-actions";
 import DragDropLineup from "./DragDropLineup";
 import TokenChoicePicker from "./TokenChoicePicker";
 import DropButton from "./DropButton";
+import TokenAdvisor from "./TokenAdvisor";
 import { getCurrentNFLWeek, isLineupLocked, getWeekLockTime } from "@/lib/nfl-utils";
 
 interface GameScheduleRow { team: string; kickoff_utc: string; }
@@ -336,12 +337,14 @@ export default async function RosterPage({
       .eq("week", week)
       .maybeSingle(),
     // Past used tokens — needed for Second Wind (token 18) choice picker
+    // Must be from a prior week (week < current) so the current week's token can't replay itself
     supabase
       .from("weekly_token_assignments")
       .select("token_id")
       .eq("league_id", leagueId)
       .eq("member_id", me.id)
-      .eq("status", "used"),
+      .eq("status", "used")
+      .lt("week", week),
     // Season powers tied to specific players (excludes draft mechanics)
     supabase
       .from("player_draft_powers")
@@ -476,7 +479,7 @@ export default async function RosterPage({
   const negatedList    = negatedPlayers ?? [];
   const availableChips = chipList.length;
   const negatedPlayer  = negatedList[0] ?? null;
-  const pastUsedTokenIds = (pastTokenRows ?? []).map((r: { token_id: number }) => r.token_id);
+  const pastUsedTokenIds = [...new Set((pastTokenRows ?? []).map((r: { token_id: number }) => r.token_id))];
 
   // Build player_id → { emoji, name } map for inline badges on lineup cards
   const playerPowers: Record<string, { emoji: string; name: string }> = {};
@@ -573,16 +576,25 @@ export default async function RosterPage({
 
         {/* ── Weekly Power Token ── */}
         {weeklyToken && (
-          <WeeklyTokenCard
-            tokenId={weeklyToken.token_id}
-            status={weeklyToken.status}
-            choice={weeklyToken.choice}
-            leagueId={leagueId}
-            week={week}
-            pastUsedTokenIds={pastUsedTokenIds}
-            locked={isLineupLocked(week)}
-            opponentTokenId={opponentTokenId}
-          />
+          <>
+            <WeeklyTokenCard
+              tokenId={weeklyToken.token_id}
+              status={weeklyToken.status}
+              choice={weeklyToken.choice}
+              leagueId={leagueId}
+              week={week}
+              pastUsedTokenIds={pastUsedTokenIds}
+              locked={isLineupLocked(week)}
+              opponentTokenId={opponentTokenId}
+            />
+            {weeklyToken.status === "pending" && (
+              <TokenAdvisor
+                tokenName={TOKEN_INFO[weeklyToken.token_id]?.name ?? `Token #${weeklyToken.token_id}`}
+                leagueId={leagueId}
+                week={week}
+              />
+            )}
+          </>
         )}
 
         {/* ── Drag-and-Drop Lineup ── */}

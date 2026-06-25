@@ -60,6 +60,7 @@ export default function FreeAgents({
   const [players, setPlayers] = useState<Player[]>([]);
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [dropPlayerId, setDropPlayerId] = useState<string>("");
+  const [intelMap, setIntelMap] = useState<Record<string, { loading: boolean; intel?: string; error?: string }>>({});
 
   const rosteredSet = new Set(rosteredIds);
 
@@ -91,6 +92,25 @@ export default function FreeAgents({
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, posFilter]);
+
+  async function getIntel(playerId: string) {
+    setIntelMap((prev) => ({ ...prev, [playerId]: { loading: true } }));
+    try {
+      const res = await fetch("/api/waiver-intel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ league_id: leagueId, player_id: playerId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setIntelMap((prev) => ({ ...prev, [playerId]: { loading: false, error: data.error ?? "No intel available" } }));
+        return;
+      }
+      setIntelMap((prev) => ({ ...prev, [playerId]: { loading: false, intel: data.intel } }));
+    } catch {
+      setIntelMap((prev) => ({ ...prev, [playerId]: { loading: false, error: "Network error" } }));
+    }
+  }
 
   async function handleAdd(playerId: string) {
     setSubmitting(playerId);
@@ -200,57 +220,88 @@ export default function FreeAgents({
         {players.map((p, idx) => {
           const proj = projMap[p.id];
           const sColor = statusColor(p.status);
+          const intel = intelMap[p.id];
           return (
             <div
               key={p.id}
-              className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
+              className="flex flex-col rounded-lg border px-3 py-2 gap-1.5"
               style={{ borderColor: "#2a2a40" }}
             >
-              {/* Rank */}
-              <span className="w-6 text-right text-xs shrink-0" style={{ color: "#f4f4f8" }}>{idx + 1}</span>
+              {/* Main row */}
+              <div className="flex items-center justify-between gap-3">
+                {/* Rank */}
+                <span className="w-6 text-right text-xs shrink-0" style={{ color: "#f4f4f8" }}>{idx + 1}</span>
 
-              {/* Player info */}
-              {p.position !== "DEF" && p.position !== "DST" && (
-                <img
-                  src={`https://sleepercdn.com/content/nfl/players/thumb/${p.id}.jpg`}
-                  alt=""
-                  width={32} height={32}
-                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden"; }}
-                  style={{ borderRadius: "50%", objectFit: "cover", flexShrink: 0, width: 32, height: 32, background: "#1c1c2b" }}
-                />
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold truncate">{p.full_name}</p>
-                <p className="text-xs text-white">
-                  {p.position ?? "?"} &middot; {p.team ?? "FA"}
-                  {p.status && p.status !== "Active" && (
-                    <span className="ml-1 font-semibold" style={{ color: sColor ?? undefined }}>
-                      · {p.status}
-                    </span>
-                  )}
-                </p>
+                {/* Player headshot */}
+                {p.position !== "DEF" && p.position !== "DST" && (
+                  <img
+                    src={`https://sleepercdn.com/content/nfl/players/thumb/${p.id}.jpg`}
+                    alt=""
+                    width={32} height={32}
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden"; }}
+                    style={{ borderRadius: "50%", objectFit: "cover", flexShrink: 0, width: 32, height: 32, background: "#1c1c2b" }}
+                  />
+                )}
+
+                {/* Player info */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate">{p.full_name}</p>
+                  <p className="text-xs text-white">
+                    {p.position ?? "?"} &middot; {p.team ?? "FA"}
+                    {p.status && p.status !== "Active" && (
+                      <span className="ml-1 font-semibold" style={{ color: sColor ?? undefined }}>
+                        · {p.status}
+                      </span>
+                    )}
+                  </p>
+                </div>
+
+                {/* Projected pts */}
+                {hasProjections && (
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-semibold tabular-nums" style={{ color: "#f4f4f8" }}>
+                      {proj != null ? proj.toFixed(1) : "—"}
+                    </p>
+                    <p className="text-xs" style={{ color: "#f4f4f8" }}>proj</p>
+                  </div>
+                )}
+
+                {/* Intel button */}
+                {!intel && (
+                  <button
+                    onClick={() => getIntel(p.id)}
+                    title="Get AI analysis"
+                    className="shrink-0 rounded px-2 py-1 text-xs font-semibold transition hover:opacity-80"
+                    style={{ background: "rgba(0,87,255,0.12)", color: "#0057FF", border: "1px solid #0057FF33" }}
+                  >
+                    💡
+                  </button>
+                )}
+                {intel?.loading && (
+                  <span className="shrink-0 text-xs" style={{ color: "#8888aa" }}>…</span>
+                )}
+
+                {/* Add / Add & Drop button */}
+                <button
+                  disabled={dropDisabled || submitting === p.id}
+                  onClick={() => handleAdd(p.id)}
+                  className="shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
+                  style={{ background: rosterFull ? "#CC0000" : "#0057FF", color: "#f4f4f8" }}
+                  title={rosterFull && !dropPlayerId ? "Select a player to drop first" : undefined}
+                >
+                  {submitting === p.id ? "…" : rosterFull ? "Add & Drop" : "Add"}
+                </button>
               </div>
 
-              {/* Projected pts */}
-              {hasProjections && (
-                <div className="text-right shrink-0">
-                  <p className="text-sm font-semibold tabular-nums" style={{ color: proj ? "#f4f4f8" : "#f4f4f8" }}>
-                    {proj != null ? proj.toFixed(1) : "—"}
-                  </p>
-                  <p className="text-xs" style={{ color: "#f4f4f8" }}>proj</p>
-                </div>
+              {/* Intel text — expands inline when available */}
+              {intel?.intel && (
+                <p className="text-xs leading-relaxed pl-1" style={{ color: "#88aaff" }}>
+                  💡 {intel.intel}
+                </p>
               )}
-
-              {/* Add / Add & Drop button */}
-              <button
-                disabled={dropDisabled || submitting === p.id}
-                onClick={() => handleAdd(p.id)}
-                className="shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
-                style={{ background: rosterFull ? "#CC0000" : "#0057FF", color: "#f4f4f8" }}
-                title={rosterFull && !dropPlayerId ? "Select a player to drop first" : undefined}
-              >
-                {submitting === p.id ? "…" : rosterFull ? "Add & Drop" : "Add"}
-              </button>
+              {intel?.error && (
+                <p className="text-xs pl-1" style={{ color: "#ff8a8a" }}>{intel.error}</p>
+              )}
             </div>
           );
         })}

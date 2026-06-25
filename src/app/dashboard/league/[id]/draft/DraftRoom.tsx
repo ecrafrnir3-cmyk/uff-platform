@@ -678,6 +678,8 @@ export default function DraftRoom({
   // Draft Queue
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [autodraftSubmitting, setAutodraftSubmitting] = useState(false);
+  // Draft Advisor
+  const [advisorState, setAdvisorState] = useState<{ advice?: string; loading: boolean; error?: string }>({ loading: false });
 
   // ---- Pre-return derived state (must be here so effects can use them) ------
   const totalPicksEarly = league.max_teams * league.draft_rounds;
@@ -865,6 +867,26 @@ export default function DraftRoom({
       saveQueueOrder(leagueId, next.map((q) => q.player_id));
       return next;
     });
+  }
+
+  // ---- Draft Advisor ---------------------------------------------------------
+  async function getPickAdvice() {
+    setAdvisorState({ loading: true });
+    try {
+      const res = await fetch("/api/draft-advisor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ league_id: leagueId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAdvisorState({ loading: false, error: data.error ?? "Oracle could not advise" });
+        return;
+      }
+      setAdvisorState({ loading: false, advice: data.advice });
+    } catch {
+      setAdvisorState({ loading: false, error: "Network error — try again" });
+    }
   }
 
   async function handleAutodraft() {
@@ -1345,6 +1367,67 @@ export default function DraftRoom({
 
           {/* Right: queue + draft order + my powers */}
           <aside className="flex flex-col gap-5">
+
+            {/* Draft Advisor */}
+            {!isDraftComplete && (
+              <div className="flex flex-col gap-2">
+                <h3 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "#FFD700" }}>
+                  Draft Advisor
+                </h3>
+                {!advisorState.advice && !advisorState.loading && !advisorState.error && (
+                  <button
+                    onClick={getPickAdvice}
+                    className="rounded-md px-3 py-2 text-xs font-semibold transition hover:opacity-80"
+                    style={{ background: "rgba(255,215,0,0.1)", color: "#FFD700", border: "1px solid rgba(255,215,0,0.3)" }}
+                  >
+                    🧠 Advise My Next Pick
+                  </button>
+                )}
+                {advisorState.loading && (
+                  <p className="text-xs italic" style={{ color: "#8888aa" }}>
+                    Oracle is scanning the board…
+                  </p>
+                )}
+                {advisorState.error && (
+                  <div className="flex flex-col gap-1">
+                    <p className="text-xs" style={{ color: "#ff8a8a" }}>{advisorState.error}</p>
+                    <button
+                      onClick={() => setAdvisorState({ loading: false })}
+                      className="self-start text-xs underline"
+                      style={{ color: "#CC0000" }}
+                    >
+                      Try again
+                    </button>
+                  </div>
+                )}
+                {advisorState.advice && (() => {
+                  // Parse PICK: line for highlighted display
+                  const pickMatch = advisorState.advice.match(/PICK:\s*(.+)/i);
+                  const pickLine = pickMatch?.[1]?.trim() ?? null;
+                  const prose = advisorState.advice.replace(/PICK:\s*.+/i, "").trim();
+                  return (
+                    <div className="flex flex-col gap-2 rounded-lg border p-2.5" style={{ borderColor: "rgba(255,215,0,0.25)", background: "rgba(255,215,0,0.04)" }}>
+                      {prose && (
+                        <p className="text-xs leading-relaxed" style={{ color: "#d4d4e8" }}>{prose}</p>
+                      )}
+                      {pickLine && (
+                        <div className="rounded border px-2 py-1.5" style={{ borderColor: "#FFD70055", background: "rgba(255,215,0,0.08)" }}>
+                          <p className="text-xs uppercase tracking-wide" style={{ color: "#FFD700" }}>Oracle Pick</p>
+                          <p className="text-sm font-bold" style={{ color: "#FFD700" }}>{pickLine}</p>
+                        </div>
+                      )}
+                      <button
+                        onClick={() => setAdvisorState({ loading: false })}
+                        className="self-start text-xs underline"
+                        style={{ color: "#8888aa" }}
+                      >
+                        Ask again
+                      </button>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
 
             {/* Queue */}
             <div className="flex flex-col gap-2">

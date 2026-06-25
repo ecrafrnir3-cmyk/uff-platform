@@ -301,6 +301,7 @@ Deno.serve(async (req) => {
   // draftPowerBonusMap[memberId] = sum of draft power bonuses (Mirror Match source)
   const draftPowerBonusMap: Record<string, number> = {};
   const tsUpdates: TsUpdate[] = [];
+  const tokenBonusMap: Record<string, number> = {};
   const now = new Date().toISOString();
 
   for (const matchup of typedMatchups) {
@@ -312,6 +313,7 @@ Deno.serve(async (req) => {
 
     fullScoreCache[matchup.member_id]    = fullScoreCache[matchup.member_id]    ?? {};
     draftPowerBonusMap[matchup.member_id] = draftPowerBonusMap[matchup.member_id] ?? 0;
+    tokenBonusMap[matchup.member_id]     = tokenBonusMap[matchup.member_id]     ?? 0;
 
     for (const playerId of allPlayers) {
       const stats    = allStats[playerId] ?? {};
@@ -398,7 +400,11 @@ Deno.serve(async (req) => {
     switch (token.id) {
       case 2: { // Triple Threat: 3x kicker pts
         for (const [kid, ps] of starters) {
-          if (ps.position === 'K') cache[kid].pts = Math.round(ps.pts * 3 * 100) / 100;
+          if (ps.position === 'K') {
+            const prev = ps.pts;
+            cache[kid].pts = Math.round(ps.pts * 3 * 100) / 100;
+            tokenBonusMap[matchup.member_id] += Math.round((cache[kid].pts - prev) * 100) / 100;
+          }
         }
         break;
       }
@@ -409,14 +415,20 @@ Deno.serve(async (req) => {
           if (atPos.length > 0) {
             atPos.sort(([, a], [, b]) => b.pts - a.pts);
             const [topId] = atPos[0];
-            cache[topId].pts = Math.round(cache[topId].pts * 1.5 * 100) / 100;
+            const prev = cache[topId].pts;
+            cache[topId].pts = Math.round(prev * 1.5 * 100) / 100;
+            tokenBonusMap[matchup.member_id] += Math.round((cache[topId].pts - prev) * 100) / 100;
           }
         }
         break;
       }
       case 8: { // Fortress: 2x D/ST score
         for (const [did, ps] of starters) {
-          if (ps.position === 'DEF') cache[did].pts = Math.round(ps.pts * 2 * 100) / 100;
+          if (ps.position === 'DEF') {
+            const prev = ps.pts;
+            cache[did].pts = Math.round(ps.pts * 2 * 100) / 100;
+            tokenBonusMap[matchup.member_id] += Math.round((cache[did].pts - prev) * 100) / 100;
+          }
         }
         break;
       }
@@ -425,6 +437,7 @@ Deno.serve(async (req) => {
           if (ps.position === 'QB') {
             const passTDs = (allStats[qid] ?? {})['pass_td'] ?? 0;
             cache[qid].pts = Math.round((ps.pts + passTDs) * 100) / 100;
+            tokenBonusMap[matchup.member_id] += passTDs;
           }
         }
         break;
@@ -433,7 +446,9 @@ Deno.serve(async (req) => {
         if (starters.length > 0) {
           starters.sort(([, a], [, b]) => a.proj - b.proj);
           const [lowestId] = starters[0];
-          cache[lowestId].pts = Math.round(cache[lowestId].pts * 2 * 100) / 100;
+          const prev = cache[lowestId].pts;
+          cache[lowestId].pts = Math.round(prev * 2 * 100) / 100;
+          tokenBonusMap[matchup.member_id] += Math.round((cache[lowestId].pts - prev) * 100) / 100;
         }
         break;
       }
@@ -471,18 +486,25 @@ Deno.serve(async (req) => {
     const token = tokenMap[matchup.member_id];
 
     // Faction bonus (doubled if Faction Surge token 6)
-    let fb = factionBonusMap[matchup.member_id] ?? 0;
-    if (token?.id === 6) fb *= 2;
+    const baseFb = factionBonusMap[matchup.member_id] ?? 0;
+    let fb = baseFb;
+    if (token?.id === 6) {
+      fb *= 2;
+      tokenBonusMap[matchup.member_id] += baseFb; // extra from Faction Surge
+    }
     pts  += fb;
     proj += fb;
 
     // Token 1: Power Surge
-    if (token?.id === 1) pts += 2.0;
+    if (token?.id === 1) { pts += 2.0; tokenBonusMap[matchup.member_id] += 2.0; }
 
     // Token 3: Bench Vault — add highest bench player score
     if (token?.id === 3) {
       const bench = Object.values(cache).filter(ps => !ps.isStarter);
-      if (bench.length > 0) pts += Math.max(0, Math.max(...bench.map(ps => ps.pts)));
+      if (bench.length > 0) {
+        const bv = Math.max(0, Math.max(...bench.map(ps => ps.pts)));
+        if (bv > 0) { pts += bv; tokenBonusMap[matchup.member_id] += bv; }
+      }
     }
 
     // Token 4: Mulligan — swap worst underperforming starter with best eligible bench player
@@ -502,13 +524,19 @@ Deno.serve(async (req) => {
         if (eligible.length > 0) {
           eligible.sort(([, a], [, b]) => b.pts - a.pts);
           const [, best] = eligible[0];
-          if (best.pts > worstPts) pts = pts - worstPts + best.pts;
+          if (best.pts > worstPts) {
+            tokenBonusMap[matchup.member_id] += Math.round((best.pts - worstPts) * 100) / 100;
+            pts = pts - worstPts + best.pts;
+          }
         }
       }
     }
 
     // Token 14: Momentum — +1.5 if 2+ consecutive win streak
-    if (token?.id === 14 && (winStreakMap[matchup.member_id] ?? 0) >= 2) pts += 1.5;
+    if (token?.id === 14 && (winStreakMap[matchup.member_id] ?? 0) >= 2) {
+      pts += 1.5;
+      tokenBonusMap[matchup.member_id] += 1.5;
+    }
 
     memberTotalMap[matchup.member_id] = {
       pts:  Math.round(pts  * 100) / 100,
@@ -535,28 +563,50 @@ Deno.serve(async (req) => {
     const tkB = tokenMap[sB.member_id];
 
     // Token 5: Mirror Match — bonus = opponent's draft power bonus total
-    if (tkA?.id === 5) tA.pts = Math.round((tA.pts + (draftPowerBonusMap[sB.member_id] ?? 0)) * 100) / 100;
-    if (tkB?.id === 5) tB.pts = Math.round((tB.pts + (draftPowerBonusMap[sA.member_id] ?? 0)) * 100) / 100;
+    if (tkA?.id === 5) {
+      const bonus = draftPowerBonusMap[sB.member_id] ?? 0;
+      tA.pts = Math.round((tA.pts + bonus) * 100) / 100;
+      tokenBonusMap[sA.member_id] = (tokenBonusMap[sA.member_id] ?? 0) + bonus;
+    }
+    if (tkB?.id === 5) {
+      const bonus = draftPowerBonusMap[sA.member_id] ?? 0;
+      tB.pts = Math.round((tB.pts + bonus) * 100) / 100;
+      tokenBonusMap[sB.member_id] = (tokenBonusMap[sB.member_id] ?? 0) + bonus;
+    }
 
     // Token 12: Last Stand — if trailing by 20+, add all bench pts
     if (tkA?.id === 12 && tB.pts - tA.pts >= 20) {
       const benchPts = Object.values(fullScoreCache[sA.member_id] ?? {}).filter(ps => !ps.isStarter).reduce((s, ps) => s + ps.pts, 0);
       tA.pts = Math.round((tA.pts + benchPts) * 100) / 100;
+      tokenBonusMap[sA.member_id] = (tokenBonusMap[sA.member_id] ?? 0) + benchPts;
     }
     if (tkB?.id === 12 && tA.pts - tB.pts >= 20) {
       const benchPts = Object.values(fullScoreCache[sB.member_id] ?? {}).filter(ps => !ps.isStarter).reduce((s, ps) => s + ps.pts, 0);
       tB.pts = Math.round((tB.pts + benchPts) * 100) / 100;
+      tokenBonusMap[sB.member_id] = (tokenBonusMap[sB.member_id] ?? 0) + benchPts;
     }
 
     // Token 15: Underdog — if you lost, +3 pts (consolation; does not flip result)
-    if (tkA?.id === 15 && tA.pts < tB.pts) tA.pts = Math.round((tA.pts + 3) * 100) / 100;
-    if (tkB?.id === 15 && tB.pts < tA.pts) tB.pts = Math.round((tB.pts + 3) * 100) / 100;
+    if (tkA?.id === 15 && tA.pts < tB.pts) {
+      tA.pts = Math.round((tA.pts + 3) * 100) / 100;
+      tokenBonusMap[sA.member_id] = (tokenBonusMap[sA.member_id] ?? 0) + 3;
+    }
+    if (tkB?.id === 15 && tB.pts < tA.pts) {
+      tB.pts = Math.round((tB.pts + 3) * 100) / 100;
+      tokenBonusMap[sB.member_id] = (tokenBonusMap[sB.member_id] ?? 0) + 3;
+    }
 
     // Token 17: Clutch Gene — if matchup within 5 pts, round losing side up by 1
     const diff = Math.abs(tA.pts - tB.pts);
     if (diff > 0 && diff <= 5) {
-      if (tkA?.id === 17 && tA.pts < tB.pts) tA.pts = Math.round((tA.pts + 1) * 100) / 100;
-      if (tkB?.id === 17 && tB.pts < tA.pts) tB.pts = Math.round((tB.pts + 1) * 100) / 100;
+      if (tkA?.id === 17 && tA.pts < tB.pts) {
+        tA.pts = Math.round((tA.pts + 1) * 100) / 100;
+        tokenBonusMap[sA.member_id] = (tokenBonusMap[sA.member_id] ?? 0) + 1;
+      }
+      if (tkB?.id === 17 && tB.pts < tA.pts) {
+        tB.pts = Math.round((tB.pts + 1) * 100) / 100;
+        tokenBonusMap[sB.member_id] = (tokenBonusMap[sB.member_id] ?? 0) + 1;
+      }
     }
   }
 
@@ -565,8 +615,9 @@ Deno.serve(async (req) => {
     typedMatchups.map(m => {
       const total = memberTotalMap[m.member_id];
       return supabase.from('uff_matchups').update({
-        points:    total?.pts  ?? 0,
-        projected: total?.proj ?? 0,
+        points:      total?.pts  ?? 0,
+        projected:   total?.proj ?? 0,
+        token_bonus: Math.round((tokenBonusMap[m.member_id] ?? 0) * 100) / 100,
       }).eq('id', m.id);
     })
   );

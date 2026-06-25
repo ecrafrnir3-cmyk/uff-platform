@@ -345,7 +345,7 @@ export default function DragDropLineup({
       {/* Hint bar */}
       {!locked ? (
         <div
-          className="px-4 py-1.5 text-xs"
+          className="px-4 py-1.5 text-xs leading-relaxed"
           style={{ background: "#0f0f1c", color: "#f4f4f8", borderBottom: "1px solid #1a1a2e" }}
         >
           {selected
@@ -435,7 +435,7 @@ export default function DragDropLineup({
                     position={player.position}
                     size={38}
                   />
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0 overflow-hidden">
                     <p className="text-sm font-semibold truncate" style={{ color: "#f4f4f8" }}>
                       {player.full_name}
                     </p>

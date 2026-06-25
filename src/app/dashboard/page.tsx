@@ -85,9 +85,42 @@ export default async function DashboardPage({
           </h2>
 
           {leagues.length === 0 ? (
-            <p className="text-sm text-white">
-              You&rsquo;re not in any leagues yet — create one or join with a code below.
-            </p>
+            <div
+              className="flex flex-col items-center gap-5 rounded-xl border-2 border-dashed py-10 px-6 text-center"
+              style={{ borderColor: "#2a2a40" }}
+            >
+              <span className="text-4xl select-none">⚔️</span>
+              <div className="flex flex-col gap-2 max-w-sm">
+                <p className="text-base font-semibold" style={{ color: "#f4f4f8" }}>
+                  No leagues yet
+                </p>
+                <p className="text-sm leading-relaxed" style={{ color: "#a0a0c0" }}>
+                  UFF is fantasy football with faction warfare, weekly power tokens, and live
+                  scoring. Create your first league or ask your commissioner for a join code.
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                <span
+                  className="rounded-full px-3 py-1 text-xs font-semibold"
+                  style={{ background: "rgba(0,87,255,0.15)", color: HERO_COLOR }}
+                >
+                  Hero vs Villain factions
+                </span>
+                <span
+                  className="rounded-full px-3 py-1 text-xs font-semibold"
+                  style={{ background: "rgba(255,215,0,0.12)", color: "#FFD700" }}
+                >
+                  ⚡ 18 weekly power tokens
+                </span>
+                <span
+                  className="rounded-full px-3 py-1 text-xs font-semibold"
+                  style={{ background: "rgba(61,220,132,0.12)", color: "#3DDC84" }}
+                >
+                  📡 Live scoring
+                </span>
+              </div>
+              <p className="text-xs" style={{ color: "#a0a0c0" }}>↓ Get started below</p>
+            </div>
           ) : (
             <div className="flex flex-col gap-3">
               {leagues.map((m) => (
