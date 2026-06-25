@@ -80,8 +80,7 @@ async function generateLeagueNewsletter(
     .from("uff_matchups")
     .select("matchup_id, member_id, points, token_bonus, is_complete, league_members(team_name, faction)")
     .eq("league_id", league.id)
-    .eq("week", week)
-    .returns<MatchupDbRow[]>();
+    .eq("week", week);
 
   const weekMatchups = (weekRows ?? []) as MatchupDbRow[];
 
@@ -96,8 +95,7 @@ async function generateLeagueNewsletter(
     .from("uff_matchups")
     .select("matchup_id, member_id, points, token_bonus, is_complete, league_members(team_name, faction)")
     .eq("league_id", league.id)
-    .eq("is_complete", true)
-    .returns<MatchupDbRow[]>();
+    .eq("is_complete", true);
 
   const allCompleted = (allRows ?? []) as MatchupDbRow[];
 
@@ -114,8 +112,7 @@ async function generateLeagueNewsletter(
     .select("member_id, token_id, status")
     .eq("league_id", league.id)
     .eq("week", week)
-    .in("member_id", memberIds)
-    .returns<TokenRow[]>();
+    .in("member_id", memberIds);
 
   const tokenMap: Record<string, number | null> = {};
   for (const t of (tokenRows ?? [])) tokenMap[t.member_id] = t.token_id;
@@ -273,8 +270,7 @@ export async function POST(req: NextRequest) {
   const { data: leagues, error: leagueErr } = await supabase
     .from("uff_leagues")
     .select("id, name")
-    .eq("draft_status", "completed")
-    .returns<LeagueRow[]>();
+    .eq("draft_status", "completed");
 
   if (leagueErr || !leagues) {
     console.error("Failed to fetch leagues:", leagueErr);
