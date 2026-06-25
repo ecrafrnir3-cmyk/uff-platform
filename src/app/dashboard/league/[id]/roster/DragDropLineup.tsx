@@ -97,6 +97,7 @@ export default function DragDropLineup({
   gameTimes,
   playerPowers,
   irSlotsAvailable = 0,
+  quickFeetAvailable = false,
 }: {
   leagueId: string;
   week: number;
@@ -109,6 +110,7 @@ export default function DragDropLineup({
   gameTimes?: Record<string, string>;
   playerPowers?: Record<string, { emoji: string; name: string }>;
   irSlotsAvailable?: number;
+  quickFeetAvailable?: boolean;
 }) {
   const [assignments, setAssignments] = useState<Record<string, string>>(currentLineup);
   // selected: { id: player_id, source: slot-name | "bench" }
@@ -311,6 +313,15 @@ export default function DragDropLineup({
               &#128274; Locked
             </span>
           )}
+          {quickFeetAvailable && !locked && (
+            <span
+              className="rounded-full px-2 py-0.5 text-xs font-bold"
+              style={{ background: "rgba(255,215,0,0.15)", color: "#FFD700" }}
+              title="Quick Feet: you can swap one player after kickoff this week"
+            >
+              ⚡ Quick Feet
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {!locked && emptySlots > 0 && (
@@ -339,11 +350,13 @@ export default function DragDropLineup({
         >
           {selected
             ? <span style={{ color: "#FFD700" }}>Player selected — tap a slot or player to swap, or tap again to cancel</span>
-            : gameTimes
-              ? nextKickoffDisplay
-                ? <>Tap a player to move them &middot; Players lock at kickoff &middot; First game: <span style={{ color: "#f4f4f8" }}>{nextKickoffDisplay}</span></>
-                : "Tap a player to select, then tap a slot or another player to swap"
-              : `Tap a player to select, then tap a slot or another player to swap · Locks ${lockDisplay}`}
+            : quickFeetAvailable
+              ? <>⚡ <span style={{ color: "#FFD700" }}>Quick Feet active</span> — you can swap one player even after kickoff this week</>
+              : gameTimes
+                ? nextKickoffDisplay
+                  ? <>Tap a player to move them &middot; Players lock at kickoff &middot; First game: <span style={{ color: "#f4f4f8" }}>{nextKickoffDisplay}</span></>
+                  : "Tap a player to select, then tap a slot or another player to swap"
+                : `Tap a player to select, then tap a slot or another player to swap · Locks ${lockDisplay}`}
         </div>
       ) : (
         <div
@@ -458,10 +471,10 @@ export default function DragDropLineup({
                   {playerLocked ? (
                     <span
                       className="flex-shrink-0 text-sm"
-                      title={`${player.team ?? "Game"} has kicked off — locked`}
-                      style={{ color: VILLAIN_COLOR + "aa", paddingRight: 2 }}
+                      title={`${player.team ?? "Game"} has kicked off — locked${quickFeetAvailable ? " (Quick Feet can override)" : ""}`}
+                      style={{ color: quickFeetAvailable ? "#FFD700aa" : VILLAIN_COLOR + "aa", paddingRight: 2 }}
                     >
-                      &#128274;
+                      {quickFeetAvailable ? "⚡" : "🔒"}
                     </span>
                   ) : (
                     <button

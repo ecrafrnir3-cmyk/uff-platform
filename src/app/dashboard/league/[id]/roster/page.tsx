@@ -289,6 +289,7 @@ export default async function RosterPage({
     { data: weeklyToken },
     { data: pastTokenRows },
     { data: playerPowerRows },
+    { data: qfToken },
   ] = await Promise.all([
     supabase
       .from("uff_roster_players")
@@ -348,7 +349,19 @@ export default async function RosterPage({
       .eq("league_id", leagueId)
       .eq("drafted_by_user_id", user.id)
       .returns<PlayerPowerRow[]>(),
+    // Token 13 (Quick Feet) — allows one post-kickoff lineup swap
+    supabase
+      .from("weekly_token_assignments")
+      .select("id")
+      .eq("league_id", leagueId)
+      .eq("member_id", me.id)
+      .eq("week", week)
+      .eq("token_id", 13)
+      .eq("status", "pending")
+      .maybeSingle(),
   ]);
+
+  const quickFeetAvailable = !!qfToken;
 
   // ── Token 9 (Recon): reveal opponent's token ────────────────────────────────────────
   let opponentTokenId: number | null = null;
@@ -586,6 +599,7 @@ export default async function RosterPage({
             seasonPts={seasonPts}
             playerPowers={Object.keys(playerPowers).length > 0 ? playerPowers : undefined}
             irSlotsAvailable={irSlotsTotal - irSlotsUsed}
+            quickFeetAvailable={quickFeetAvailable}
           />
         )}
 
