@@ -101,7 +101,7 @@ export default async function SettingsPage({
 
   const { data: league } = await supabase
     .from("uff_leagues")
-    .select("id, name, commissioner_id, scoring_settings, draft_status, season")
+    .select("id, name, commissioner_id, scoring_settings, draft_status, season, season_weeks")
     .eq("id", leagueId)
     .maybeSingle();
 
@@ -165,7 +165,7 @@ export default async function SettingsPage({
           <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Matchup Schedule</h2>
           {scheduleExists ? (
             <p className="text-sm text-white">
-              14-week regular season schedule is generated. &mdash; View it on the{" "}
+              {league.season_weeks ?? 14}-week regular season schedule is generated. &mdash; View it on the{" "}
               <Link href={`/dashboard/league/${leagueId}/matchups`} className="underline" style={{ color: "#0057FF" }}>
                 Matchups page
               </Link>.
@@ -173,10 +173,22 @@ export default async function SettingsPage({
           ) : (
             <>
               <p className="text-sm text-white">
-                Generates a round-robin 14-week regular season. Run this after the draft is complete.
+                Generates a round-robin regular season schedule. Choose how many weeks to play, then run after the draft is complete. The NFL regular season runs 18 weeks (Week 1 starts Sept 9, 2026).
               </p>
-              <form action={generateSchedule}>
+              <form action={generateSchedule} className="flex items-center gap-3 flex-wrap">
                 <input type="hidden" name="leagueId" value={leagueId} />
+                <label htmlFor="season-weeks" className="text-sm text-white shrink-0">Season length</label>
+                <select
+                  id="season-weeks"
+                  name="season_weeks"
+                  defaultValue="14"
+                  className="rounded-md px-3 py-2 text-sm font-medium"
+                  style={{ background: "#1c1c2b", color: "#fff", border: "1px solid #2a2a40" }}
+                >
+                  {[13, 14, 15, 16, 17, 18].map((w) => (
+                    <option key={w} value={w}>{w} weeks</option>
+                  ))}
+                </select>
                 <button
                   type="submit"
                   className="rounded-md px-4 py-2 text-sm font-semibold"

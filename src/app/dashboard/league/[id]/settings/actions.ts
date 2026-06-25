@@ -39,10 +39,16 @@ export async function generateSchedule(formData: FormData) {
   if (!user) redirect("/login");
 
   const leagueId = formData.get("leagueId") as string;
+  const weeks = parseInt(formData.get("season_weeks") as string, 10);
+
+  if (isNaN(weeks) || weeks < 1 || weeks > 18) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("Invalid season length (must be 1–18 weeks).")}`);
+  }
 
   const { error } = await supabase.rpc("generate_schedule", {
     p_league_id: leagueId,
-    p_user_id: user.id,
+    p_user_id:   user.id,
+    p_weeks:     weeks,
   });
 
   if (error) {
