@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { moveFromIR, moveToIR, useRestoreChip } from "../player-actions";
+import { moveFromIR, moveToIR, useRestoreChip, toggleTradeBlock } from "../player-actions";
 import { respondToTrade, cancelTrade } from "../trade-actions";
 import DragDropLineup from "./DragDropLineup";
 import TokenChoicePicker from "./TokenChoicePicker";
@@ -17,6 +17,7 @@ interface RosterRow {
   added_at: string;
   player_id: string;
   slot: string;
+  on_trade_block: boolean;
   players: {
     id: string;
     full_name: string;
@@ -252,10 +253,10 @@ export default async function RosterPage({
   searchParams,
 }: {
   params:       Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; dropped?: string; ir?: string; lineup?: string; restored?: string; trade?: string }>;
+  searchParams: Promise<{ error?: string; dropped?: string; ir?: string; lineup?: string; restored?: string; trade?: string; block?: string }>;
 }) {
   const { id: leagueId } = await params;
-  const { error, dropped, ir, lineup: lineupSaved, restored, trade: tradeMsg } = await searchParams;
+  const { error, dropped, ir, lineup: lineupSaved, restored, trade: tradeMsg, block: blockMsg } = await searchParams;
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -294,7 +295,7 @@ export default async function RosterPage({
   ] = await Promise.all([
     supabase
       .from("uff_roster_players")
-      .select("id, added_at, player_id, slot, players(id, full_name, position, team, status)")
+      .select("id, added_at, player_id, slot, on_trade_block, players(id, full_name, position, team, status)")
       .eq("member_id", me.id)
       .is("dropped_at", null)
       .order("added_at", { ascending: true })
@@ -536,6 +537,8 @@ export default async function RosterPage({
         {tradeMsg === "accepted"  && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#3DDC84", color: "#3DDC84", background: "#0e1a12" }}>Trade accepted &mdash; rosters updated!</p>}
         {tradeMsg === "rejected"  && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#f4f4f8", color: "#f4f4f8", background: "#13131f" }}>Trade rejected.</p>}
         {tradeMsg === "cancelled" && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#f4f4f8", color: "#f4f4f8", background: "#13131f" }}>Trade offer cancelled.</p>}
+        {blockMsg === "added"     && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#FFD700", color: "#FFD700", background: "#1a1a0e" }}>Player listed on the trade block.</p>}
+        {blockMsg === "removed"   && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#f4f4f8", color: "#f4f4f8", background: "#13131f" }}>Player removed from trade block.</p>}
 
         {/* ── Team header ── */}
         <div className="overflow-hidden rounded-xl border" style={{ borderColor: "#2a2a40" }}>
@@ -707,6 +710,78 @@ export default async function RosterPage({
             )}
           </section>
         )}
+
+        {/* ── Trade Block ── */}
+        {(() => {
+          const activeRoster = (roster ?? []).filter((r) => r.slot === "active");
+          const onBlock = activeRoster.filter((r) => r.on_trade_block);
+          return (
+            <section className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>
+                  Trade Block
+                  {onBlock.length > 0 && (
+                    <span className="ml-2 rounded-full px-2 py-0.5 text-xs font-bold" style={{ background: "rgba(255,215,0,0.15)", color: "#FFD700" }}>
+                      {onBlock.length}
+                    </span>
+                  )}
+                </h2>
+                <Link href={`/dashboard/league/${leagueId}/trade-block`} className="text-xs underline" style={{ color: "#8888aa" }}>
+                  View all teams →
+                </Link>
+              </div>
+              <p className="text-xs" style={{ color: "#6b6b8a" }}>
+                List players you&rsquo;re willing to trade. Other managers can see this and come to you.
+              </p>
+              <div className="flex flex-col gap-2">
+                {activeRoster.map((r) => {
+                  const player = r.players;
+                  const isOnBlock = r.on_trade_block;
+                  return (
+                    <div
+                      key={r.id}
+                      className="flex items-center gap-3 rounded-lg border px-4 py-3"
+                      style={{
+                        borderColor: isOnBlock ? "rgba(255,215,0,0.4)" : "#2a2a40",
+                        background: isOnBlock ? "rgba(255,215,0,0.03)" : "#0d0d1a",
+                      }}
+                    >
+                      <PosBadge position={player?.position ?? null} />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold truncate">{player?.full_name ?? r.player_id}</p>
+                        <p className="text-xs" style={{ color: "#8888aa" }}>{player?.team ?? "FA"}</p>
+                      </div>
+                      {isOnBlock && (
+                        <span className="shrink-0 text-xs font-semibold" style={{ color: "#FFD700" }}>On Block</span>
+                      )}
+                      <form action={toggleTradeBlock}>
+                        <input type="hidden" name="leagueId" value={leagueId} />
+                        <input type="hidden" name="playerId" value={r.player_id} />
+                        <input type="hidden" name="block" value={isOnBlock ? "false" : "true"} />
+                        <button
+                          type="submit"
+                          className="shrink-0 rounded px-2 py-1 text-xs font-semibold transition"
+                          style={{
+                            background: isOnBlock ? "rgba(204,0,0,0.15)" : "rgba(255,215,0,0.12)",
+                            color: isOnBlock ? "#ff8a8a" : "#FFD700",
+                            border: `1px solid ${isOnBlock ? "rgba(204,0,0,0.3)" : "rgba(255,215,0,0.3)"}`,
+                          }}
+                        >
+                          {isOnBlock ? "Remove" : "List"}
+                        </button>
+                      </form>
+                    </div>
+                  );
+                })}
+                {activeRoster.length === 0 && (
+                  <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#6b6b8a" }}>
+                    No active players yet.
+                  </p>
+                )}
+              </div>
+            </section>
+          );
+        })()}
 
         {/* ── IR Section ── */}
         <section id="ir-section" className="flex flex-col gap-3">

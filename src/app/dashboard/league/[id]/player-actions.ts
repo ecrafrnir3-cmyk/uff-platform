@@ -173,6 +173,35 @@ export async function useRestoreChip(formData: FormData): Promise<void> {
   redirect(`/dashboard/league/${leagueId}/roster?restored=1`);
 }
 
+export async function toggleTradeBlock(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const leagueId = formData.get("leagueId") as string;
+  const playerId = formData.get("playerId") as string;
+  const block    = formData.get("block") === "true"; // desired new state
+
+  const { data: member } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!member) redirect("/dashboard");
+
+  await supabase
+    .from("uff_roster_players")
+    .update({ on_trade_block: block })
+    .eq("member_id", member.id)
+    .eq("player_id", playerId)
+    .is("dropped_at", null);
+
+  revalidatePath(`/dashboard/league/${leagueId}/roster`);
+  revalidatePath(`/dashboard/league/${leagueId}/trade-block`);
+  redirect(`/dashboard/league/${leagueId}/roster?block=${block ? "added" : "removed"}`);
+}
+
 export async function addAndDropPlayer(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();

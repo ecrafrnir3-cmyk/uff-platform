@@ -12,6 +12,7 @@ const BASE_NAV = [
   { label: "Trade",         href: "/trade" },
   { label: "Transactions",  href: "/transactions" },
   { label: "Record Book",   href: "/record-book" },
+  { label: "Trade Block",   href: "/trade-block" },
 ];
 
 const COMMISSIONER_NAV = [
