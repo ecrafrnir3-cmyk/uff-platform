@@ -212,7 +212,7 @@ export default async function SettingsPage({
                 <select
                   id="season-weeks"
                   name="season_weeks"
-                  defaultValue="14"
+                  defaultValue="18"
                   className="rounded-md px-3 py-2 text-sm font-medium"
                   style={{ background: "#1c1c2b", color: "#fff", border: "1px solid #2a2a40" }}
                 >

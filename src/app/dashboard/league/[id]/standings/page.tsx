@@ -160,12 +160,13 @@ export default async function StandingsPage({
           <div className="flex flex-col gap-2">
             {/* Header row — mobile: 4 cols (no PA), sm+: 5 cols */}
             <div
-              className="grid grid-cols-[auto_1fr_auto_auto] sm:grid-cols-[auto_1fr_auto_auto_auto] items-center gap-2 sm:gap-3 px-4 py-2 text-xs uppercase tracking-wide text-white"
+              className="grid grid-cols-[auto_1fr_auto_auto_auto] sm:grid-cols-[auto_1fr_auto_auto_auto_auto] items-center gap-2 sm:gap-3 px-4 py-2 text-xs uppercase tracking-wide text-white"
             >
               <span className="w-6 text-center">#</span>
               <span>Team</span>
               <span className="w-14 sm:w-20 text-center">W–L–T</span>
-              <span className="w-14 sm:w-20 text-right">PF</span>
+              <span className="w-12 text-center">Win%</span>
+              <span className="w-14 sm:w-16 text-right">PF</span>
               <span className="hidden sm:inline sm:w-20 sm:text-right">PA</span>
             </div>
 
@@ -173,10 +174,12 @@ export default async function StandingsPage({
               const isMe = row.member.id === me.id;
               const color = factionColor(row.member.faction);
               const record = `${row.wins}–${row.losses}${row.ties > 0 ? `–${row.ties}` : ""}`;
+              const totalGames = row.wins + row.losses + row.ties;
+              const winPct = totalGames > 0 ? Math.round((row.wins / totalGames) * 100) : null;
               return (
                 <div
                   key={row.member.id}
-                  className="grid grid-cols-[auto_1fr_auto_auto] sm:grid-cols-[auto_1fr_auto_auto_auto] items-center gap-2 sm:gap-3 rounded-lg border px-4 py-3"
+                  className="grid grid-cols-[auto_1fr_auto_auto_auto] sm:grid-cols-[auto_1fr_auto_auto_auto_auto] items-center gap-2 sm:gap-3 rounded-lg border px-4 py-3"
                   style={{
                     borderColor: isMe ? "#FFD700" : "#2a2a40",
                     background: isMe ? "rgba(255,215,0,0.04)" : "#0d0d1a",
@@ -210,8 +213,13 @@ export default async function StandingsPage({
                     {record}
                   </span>
 
+                  {/* Win% */}
+                  <span className="w-12 text-center text-sm tabular-nums" style={{ color: "#8888aa" }}>
+                    {winPct !== null ? `${winPct}%` : "—"}
+                  </span>
+
                   {/* Points For */}
-                  <span className="w-14 sm:w-20 text-right text-sm tabular-nums text-white">
+                  <span className="w-14 sm:w-16 text-right text-sm tabular-nums text-white">
                     {row.pointsFor.toFixed(2)}
                   </span>
 
@@ -241,18 +249,4 @@ export default async function StandingsPage({
               const totalPF = factionRows.reduce((acc, r) => acc + r.pointsFor, 0);
               return (
                 <div key={faction} className="flex items-center justify-between text-sm">
-                  <span className="font-semibold capitalize" style={{ color: factionColor(faction) }}>
-                    {faction === "hero" ? "⚡ Heroes (AFC)" : "💀 Villains (NFC)"}
-                  </span>
-                  <span className="tabular-nums text-white">
-                    {totalWins}W–{totalLosses}L · {totalPF.toFixed(1)} pts
-                  </span>
-                </div>
-              );
-            })}
-          </section>
-        )}
-      </main>
-    </div>
-  );
-}
+                  <span className="font-semibo

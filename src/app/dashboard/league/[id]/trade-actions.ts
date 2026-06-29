@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentNFLWeek } from "@/lib/nfl-utils";
 
 export async function proposeTrade(formData: FormData) {
   const supabase = await createClient();
@@ -13,6 +14,21 @@ export async function proposeTrade(formData: FormData) {
   const receiverId       = formData.get("receiverId") as string;
   const proposerPlayers  = formData.getAll("proposerPlayer") as string[];
   const receiverPlayers  = formData.getAll("receiverPlayer") as string[];
+
+  // Enforce trade deadline
+  const { data: leagueSettings } = await supabase
+    .from("uff_leagues")
+    .select("trade_deadline_week")
+    .eq("id", leagueId)
+    .maybeSingle();
+  if (leagueSettings?.trade_deadline_week) {
+    const currentWeek = getCurrentNFLWeek();
+    if (currentWeek > leagueSettings.trade_deadline_week) {
+      redirect(`/dashboard/league/${leagueId}/trade?error=${encodeURIComponent(
+        `Trade deadline has passed (Week ${leagueSettings.trade_deadline_week}). No new trades are allowed.`
+      )}`);
+    }
+  }
 
   if (!receiverId) {
     redirect(`/dashboard/league/${leagueId}/trade?error=${encodeURIComponent("Select a team to trade with.")}`);
@@ -47,6 +63,23 @@ export async function respondToTrade(formData: FormData) {
   const leagueId = formData.get("leagueId") as string;
   const tradeId  = formData.get("tradeId") as string;
   const accept   = formData.get("accept") === "true";
+
+  // Enforce trade deadline for acceptances
+  if (accept) {
+    const { data: leagueSettings } = await supabase
+      .from("uff_leagues")
+      .select("trade_deadline_week")
+      .eq("id", leagueId)
+      .maybeSingle();
+    if (leagueSettings?.trade_deadline_week) {
+      const currentWeek = getCurrentNFLWeek();
+      if (currentWeek > leagueSettings.trade_deadline_week) {
+        redirect(`/dashboard/league/${leagueId}/roster?error=${encodeURIComponent(
+          `Trade deadline has passed (Week ${leagueSettings.trade_deadline_week}). This trade can no longer be accepted.`
+        )}`);
+      }
+    }
+  }
 
   const { error } = await supabase.rpc("respond_to_trade", {
     p_trade_id: tradeId,

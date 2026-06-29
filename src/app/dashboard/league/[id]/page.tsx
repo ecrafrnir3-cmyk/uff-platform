@@ -112,7 +112,7 @@ export default async function LeagueDetailPage({
             {league.name}
           </h1>
           <p className="text-sm text-white">
-            Season {league.season} &middot; {memberList.length} / {league.max_teams} teams &middot; 16-round snake draft &middot; Draft: {league.draft_status.replaceAll("_", " ")}
+            Season {league.season} &middot; {memberList.length} / {league.max_teams} teams &middot; {league.draft_rounds}-round snake draft &middot; Draft: {league.draft_status.replaceAll("_", " ")}
           </p>
           <div className="mt-1 flex flex-wrap gap-2">
             <Link
