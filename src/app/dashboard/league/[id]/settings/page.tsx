@@ -102,7 +102,7 @@ export default async function SettingsPage({
 
   const { data: league } = await supabase
     .from("uff_leagues")
-    .select("id, name, commissioner_id, scoring_settings, draft_status, season, season_weeks, playoff_teams, playoff_start_week, championship_week, median_scoring, trade_deadline_week, faab_budget, commissioner_review")
+    .select("id, name, commissioner_id, scoring_settings, draft_status, season, season_weeks, playoff_teams, playoff_start_week, championship_week, median_scoring, trade_deadline_week, faab_budget, commissioner_review, max_adds_per_week, max_adds_per_season")
     .eq("id", leagueId)
     .maybeSingle();
 
@@ -408,6 +408,39 @@ export default async function SettingsPage({
                 <option value="0">Off</option>
                 <option value="1">On</option>
               </select>
+            </div>
+
+            {/* Acquisition limits */}
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <label className="text-sm font-medium text-white">Max Adds Per Week</label>
+                <span className="text-xs" style={{ color: "#6b6b8a" }}>Max free agent adds a team can make in a single NFL week. 0 = unlimited.</span>
+              </div>
+              <input
+                name="max_adds_per_week"
+                type="number"
+                min={0}
+                max={99}
+                defaultValue={league.max_adds_per_week ?? 0}
+                className="w-24 rounded border px-2 py-1 text-sm text-center tabular-nums"
+                style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <label className="text-sm font-medium text-white">Max Adds Per Season</label>
+                <span className="text-xs" style={{ color: "#6b6b8a" }}>Max total free agent adds across the entire season. 0 = unlimited.</span>
+              </div>
+              <input
+                name="max_adds_per_season"
+                type="number"
+                min={0}
+                max={999}
+                defaultValue={league.max_adds_per_season ?? 0}
+                className="w-24 rounded border px-2 py-1 text-sm text-center tabular-nums"
+                style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
+              />
             </div>
 
             <button

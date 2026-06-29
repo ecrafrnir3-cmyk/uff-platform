@@ -127,6 +127,10 @@ export async function saveLeagueSettings(formData: FormData) {
   const faabBudgetRaw       = formData.get("faab_budget") as string;
   const faabBudget          = faabBudgetRaw ? Math.max(0, parseInt(faabBudgetRaw, 10)) : 0;
   const commissionerReview  = formData.get("commissioner_review") === "1";
+  const maxAddsPerWeekRaw   = formData.get("max_adds_per_week") as string;
+  const maxAddsPerSeasonRaw = formData.get("max_adds_per_season") as string;
+  const maxAddsPerWeek      = maxAddsPerWeekRaw ? Math.max(0, parseInt(maxAddsPerWeekRaw, 10)) : 0;
+  const maxAddsPerSeason    = maxAddsPerSeasonRaw ? Math.max(0, parseInt(maxAddsPerSeasonRaw, 10)) : 0;
 
   const { error } = await supabase
     .from("uff_leagues")
@@ -138,6 +142,8 @@ export async function saveLeagueSettings(formData: FormData) {
       trade_deadline_week:  tradeDeadlineWeek,
       faab_budget:          faabBudget,
       commissioner_review:  commissionerReview,
+      max_adds_per_week:    maxAddsPerWeek,
+      max_adds_per_season:  maxAddsPerSeason,
     })
     .eq("id", leagueId)
     .eq("commissioner_id", user.id);

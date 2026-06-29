@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentNFLWeek } from "@/lib/nfl-utils";
 
 function rosterPaths(leagueId: string) {
   return [
@@ -24,6 +25,7 @@ export async function addPlayer(formData: FormData) {
     p_league_id: leagueId,
     p_user_id: user.id,
     p_player_id: playerId,
+    p_week: getCurrentNFLWeek(),
   });
 
   if (error) {
@@ -220,6 +222,7 @@ export async function addAndDropPlayer(formData: FormData) {
     p_user_id:        user.id,
     p_add_player_id:  addPlayerId,
     p_drop_player_id: dropPlayerId,
+    p_week:           getCurrentNFLWeek(),
   });
 
   if (error) {

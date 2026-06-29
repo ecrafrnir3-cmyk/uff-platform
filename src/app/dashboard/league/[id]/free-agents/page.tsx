@@ -38,7 +38,7 @@ export default async function FreeAgentsPage({
 
   const { data: league } = await supabase
     .from("uff_leagues")
-    .select("id, name, season, scoring_settings, draft_rounds, ir_spots, faab_budget")
+    .select("id, name, season, scoring_settings, draft_rounds, ir_spots, faab_budget, max_adds_per_week, max_adds_per_season")
     .eq("id", leagueId)
     .maybeSingle();
 
@@ -136,6 +136,23 @@ export default async function FreeAgentsPage({
     myBids = bidsRaw ?? [];
   }
 
+  // Acquisition limit tracking
+  const maxAddsPerWeek   = league.max_adds_per_week   ?? 0;
+  const maxAddsPerSeason = league.max_adds_per_season ?? 0;
+  let weekAddCount   = 0;
+  let seasonAddCount = 0;
+  if (maxAddsPerWeek > 0 || maxAddsPerSeason > 0) {
+    const { data: addRows } = await supabase
+      .from("uff_roster_players")
+      .select("week_added")
+      .eq("member_id", me.id)
+      .not("week_added", "is", null)
+      .gt("week_added", 0);
+    const rows = addRows ?? [];
+    weekAddCount   = rows.filter((r) => r.week_added === week).length;
+    seasonAddCount = rows.length;
+  }
+
   // Fetch player names for any pending bid player IDs (covers players outside the visible filter list)
   const bidPlayerNames: Record<string, string> = {};
   if (myBids.length > 0) {
@@ -178,6 +195,22 @@ export default async function FreeAgentsPage({
                 FAAB:{" "}
                 <span className="font-semibold" style={{ color: "#FFD700" }}>
                   ${myBalance} remaining
+                </span>
+              </span>
+            )}
+            {maxAddsPerWeek > 0 && (
+              <span>
+                Adds this week:{" "}
+                <span className="font-semibold" style={{ color: weekAddCount >= maxAddsPerWeek ? "#CC0000" : "#f4f4f8" }}>
+                  {weekAddCount} / {maxAddsPerWeek}
+                </span>
+              </span>
+            )}
+            {maxAddsPerSeason > 0 && (
+              <span>
+                Adds this season:{" "}
+                <span className="font-semibold" style={{ color: seasonAddCount >= maxAddsPerSeason ? "#CC0000" : "#f4f4f8" }}>
+                  {seasonAddCount} / {maxAddsPerSeason}
                 </span>
               </span>
             )}
