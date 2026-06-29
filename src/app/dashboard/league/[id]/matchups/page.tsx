@@ -34,7 +34,7 @@ export default async function MatchupsPage({
 
   const { data: league } = await supabase
     .from("uff_leagues")
-    .select("id, name, season, commissioner_id")
+    .select("id, name, season, commissioner_id, median_scoring")
     .eq("id", leagueId)
     .maybeSingle();
 
@@ -55,7 +55,7 @@ export default async function MatchupsPage({
 
   const { data: matchupRows } = await supabase
     .from("uff_matchups")
-    .select("id, matchup_id, week, member_id, points, projected, token_bonus, is_complete, oracle_recap, league_members(team_name, faction)")
+    .select("id, matchup_id, week, member_id, points, projected, token_bonus, is_complete, oracle_recap, median_win, league_members(team_name, faction)")
     .eq("league_id", leagueId)
     .eq("week", viewWeek)
     .order("matchup_id")
@@ -160,6 +160,7 @@ export default async function MatchupsPage({
               matchupPairs={matchupPairs}
               myMemberId={me.id}
               tokenMap={tokenMap}
+              medianScoring={league.median_scoring ?? false}
             />
 
             {isCommissioner && !weekIsFinalized && (

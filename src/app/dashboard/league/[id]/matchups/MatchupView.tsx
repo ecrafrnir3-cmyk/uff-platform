@@ -26,6 +26,7 @@ interface MatchupRow {
   token_bonus: number;
   is_complete: boolean;
   oracle_recap: string | null;
+  median_win: boolean;
   league_members: { team_name: string; faction: "hero" | "villain" | null } | null;
 }
 
@@ -42,11 +43,13 @@ function ScoreCard({
   isMe,
   isWinner,
   token,
+  medianScoring,
 }: {
   row: MatchupRow;
   isMe: boolean;
   isWinner: boolean;
   token?: { tokenId: number; status: string };
+  medianScoring?: boolean;
 }) {
   const color = factionColor(row.league_members?.faction ?? null);
   return (
@@ -78,6 +81,14 @@ function ScoreCard({
       {isWinner && row.is_complete && (
         <p className="text-xs font-semibold uppercase tracking-wide" style={{ color }}>
           Winner
+        </p>
+      )}
+      {medianScoring && row.is_complete && (
+        <p
+          className="text-xs font-semibold uppercase tracking-wide"
+          style={{ color: row.median_win ? "#3DDC84" : "#CC0000" }}
+        >
+          {row.median_win ? "↑ Beat Median" : "↓ Lost to Median"}
         </p>
       )}
       {token && (
@@ -114,12 +125,14 @@ export default function MatchupView({
   matchupPairs: initialPairs,
   myMemberId,
   tokenMap = {},
+  medianScoring = false,
 }: {
   leagueId: string;
   week: number;
   matchupPairs: MatchupPair[];
   myMemberId: string;
   tokenMap?: Record<string, { tokenId: number; status: string }>;
+  medianScoring?: boolean;
 }) {
   const [pairs, setPairs] = useState<MatchupPair[]>(initialPairs);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -194,6 +207,7 @@ export default function MatchupView({
                   token_bonus: payload.new.token_bonus ?? row.token_bonus,
                   is_complete: payload.new.is_complete,
                   oracle_recap: payload.new.oracle_recap ?? row.oracle_recap,
+                  median_win: payload.new.median_win ?? row.median_win,
                 };
               })
             )
@@ -253,11 +267,11 @@ export default function MatchupView({
                 </p>
               )}
               <div className="flex items-stretch gap-3">
-                <ScoreCard row={a} isMe={a.member_id === myMemberId} isWinner={aWins} token={tokenMap[a.member_id]} />
+                <ScoreCard row={a} isMe={a.member_id === myMemberId} isWinner={aWins} token={tokenMap[a.member_id]} medianScoring={medianScoring} />
                 <div className="flex flex-col items-center justify-center px-1">
                   <span className="text-sm font-bold" style={{ color: "#f4f4f8" }}>vs</span>
                 </div>
-                <ScoreCard row={b} isMe={b.member_id === myMemberId} isWinner={bWins} token={tokenMap[b.member_id]} />
+                <ScoreCard row={b} isMe={b.member_id === myMemberId} isWinner={bWins} token={tokenMap[b.member_id]} medianScoring={medianScoring} />
               </div>
               {a.is_complete && (
                 <p className="mt-2 text-center text-xs" style={{ color: "#f4f4f8" }}>Final</p>

@@ -9,6 +9,7 @@ interface MatchupRow {
   points: number;
   is_complete: boolean;
   void_result: boolean;
+  median_win: boolean;
 }
 
 interface MemberInfo {
@@ -25,6 +26,8 @@ interface StandingRow {
   ties: number;
   pointsFor: number;
   pointsAgainst: number;
+  medianWins: number;
+  medianLosses: number;
   rank: number;
 }
 
@@ -50,7 +53,7 @@ export default async function StandingsPage({
 
   const { data: league } = await supabase
     .from("uff_leagues")
-    .select("id, name, season, commissioner_id")
+    .select("id, name, season, commissioner_id, median_scoring")
     .eq("id", leagueId)
     .maybeSingle();
 
@@ -76,7 +79,7 @@ export default async function StandingsPage({
   // Fetch all matchup rows for this league
   const { data: matchupRows } = await supabase
     .from("uff_matchups")
-    .select("matchup_id, member_id, points, is_complete, void_result")
+    .select("matchup_id, member_id, points, is_complete, void_result, median_win")
     .eq("league_id", leagueId)
     .eq("season", league.season)
     .returns<MatchupRow[]>();
@@ -90,14 +93,14 @@ export default async function StandingsPage({
 
   const record: Record<
     string,
-    { wins: number; losses: number; ties: number; pointsFor: number; pointsAgainst: number }
+    { wins: number; losses: number; ties: number; pointsFor: number; pointsAgainst: number; medianWins: number; medianLosses: number }
   > = {};
 
   for (const pair of pairMap.values()) {
     const [a, b] = pair;
     if (!a || !b) continue;
-    if (!record[a.member_id]) record[a.member_id] = { wins: 0, losses: 0, ties: 0, pointsFor: 0, pointsAgainst: 0 };
-    if (!record[b.member_id]) record[b.member_id] = { wins: 0, losses: 0, ties: 0, pointsFor: 0, pointsAgainst: 0 };
+    if (!record[a.member_id]) record[a.member_id] = { wins: 0, losses: 0, ties: 0, pointsFor: 0, pointsAgainst: 0, medianWins: 0, medianLosses: 0 };
+    if (!record[b.member_id]) record[b.member_id] = { wins: 0, losses: 0, ties: 0, pointsFor: 0, pointsAgainst: 0, medianWins: 0, medianLosses: 0 };
 
     record[a.member_id].pointsFor += a.points;
     record[a.member_id].pointsAgainst += b.points;
@@ -117,13 +120,22 @@ export default async function StandingsPage({
         record[a.member_id].ties++;
         record[b.member_id].ties++;
       }
+      // Median scoring tally
+      if (a.is_complete) {
+        if (a.median_win) record[a.member_id].medianWins++;
+        else record[a.member_id].medianLosses++;
+      }
+      if (b.is_complete) {
+        if (b.median_win) record[b.member_id].medianWins++;
+        else record[b.member_id].medianLosses++;
+      }
     }
   }
 
   // Build sorted standings
   const standings: StandingRow[] = Object.entries(memberMap).map(([id, member]) => ({
     member,
-    ...(record[id] ?? { wins: 0, losses: 0, ties: 0, pointsFor: 0, pointsAgainst: 0 }),
+    ...(record[id] ?? { wins: 0, losses: 0, ties: 0, pointsFor: 0, pointsAgainst: 0, medianWins: 0, medianLosses: 0 }),
     rank: 0,
   }));
 
@@ -135,6 +147,7 @@ export default async function StandingsPage({
   standings.forEach((row, i) => { row.rank = i + 1; });
 
   const hasGames = standings.some((s) => s.wins + s.losses + s.ties > 0);
+  const showMedian = (league.median_scoring ?? false) && standings.some((s) => s.medianWins + s.medianLosses > 0);
 
   return (
     <div className="min-h-screen px-6 py-12 sm:px-12" style={{ background: "#0d0d1a", color: "#f4f4f8" }}>
@@ -160,12 +173,13 @@ export default async function StandingsPage({
           <div className="flex flex-col gap-2">
             {/* Header row — mobile: 4 cols (no PA), sm+: 5 cols */}
             <div
-              className="grid grid-cols-[auto_1fr_auto_auto_auto] sm:grid-cols-[auto_1fr_auto_auto_auto_auto] items-center gap-2 sm:gap-3 px-4 py-2 text-xs uppercase tracking-wide text-white"
+              className={`grid items-center gap-2 sm:gap-3 px-4 py-2 text-xs uppercase tracking-wide text-white ${showMedian ? "grid-cols-[auto_1fr_auto_auto_auto_auto] sm:grid-cols-[auto_1fr_auto_auto_auto_auto_auto]" : "grid-cols-[auto_1fr_auto_auto_auto] sm:grid-cols-[auto_1fr_auto_auto_auto_auto]"}`}
             >
               <span className="w-6 text-center">#</span>
               <span>Team</span>
               <span className="w-14 sm:w-20 text-center">W–L–T</span>
               <span className="w-12 text-center">Win%</span>
+              {showMedian && <span className="w-16 text-center">Median</span>}
               <span className="w-14 sm:w-16 text-right">PF</span>
               <span className="hidden sm:inline sm:w-20 sm:text-right">PA</span>
             </div>
@@ -179,7 +193,7 @@ export default async function StandingsPage({
               return (
                 <div
                   key={row.member.id}
-                  className="grid grid-cols-[auto_1fr_auto_auto_auto] sm:grid-cols-[auto_1fr_auto_auto_auto_auto] items-center gap-2 sm:gap-3 rounded-lg border px-4 py-3"
+                  className={`grid items-center gap-2 sm:gap-3 rounded-lg border px-4 py-3 ${showMedian ? "grid-cols-[auto_1fr_auto_auto_auto_auto] sm:grid-cols-[auto_1fr_auto_auto_auto_auto_auto]" : "grid-cols-[auto_1fr_auto_auto_auto] sm:grid-cols-[auto_1fr_auto_auto_auto_auto]"}`}
                   style={{
                     borderColor: isMe ? "#FFD700" : "#2a2a40",
                     background: isMe ? "rgba(255,215,0,0.04)" : "#0d0d1a",
@@ -217,6 +231,13 @@ export default async function StandingsPage({
                   <span className="w-12 text-center text-sm tabular-nums" style={{ color: "#8888aa" }}>
                     {winPct !== null ? `${winPct}%` : "—"}
                   </span>
+
+                  {/* Median W-L */}
+                  {showMedian && (
+                    <span className="w-16 text-center text-xs tabular-nums font-semibold" style={{ color: row.medianWins >= row.medianLosses ? "#3DDC84" : "#CC0000" }}>
+                      {row.medianWins}-{row.medianLosses}
+                    </span>
+                  )}
 
                   {/* Points For */}
                   <span className="w-14 sm:w-16 text-right text-sm tabular-nums text-white">
