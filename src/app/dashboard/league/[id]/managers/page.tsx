@@ -40,6 +40,99 @@ interface MatchupRow {
   points: number;
   void_result: boolean;
   is_complete: boolean;
+  week: number;
+}
+
+interface Badge {
+  emoji: string;
+  label: string;
+  color: string;
+}
+
+/**
+ * Compute per-member streak/achievement badges from completed matchup data.
+ * `weeklyHighScorers`: Set of member_ids who led the league in scoring for at least one week.
+ */
+function computeBadges(
+  matchups: MatchupRow[],
+  memberId: string,
+  weeklyHighScorers: Record<string, number> // memberId → count of weeks led
+): Badge[] {
+  const badges: Badge[] = [];
+
+  // Pair map for margin calculations
+  const byMatchup: Record<number, MatchupRow[]> = {};
+  for (const r of matchups) {
+    if (!byMatchup[r.matchup_id]) byMatchup[r.matchup_id] = [];
+    byMatchup[r.matchup_id].push(r);
+  }
+
+  // My games in chronological order
+  const myGames = matchups
+    .filter((r) => r.member_id === memberId)
+    .sort((a, b) => a.week - b.week);
+
+  type Result = "W" | "L" | "T" | "V";
+  const results: Result[] = [];
+  let biggestWin = 0;
+
+  for (const myRow of myGames) {
+    const pair = byMatchup[myRow.matchup_id];
+    if (!pair || pair.length < 2) continue;
+    const opp = pair.find((r) => r.member_id !== memberId);
+    if (!opp) continue;
+    const margin = myRow.points - opp.points;
+    if (myRow.void_result && opp.points > myRow.points) {
+      results.push("V");
+    } else if (myRow.points > opp.points) {
+      results.push("W");
+      if (margin > biggestWin) biggestWin = margin;
+    } else if (myRow.points < opp.points) {
+      results.push("L");
+    } else {
+      results.push("T");
+    }
+  }
+
+  // Current win streak (from end of schedule)
+  let winStreak = 0;
+  for (let i = results.length - 1; i >= 0; i--) {
+    if (results[i] === "W") winStreak++;
+    else break;
+  }
+
+  // Current loss streak (from end of schedule)
+  let lossStreak = 0;
+  for (let i = results.length - 1; i >= 0; i--) {
+    if (results[i] === "L") lossStreak++;
+    else break;
+  }
+
+  if (winStreak >= 2) {
+    badges.push({ emoji: "🔥", label: `${winStreak}-game streak`, color: "#FFD700" });
+  }
+  if (lossStreak >= 3) {
+    badges.push({ emoji: "❄️", label: `${lossStreak}-game skid`, color: "#6b9fff" });
+  }
+  if (biggestWin >= 35) {
+    badges.push({ emoji: "💥", label: `${Math.round(biggestWin)}-pt blowout`, color: "#ff6060" });
+  }
+
+  // Undefeated (no losses, at least 3 decisive games)
+  const decisiveGames = results.filter((r) => r === "W" || r === "L").length;
+  if (!results.includes("L") && decisiveGames >= 3) {
+    badges.push({ emoji: "⚡", label: "Undefeated", color: "#3DDC84" });
+  }
+
+  // Weekly top scorer
+  const topWeeks = weeklyHighScorers[memberId] ?? 0;
+  if (topWeeks >= 2) {
+    badges.push({ emoji: "👑", label: `Top scorer ×${topWeeks}`, color: "#FFD700" });
+  } else if (topWeeks === 1) {
+    badges.push({ emoji: "👑", label: "Top scorer", color: "#FFD700" });
+  }
+
+  return badges;
 }
 
 function computeStandings(matchups: MatchupRow[]) {
@@ -123,16 +216,35 @@ export default async function ManagersPage({
 
   const members = (membersRaw ?? []) as unknown as MemberRow[];
 
-  // Fetch all completed matchups for W/L/PF
+  // Fetch all completed matchups for W/L/PF + badges
   const { data: matchupRows } = await supabase
     .from("uff_matchups")
-    .select("matchup_id, member_id, points, void_result, is_complete")
+    .select("matchup_id, member_id, points, void_result, is_complete, week")
     .eq("league_id", leagueId)
     .eq("season", league.season)
     .eq("is_complete", true)
     .returns<MatchupRow[]>();
 
-  const standings = computeStandings(matchupRows ?? []);
+  const allMatchups = matchupRows ?? [];
+  const standings = computeStandings(allMatchups);
+
+  // Compute weekly high scorers: for each week, who scored the most?
+  const weeklyHighScorers: Record<string, number> = {};
+  const weekBest: Record<number, { memberId: string; score: number }> = {};
+  for (const r of allMatchups) {
+    if (!weekBest[r.week] || r.points > weekBest[r.week].score) {
+      weekBest[r.week] = { memberId: r.member_id, score: r.points };
+    }
+  }
+  for (const { memberId } of Object.values(weekBest)) {
+    weeklyHighScorers[memberId] = (weeklyHighScorers[memberId] ?? 0) + 1;
+  }
+
+  // Pre-compute badges for all members
+  const memberBadges: Record<string, Badge[]> = {};
+  for (const m of membersRaw ?? []) {
+    memberBadges[m.id] = computeBadges(allMatchups, m.id, weeklyHighScorers);
+  }
 
   // Sort members: by wins desc, then PF desc
   const sorted = [...members].sort((a, b) => {
@@ -209,6 +321,7 @@ export default async function ManagersPage({
                 const totalGames = s.wins + s.losses + s.ties;
                 const winPct = totalGames > 0 ? (s.wins / totalGames) : null;
                 const fc = factionColor(member.faction);
+                const badges = memberBadges[member.id] ?? [];
 
                 return (
                   <div
@@ -260,6 +373,25 @@ export default async function ManagersPage({
                         {factionLabel(member.faction)}
                       </span>
                     </div>
+
+                    {/* Achievement badges */}
+                    {badges.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {badges.map((badge, i) => (
+                          <span
+                            key={i}
+                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                            style={{
+                              background: badge.color + "18",
+                              color: badge.color,
+                              border: `1px solid ${badge.color}44`,
+                            }}
+                          >
+                            {badge.emoji} {badge.label}
+                          </span>
+                        ))}
+                      </div>
+                    )}
 
                     {/* Stats */}
                     {hasAnyGames ? (
