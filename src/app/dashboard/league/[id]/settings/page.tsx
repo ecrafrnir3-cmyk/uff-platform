@@ -90,10 +90,10 @@ export default async function SettingsPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; saved?: string; preset?: string }>;
+  searchParams: Promise<{ error?: string; saved?: string; preset?: string; claims?: string }>;
 }) {
   const { id: leagueId } = await params;
-  const { error, saved, preset } = await searchParams;
+  const { error, saved, preset, claims } = await searchParams;
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -149,9 +149,14 @@ export default async function SettingsPage({
             {decodeURIComponent(error)}
           </p>
         )}
-        {saved && (
+        {saved && !claims && (
           <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#3DDC84", color: "#3DDC84", background: "#0e1a12" }}>
             Saved successfully.
+          </p>
+        )}
+        {saved && claims !== undefined && (
+          <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#FFD700", color: "#FFD700", background: "#1a1500" }}>
+            Waivers processed — <strong>{claims}</strong> claim{claims === "1" ? "" : "s"} awarded.
           </p>
         )}
         {validPreset && !saved && (

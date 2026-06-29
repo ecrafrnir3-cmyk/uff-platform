@@ -57,6 +57,7 @@ export default function FreeAgents({
   faabEnabled = false,
   myBalance = 0,
   myBids = [],
+  bidPlayerNames = {},
 }: {
   leagueId: string;
   rosteredIds: string[];
@@ -69,6 +70,7 @@ export default function FreeAgents({
   faabEnabled?: boolean;
   myBalance?: number;
   myBids?: WaiverBid[];
+  bidPlayerNames?: Record<string, string>;
 }) {
   const [search, setSearch] = useState("");
   const [posFilter, setPosFilter] = useState("ALL");
@@ -203,19 +205,15 @@ export default function FreeAgents({
     if (result.error) {
       setBidError(result.error);
     } else {
-      // Optimistically add bid to local state
-      const newBid: WaiverBid = {
-        id: `optimistic-${Date.now()}`,
-        player_id: player.id,
-        bid_amount: amount,
-        drop_player_id: form.dropId || null,
-        status: "pending",
-      };
-      setLocalBids((prev) => {
-        // Remove any existing bid for the same player (was replaced server-side)
-        const filtered = prev.filter((b) => b.player_id !== player.id || b.status !== "pending");
-        return [...filtered, newBid];
-      });
+      // Fetch real bids from DB so we have the actual UUID for cancellation
+      // RLS ensures we only see our own pending bids
+      const { data: freshBids } = await supabase
+        .from("uff_waiver_bids")
+        .select("id, player_id, bid_amount, drop_player_id, status")
+        .eq("league_id", leagueId)
+        .eq("week", week)
+        .eq("status", "pending");
+      setLocalBids(freshBids ?? []);
       closeBidForm(player.id);
     }
     setBidSubmitting(null);
@@ -236,8 +234,8 @@ export default function FreeAgents({
   const pendingBids = localBids.filter((b) => b.status === "pending");
   const pendingPlayerIds = new Set(pendingBids.map((b) => b.player_id));
 
-  // Build a map of player_id → player name for bid display
-  const playerNameMap: Record<string, string> = {};
+  // Merge server-fetched names (for bid players) with locally visible player list
+  const playerNameMap: Record<string, string> = { ...bidPlayerNames };
   for (const p of players) playerNameMap[p.id] = p.full_name;
 
   return (

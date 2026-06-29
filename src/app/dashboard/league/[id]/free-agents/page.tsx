@@ -136,6 +136,17 @@ export default async function FreeAgentsPage({
     myBids = bidsRaw ?? [];
   }
 
+  // Fetch player names for any pending bid player IDs (covers players outside the visible filter list)
+  const bidPlayerNames: Record<string, string> = {};
+  if (myBids.length > 0) {
+    const bidPlayerIds = myBids.map((b) => b.player_id);
+    const { data: bidPlayers } = await supabase
+      .from("players")
+      .select("id, full_name")
+      .in("id", bidPlayerIds);
+    for (const p of bidPlayers ?? []) bidPlayerNames[p.id] = p.full_name;
+  }
+
   return (
     <div className="min-h-screen px-6 py-12 sm:px-12" style={{ background: "#0d0d1a", color: "#f4f4f8" }}>
       <main className="mx-auto flex max-w-3xl flex-col gap-8">
@@ -206,6 +217,7 @@ export default async function FreeAgentsPage({
           faabEnabled={faabEnabled}
           myBalance={myBalance}
           myBids={myBids}
+          bidPlayerNames={bidPlayerNames}
         />
       </main>
     </div>
