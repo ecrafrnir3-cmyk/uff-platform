@@ -131,6 +131,9 @@ export async function saveLeagueSettings(formData: FormData) {
   const maxAddsPerSeasonRaw = formData.get("max_adds_per_season") as string;
   const maxAddsPerWeek      = maxAddsPerWeekRaw ? Math.max(0, parseInt(maxAddsPerWeekRaw, 10)) : 0;
   const maxAddsPerSeason    = maxAddsPerSeasonRaw ? Math.max(0, parseInt(maxAddsPerSeasonRaw, 10)) : 0;
+  const waiverAuto          = formData.get("waiver_auto") === "1";
+  const waiverDay           = parseInt((formData.get("waiver_day")  as string) ?? "3", 10);
+  const waiverHour          = parseInt((formData.get("waiver_hour") as string) ?? "3", 10);
 
   const { error } = await supabase
     .from("uff_leagues")
@@ -144,6 +147,9 @@ export async function saveLeagueSettings(formData: FormData) {
       commissioner_review:  commissionerReview,
       max_adds_per_week:    maxAddsPerWeek,
       max_adds_per_season:  maxAddsPerSeason,
+      waiver_auto:          waiverAuto,
+      waiver_day:           isNaN(waiverDay)  ? 3 : Math.min(6, Math.max(0, waiverDay)),
+      waiver_hour:          isNaN(waiverHour) ? 3 : Math.min(23, Math.max(0, waiverHour)),
     })
     .eq("id", leagueId)
     .eq("commissioner_id", user.id);

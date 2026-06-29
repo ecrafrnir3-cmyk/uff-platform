@@ -1,0 +1,18 @@
+name: Process FAAB Waivers
+
+on:
+  schedule:
+    # Runs every hour at :00. The API route checks each league's configured
+    # day/hour (stored in Eastern Time) and only processes leagues that match.
+    - cron: "0 * * * *"
+  workflow_dispatch: # allow manual trigger from GitHub Actions UI
+
+jobs:
+  process-waivers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger waiver processing
+        run: |
+          curl --silent --show-error --fail \
+            -X GET "${{ secrets.NEXT_PUBLIC_APP_URL }}/api/cron/process-waivers" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"

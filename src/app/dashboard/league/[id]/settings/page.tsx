@@ -102,7 +102,7 @@ export default async function SettingsPage({
 
   const { data: league } = await supabase
     .from("uff_leagues")
-    .select("id, name, commissioner_id, scoring_settings, draft_status, season, season_weeks, playoff_teams, playoff_start_week, championship_week, median_scoring, trade_deadline_week, faab_budget, commissioner_review, max_adds_per_week, max_adds_per_season")
+    .select("id, name, commissioner_id, scoring_settings, draft_status, season, season_weeks, playoff_teams, playoff_start_week, championship_week, median_scoring, trade_deadline_week, faab_budget, commissioner_review, max_adds_per_week, max_adds_per_season, waiver_auto, waiver_day, waiver_hour")
     .eq("id", leagueId)
     .maybeSingle();
 
@@ -579,33 +579,117 @@ export default async function SettingsPage({
 
         {/* Process waivers (only shown when FAAB is enabled) */}
         {(league.faab_budget ?? 0) > 0 && (
-          <section className="flex flex-col gap-3 rounded-lg border p-5" style={{ borderColor: "#FFD70044" }}>
-            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Process FAAB Waivers</h2>
-            <p className="text-sm text-white">
-              Evaluates all pending FAAB bids for the selected week. Highest bidder wins each player,
-              FAAB is deducted, and rosters are updated. Losing bids are revealed after processing.
-            </p>
-            <form action={processWaivers} className="flex items-center gap-3 flex-wrap">
+          <section className="flex flex-col gap-4 rounded-lg border p-5" style={{ borderColor: "#FFD70044" }}>
+            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>FAAB Waivers</h2>
+
+            {/* Auto-schedule config */}
+            <form action={saveLeagueSettings} className="flex flex-col gap-4">
               <input type="hidden" name="leagueId" value={leagueId} />
-              <label htmlFor="waiver-week" className="text-sm text-white shrink-0">Week</label>
-              <input
-                id="waiver-week"
-                name="week"
-                type="number"
-                min={1}
-                max={18}
-                defaultValue={currentNFLWeek}
-                className="w-20 rounded border px-2 py-1 text-sm text-center tabular-nums"
-                style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
-              />
+              {/* Hidden fields to preserve other settings when submitting just waiver config */}
+              <input type="hidden" name="playoff_teams"       value={String(league.playoff_teams ?? 6)} />
+              <input type="hidden" name="playoff_start_week"  value={String(league.playoff_start_week ?? 15)} />
+              <input type="hidden" name="championship_week"   value={String(league.championship_week ?? 17)} />
+              <input type="hidden" name="median_scoring"      value={league.median_scoring ? "1" : "0"} />
+              <input type="hidden" name="trade_deadline_week" value={String(league.trade_deadline_week ?? "")} />
+              <input type="hidden" name="faab_budget"         value={String(league.faab_budget ?? 0)} />
+              <input type="hidden" name="commissioner_review" value={league.commissioner_review ? "1" : "0"} />
+              <input type="hidden" name="max_adds_per_week"   value={String(league.max_adds_per_week ?? 0)} />
+              <input type="hidden" name="max_adds_per_season" value={String(league.max_adds_per_season ?? 0)} />
+
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col gap-0.5">
+                  <label className="text-sm font-medium text-white">Auto-Process Waivers</label>
+                  <span className="text-xs" style={{ color: "#6b6b8a" }}>
+                    Automatically runs FAAB processing on the configured day and time (Eastern Time).
+                  </span>
+                </div>
+                <select
+                  name="waiver_auto"
+                  defaultValue={(league.waiver_auto ?? false) ? "1" : "0"}
+                  className="rounded-md px-3 py-2 text-sm font-medium"
+                  style={{ background: "#1c1c2b", color: "#fff", border: "1px solid #2a2a40" }}
+                >
+                  <option value="0">Off (manual only)</option>
+                  <option value="1">On (auto)</option>
+                </select>
+              </div>
+
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col gap-0.5">
+                  <label className="text-sm font-medium text-white">Waiver Day</label>
+                  <span className="text-xs" style={{ color: "#6b6b8a" }}>Day of week waivers process (ET)</span>
+                </div>
+                <select
+                  name="waiver_day"
+                  defaultValue={String(league.waiver_day ?? 3)}
+                  className="rounded-md px-3 py-2 text-sm font-medium"
+                  style={{ background: "#1c1c2b", color: "#fff", border: "1px solid #2a2a40" }}
+                >
+                  {["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map((d, i) => (
+                    <option key={i} value={i}>{d}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col gap-0.5">
+                  <label className="text-sm font-medium text-white">Waiver Time</label>
+                  <span className="text-xs" style={{ color: "#6b6b8a" }}>Hour waivers process (Eastern Time, 24-hr)</span>
+                </div>
+                <select
+                  name="waiver_hour"
+                  defaultValue={String(league.waiver_hour ?? 3)}
+                  className="rounded-md px-3 py-2 text-sm font-medium"
+                  style={{ background: "#1c1c2b", color: "#fff", border: "1px solid #2a2a40" }}
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>
+                      {h === 0 ? "12:00 AM" : h < 12 ? `${h}:00 AM` : h === 12 ? "12:00 PM" : `${h - 12}:00 PM`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <button
                 type="submit"
-                className="rounded-md px-4 py-2 text-sm font-semibold"
+                className="self-start rounded-md px-4 py-2 text-sm font-semibold"
                 style={{ background: "#FFD700", color: "#0d0d1a" }}
               >
-                Process Waivers
+                Save Waiver Schedule
               </button>
             </form>
+
+            <hr style={{ borderColor: "#2a2a40" }} />
+
+            {/* Manual trigger */}
+            <div className="flex flex-col gap-2">
+              <p className="text-sm text-white font-medium">Manual Processing</p>
+              <p className="text-sm" style={{ color: "#8888aa" }}>
+                Evaluates all pending FAAB bids for the selected week. Highest bidder wins each player,
+                FAAB is deducted, and rosters are updated.
+              </p>
+              <form action={processWaivers} className="flex items-center gap-3 flex-wrap">
+                <input type="hidden" name="leagueId" value={leagueId} />
+                <label htmlFor="waiver-week" className="text-sm text-white shrink-0">Week</label>
+                <input
+                  id="waiver-week"
+                  name="week"
+                  type="number"
+                  min={1}
+                  max={18}
+                  defaultValue={currentNFLWeek}
+                  className="w-20 rounded border px-2 py-1 text-sm text-center tabular-nums"
+                  style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
+                />
+                <button
+                  type="submit"
+                  className="rounded-md px-4 py-2 text-sm font-semibold"
+                  style={{ background: "#0057FF", color: "#f4f4f8" }}
+                >
+                  Process Waivers Now
+                </button>
+              </form>
+            </div>
           </section>
         )}
 
