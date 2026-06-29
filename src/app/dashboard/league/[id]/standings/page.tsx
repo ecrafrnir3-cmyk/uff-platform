@@ -270,4 +270,18 @@ export default async function StandingsPage({
               const totalPF = factionRows.reduce((acc, r) => acc + r.pointsFor, 0);
               return (
                 <div key={faction} className="flex items-center justify-between text-sm">
-                  <span className="font-semibo
+                  <span className="font-semibold capitalize" style={{ color: factionColor(faction) }}>
+                    {faction === "hero" ? "🦸 Heroes" : "🦹 Villains"}
+                  </span>
+                  <span style={{ color: "#8888aa" }}>
+                    {totalWins}–{totalLosses} · {totalPF.toFixed(1)} PF
+                  </span>
+                </div>
+              );
+            })}
+          </section>
+        )}
+      </main>
+    </div>
+  );
+}
