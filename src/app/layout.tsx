@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Bangers, Roboto_Condensed } from "next/font/google";
 import "./globals.css";
 
@@ -16,10 +16,24 @@ const robotoCondensed = Roboto_Condensed({
   display: "swap",
 });
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#0057FF",
+};
+
 export const metadata: Metadata = {
   title: "Ultimate Fantasy Football",
   description: "Hero vs. villain fantasy football leagues with superpowers. Pick your side.",
-  themeColor: "#0d0d1a",
+  appleWebApp: {
+    capable: true,
+    title: "UFF",
+    statusBarStyle: "black-translucent",
+  },
+  icons: {
+    apple: "/icon",
+  },
 };
 
 export default function RootLayout({

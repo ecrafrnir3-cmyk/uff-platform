@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getRecord, CompletedMatchupRow } from "@/lib/get-record";
 
 const TOKEN_INFO: Record<number, { name: string; effect: string }> = {
   1:  { name: "Power Surge",      effect: "+2.0 flat points added to your score this week." },
@@ -21,26 +22,6 @@ const TOKEN_INFO: Record<number, { name: string; effect: string }> = {
   17: { name: "Clutch Gene",      effect: "If your matchup is within 5 pts, your score is rounded up by 1 full point." },
   18: { name: "Second Wind",      effect: "Reuse any one weekly token you've already used earlier this season." },
 };
-
-interface CompletedMatchupRow {
-  matchup_id: number;
-  member_id: string;
-  points: number;
-}
-
-function getRecord(memberId: string, rows: CompletedMatchupRow[]) {
-  let wins = 0, losses = 0;
-  const myMatchupIds = rows.filter((m) => m.member_id === memberId).map((m) => m.matchup_id);
-  for (const matchupId of myMatchupIds) {
-    const pair = rows.filter((m) => m.matchup_id === matchupId);
-    if (pair.length < 2) continue;
-    const my = pair.find((m) => m.member_id === memberId);
-    const opp = pair.find((m) => m.member_id !== memberId);
-    if (!my || !opp) continue;
-    if (my.points > opp.points) wins++; else losses++;
-  }
-  return { wins, losses };
-}
 
 export async function POST(req: NextRequest) {
   try {

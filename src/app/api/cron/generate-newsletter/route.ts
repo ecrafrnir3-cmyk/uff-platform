@@ -2,18 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getCurrentNFLWeek } from "@/lib/nfl-utils";
 import { sendEmail, getAllUserEmails, newsletterHtml } from "@/lib/email";
+import { TOKEN_NAMES } from "@/lib/token-names";
 
 // ─── Called by GitHub Actions every Wednesday at 07:30 UTC ──────────────────
 // Fires 30 minutes after finalize-week (07:00 UTC) to ensure all matchups
 // are marked complete and all records are settled before newsletter generation.
-
-const TOKEN_NAMES: Record<number, string> = {
-  1: "Power Surge", 2: "Triple Threat", 3: "Bench Vault", 4: "Mulligan",
-  5: "Mirror Match", 6: "Faction Surge", 7: "Position Power", 8: "Fortress",
-  9: "Recon", 10: "Air Raid", 11: "Insurance", 12: "Last Stand",
-  13: "Quick Feet", 14: "Momentum", 15: "Underdog", 16: "Iron Will",
-  17: "Clutch Gene", 18: "Second Wind",
-};
 
 interface LeagueRow { id: string; name: string; }
 

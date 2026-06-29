@@ -1,33 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-
-const TOKEN_NAMES: Record<number, string> = {
-  1: "Power Surge", 2: "Triple Threat", 3: "Bench Vault", 4: "Mulligan",
-  5: "Mirror Match", 6: "Faction Surge", 7: "Position Power", 8: "Fortress",
-  9: "Recon", 10: "Air Raid", 11: "Insurance", 12: "Last Stand",
-  13: "Quick Feet", 14: "Momentum", 15: "Underdog", 16: "Iron Will",
-  17: "Clutch Gene", 18: "Second Wind",
-};
-
-interface CompletedMatchupRow {
-  matchup_id: number;
-  member_id: string;
-  points: number;
-}
-
-function getRecord(memberId: string, rows: CompletedMatchupRow[]) {
-  let wins = 0, losses = 0;
-  const myMatchupIds = rows.filter((m) => m.member_id === memberId).map((m) => m.matchup_id);
-  for (const matchupId of myMatchupIds) {
-    const pair = rows.filter((m) => m.matchup_id === matchupId);
-    if (pair.length < 2) continue;
-    const my = pair.find((m) => m.member_id === memberId);
-    const opp = pair.find((m) => m.member_id !== memberId);
-    if (!my || !opp) continue;
-    if (my.points > opp.points) wins++; else losses++;
-  }
-  return { wins, losses };
-}
+import { TOKEN_NAMES } from "@/lib/token-names";
+import { getRecord, CompletedMatchupRow } from "@/lib/get-record";
 
 interface MatchupDbRow {
   id: string;

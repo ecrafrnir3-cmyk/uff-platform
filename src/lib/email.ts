@@ -148,6 +148,39 @@ export function tradeVetoedHtml({
   </div>`;
 }
 
+export function waiverResultsHtml({
+  leagueId,
+  leagueName,
+  week,
+  awarded,
+  rejected,
+}: {
+  leagueId: string;
+  leagueName: string;
+  week: number;
+  awarded: { playerName: string; bidAmount: number }[];
+  rejected: { playerName: string; bidAmount: number }[];
+}) {
+  const url = `https://uff-platform.vercel.app/dashboard/league/${leagueId}/free-agents`;
+  const awardedRows = awarded.map(
+    (b) => `<tr><td style="padding:6px 0;color:#3DDC84;font-weight:700;">✓ Won</td><td style="padding:6px 12px;color:#f4f4f8;">${b.playerName}</td><td style="padding:6px 0;color:#f4f4f8;text-align:right;">$${b.bidAmount}</td></tr>`
+  ).join("");
+  const rejectedRows = rejected.map(
+    (b) => `<tr><td style="padding:6px 0;color:#CC0000;">✗ Lost</td><td style="padding:6px 12px;color:#a0a0b8;">${b.playerName}</td><td style="padding:6px 0;color:#a0a0b8;text-align:right;">$${b.bidAmount}</td></tr>`
+  ).join("");
+  return `<div style="${baseStyle}">
+    <p style="${goldStyle}">⚡ Ultimate Fantasy Football</p>
+    <h2 style="color:#0057FF;margin:8px 0 4px;">${leagueName}</h2>
+    <p style="${mutedStyle};margin:0 0 24px;">Week ${week} Waiver Results</p>
+    ${awarded.length > 0 || rejected.length > 0 ? `
+    <table style="width:100%;border-collapse:collapse;">
+      ${awardedRows}${rejectedRows}
+    </table>` : `<p style="color:#a0a0b8;">No bids were submitted for Week ${week}.</p>`}
+    <p style="margin-top:24px;"><a href="${url}" style="${linkStyle}">View free agents →</a></p>
+    <p style="${mutedStyle};margin-top:32px;">Ultimate Fantasy Football · Waiver wire notification.</p>
+  </div>`;
+}
+
 export function newsletterHtml({
   leagueId,
   leagueName,

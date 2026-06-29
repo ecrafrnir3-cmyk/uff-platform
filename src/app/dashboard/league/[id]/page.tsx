@@ -92,6 +92,60 @@ export default async function LeagueDetailPage({
         .maybeSingle()
     : { data: null };
 
+  // ── Recent activity feed (last 8 events for hub widget) ────────────────────
+  interface RecentRosterRow {
+    id: string; member_id: string; player_id: string;
+    added_at: string; dropped_at: string | null;
+    players: { full_name: string } | null;
+    league_members: { team_name: string } | null;
+  }
+  interface RecentTradeRow {
+    id: string; updated_at: string;
+    proposer_player_ids: string[];
+    receiver_player_ids: string[];
+    proposer: { team_name: string } | null;
+    receiver: { team_name: string } | null;
+  }
+
+  const [recentRosterRes, recentTradeRes] = league.draft_status === "completed"
+    ? await Promise.all([
+        supabase
+          .from("uff_roster_players")
+          .select("id, member_id, player_id, added_at, dropped_at, players(full_name), league_members(team_name)")
+          .eq("league_id", leagueId)
+          .order("added_at", { ascending: false })
+          .limit(10)
+          .returns<RecentRosterRow[]>(),
+        supabase
+          .from("uff_trades")
+          .select("id, updated_at, proposer_player_ids, receiver_player_ids, proposer:league_members!proposer_id(team_name), receiver:league_members!receiver_id(team_name)")
+          .eq("league_id", leagueId)
+          .eq("status", "accepted")
+          .order("updated_at", { ascending: false })
+          .limit(5)
+          .returns<RecentTradeRow[]>(),
+      ])
+    : [{ data: null }, { data: null }];
+
+  type ActivityItem =
+    | { kind: "add"; ts: Date; team: string; player: string }
+    | { kind: "drop"; ts: Date; team: string; player: string }
+    | { kind: "trade"; ts: Date; from: string; to: string };
+
+  const activityItems: ActivityItem[] = [];
+
+  for (const r of recentRosterRes.data ?? []) {
+    activityItems.push({ kind: "add", ts: new Date(r.added_at), team: r.league_members?.team_name ?? "?", player: r.players?.full_name ?? "?" });
+    if (r.dropped_at) {
+      activityItems.push({ kind: "drop", ts: new Date(r.dropped_at), team: r.league_members?.team_name ?? "?", player: r.players?.full_name ?? "?" });
+    }
+  }
+  for (const t of recentTradeRes.data ?? []) {
+    activityItems.push({ kind: "trade", ts: new Date(t.updated_at), from: t.proposer?.team_name ?? "?", to: t.receiver?.team_name ?? "?" });
+  }
+  activityItems.sort((a, b) => b.ts.getTime() - a.ts.getTime());
+  const recentActivity = activityItems.slice(0, 6);
+
   const isCommissioner = league.commissioner_id === user.id;
   const myFaction = me.faction;
   const allFactionsAssigned = memberList.every((m) => m.faction !== null);
@@ -311,6 +365,67 @@ export default async function LeagueDetailPage({
               content={newsletter.content}
               generatedAt={newsletter.generated_at}
             />
+          </section>
+        )}
+
+        {league.draft_status === "completed" && recentActivity.length > 0 && (
+          <section className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Recent Activity</h2>
+              <Link
+                href={`/dashboard/league/${leagueId}/transactions`}
+                className="text-xs underline"
+                style={{ color: "#0057FF" }}
+              >
+                View all
+              </Link>
+            </div>
+            <div className="flex flex-col divide-y" style={{ borderColor: "#2a2a40", border: "1px solid #2a2a40", borderRadius: 8 }}>
+              {recentActivity.map((item, i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-3">
+                  {item.kind === "add" && (
+                    <>
+                      <span className="text-base">✅</span>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-sm font-semibold truncate" style={{ color: "#f4f4f8" }}>{item.team}</span>
+                        <span className="text-xs truncate" style={{ color: "#3DDC84" }}>Added {item.player}</span>
+                      </div>
+                      <span className="ml-auto text-xs shrink-0" style={{ color: "#6b6b8d" }}>
+                        {item.ts.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      </span>
+                    </>
+                  )}
+                  {item.kind === "drop" && (
+                    <>
+                      <span className="text-base">❌</span>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-sm font-semibold truncate" style={{ color: "#f4f4f8" }}>{item.team}</span>
+                        <span className="text-xs truncate" style={{ color: "#CC0000" }}>Dropped {item.player}</span>
+                      </div>
+                      <span className="ml-auto text-xs shrink-0" style={{ color: "#6b6b8d" }}>
+                        {item.ts.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      </span>
+                    </>
+                  )}
+                  {item.kind === "trade" && (
+                    <>
+                      <span className="text-base">🔄</span>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-sm truncate" style={{ color: "#f4f4f8" }}>
+                          <span className="font-semibold">{item.from}</span>
+                          <span style={{ color: "#6b6b8d" }}> × </span>
+                          <span className="font-semibold">{item.to}</span>
+                        </span>
+                        <span className="text-xs" style={{ color: "#FFD700" }}>Trade completed</span>
+                      </div>
+                      <span className="ml-auto text-xs shrink-0" style={{ color: "#6b6b8d" }}>
+                        {item.ts.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      </span>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
           </section>
         )}
 

@@ -170,8 +170,10 @@ src/
       client.ts     # Browser client
       server.ts     # Server component client (cookie-based auth)
       admin.ts      # Service role admin client (no auth, bypasses RLS)
-    email.ts        # Resend email utility + getMemberEmails helper
+    email.ts        # Resend email utility + templates (trade, waiver, newsletter)
     nfl-utils.ts    # getCurrentNFLWeek()
+    token-names.ts  # TOKEN_NAMES map — single source of truth (import everywhere)
+    get-record.ts   # getRecord() + CompletedMatchupRow — shared across AI routes
 supabase/
   functions/
     score-matchups/index.ts   # 590 lines — full scoring engine with all token/power mechanics
@@ -237,8 +239,12 @@ All features through **P10 (Trade Inbox)** are deployed and live. Last successfu
 ### Recently added (post-P10):
 - **Email notifications** (Resend): trade events + newsletter delivery
 - **Commissioner score override**: ±delta form on matchups page
+- **Waiver award emails**: process-waivers cron sends per-manager result summary after each run
+- **Mobile PWA**: manifest.ts + layout.tsx updated with Apple meta tags, viewport-fit=cover, standalone mode
+- **Recent Activity widget**: compact feed on league hub showing last 6 adds/drops/trades
+- **Shared libs**: `src/lib/token-names.ts` + `src/lib/get-record.ts` — eliminate 5 inline duplicates
 
 ### Next priorities (not yet built):
 - Waiver priority order (non-FAAB claim ordering by inverse standings)
-- Email notifications for waiver award results
+- Achievement/streak badge system
 - Push notifications (future)

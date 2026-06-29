@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getCurrentNFLWeek } from "@/lib/nfl-utils";
+import { sendEmail, getUserEmail, waiverResultsHtml } from "@/lib/email";
 
 // ─── Called by GitHub Actions every hour ────────────────────────────────────
 // Checks each FAAB league's waiver schedule (waiver_day + waiver_hour in ET).
@@ -73,6 +74,79 @@ export async function GET(req: NextRequest) {
       claims:      error ? null : (data ?? 0),
       error:       error?.message ?? null,
     });
+
+    // ── Email waiver results to each manager who had bids ──────────────────
+    if (!error) {
+      try {
+        // Fetch all processed bids for this league+week
+        const { data: bids } = await supabase
+          .from("uff_waiver_bids")
+          .select("member_id, player_id, bid_amount, status")
+          .eq("league_id", league.id)
+          .eq("week", week)
+          .in("status", ["awarded", "rejected"]);
+
+        if (bids && bids.length > 0) {
+          // Get all unique player IDs and member IDs
+          const playerIds = [...new Set(bids.map((b: { player_id: string }) => b.player_id))];
+          const memberIds = [...new Set(bids.map((b: { member_id: string }) => b.member_id))];
+
+          // Fetch player names
+          const { data: players } = await supabase
+            .from("players")
+            .select("id, full_name")
+            .in("id", playerIds);
+          const playerMap: Record<string, string> = {};
+          for (const p of players ?? []) playerMap[p.id] = p.full_name;
+
+          // Fetch member user_ids
+          const { data: members } = await supabase
+            .from("league_members")
+            .select("id, user_id")
+            .in("id", memberIds);
+          const memberUserMap: Record<string, string> = {};
+          for (const m of members ?? []) memberUserMap[m.id] = m.user_id;
+
+          // Group bids by member
+          const byMember: Record<string, { awarded: typeof bids; rejected: typeof bids }> = {};
+          for (const bid of bids) {
+            if (!byMember[bid.member_id]) byMember[bid.member_id] = { awarded: [], rejected: [] };
+            if (bid.status === "awarded") byMember[bid.member_id].awarded.push(bid);
+            else byMember[bid.member_id].rejected.push(bid);
+          }
+
+          // Send one summary email per manager
+          await Promise.all(
+            Object.entries(byMember).map(async ([memberId, { awarded, rejected }]) => {
+              const userId = memberUserMap[memberId];
+              if (!userId) return;
+              const email = await getUserEmail(userId);
+              if (!email) return;
+              await sendEmail({
+                to: email,
+                subject: `${league.name} · Week ${week} Waiver Results`,
+                html: waiverResultsHtml({
+                  leagueId: league.id,
+                  leagueName: league.name,
+                  week,
+                  awarded: awarded.map((b: { player_id: string; bid_amount: number }) => ({
+                    playerName: playerMap[b.player_id] ?? b.player_id,
+                    bidAmount: b.bid_amount,
+                  })),
+                  rejected: rejected.map((b: { player_id: string; bid_amount: number }) => ({
+                    playerName: playerMap[b.player_id] ?? b.player_id,
+                    bidAmount: b.bid_amount,
+                  })),
+                }),
+              });
+            })
+          );
+          console.log(`[process-waivers] Emailed waiver results to ${Object.keys(byMember).length} managers: ${league.name}`);
+        }
+      } catch (emailErr) {
+        console.error(`[process-waivers] Email failed for ${league.name}:`, emailErr);
+      }
+    }
   }
 
   const successCount = results.filter((r) => r.error === null).length;

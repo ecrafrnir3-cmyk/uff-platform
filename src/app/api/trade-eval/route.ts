@@ -1,25 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-
-interface CompletedMatchupRow {
-  matchup_id: number;
-  member_id: string;
-  points: number;
-}
-
-function getRecord(memberId: string, rows: CompletedMatchupRow[]) {
-  let wins = 0, losses = 0;
-  const myMatchupIds = rows.filter((m) => m.member_id === memberId).map((m) => m.matchup_id);
-  for (const matchupId of myMatchupIds) {
-    const pair = rows.filter((m) => m.matchup_id === matchupId);
-    if (pair.length < 2) continue;
-    const my = pair.find((m) => m.member_id === memberId);
-    const opp = pair.find((m) => m.member_id !== memberId);
-    if (!my || !opp) continue;
-    if (my.points > opp.points) wins++; else losses++;
-  }
-  return { wins, losses };
-}
+import { getRecord, CompletedMatchupRow } from "@/lib/get-record";
 
 export async function POST(req: NextRequest) {
   try {
