@@ -208,9 +208,22 @@ export default async function PlayoffsPage({
   const memberMap = new Map(members.map((m) => [m.id, m]));
 
   // Group bracket by round
-  const round1 = bracket.filter((b) => b.round === 1); // wildcard
-  const round2 = bracket.filter((b) => b.round === 2); // semis
-  const round3 = bracket.filter((b) => b.round === 3); // championship
+  const round1 = bracket.filter((b) => b.round === 1);
+  const round2 = bracket.filter((b) => b.round === 2);
+  const round3 = bracket.filter((b) => b.round === 3);
+
+  // Bracket-size-aware labels and logic
+  const playoffTeams = league.playoff_teams ?? 6;
+  const roundLabels: Record<number, string> =
+    playoffTeams === 4
+      ? { 1: "Semifinals", 2: "Championship" }
+      : playoffTeams === 8
+      ? { 1: "Quarterfinals", 2: "Semifinals", 3: "Championship" }
+      : { 1: "Wildcard", 2: "Semifinals", 3: "Championship" };
+
+  // Championship is the final round (round3 for 6/8-team, round2 for 4-team)
+  const championshipSlot = playoffTeams === 4 ? round2[0] : round3[0];
+  const hasByes = playoffTeams === 6; // only 6-team has first-round byes
 
   // Live points for in-progress playoff matchups (so bracket shows current scores)
   const { data: livePlayoffRows } = await supabase
@@ -337,7 +350,7 @@ export default async function PlayoffsPage({
                         <span className="text-xs tabular-nums" style={{ color: "#6b6b8a" }}>
                           {s.pf.toFixed(1)} PF
                         </span>
-                        {i < 2 && (
+                        {hasByes && i < 2 && (
                           <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full" style={{ background: GOLD + "22", color: GOLD }}>
                             Bye
                           </span>
@@ -352,8 +365,8 @@ export default async function PlayoffsPage({
         ) : (
           <div className="flex flex-col gap-10">
             {/* Championship banner if complete */}
-            {round3[0]?.is_complete && round3[0]?.winner_id && (() => {
-              const champ = memberMap.get(round3[0].winner_id!);
+            {championshipSlot?.is_complete && championshipSlot?.winner_id && (() => {
+              const champ = memberMap.get(championshipSlot.winner_id!);
               return (
                 <div
                   className="rounded-xl border-2 p-6 text-center"
@@ -376,11 +389,11 @@ export default async function PlayoffsPage({
             <div className="overflow-x-auto">
               <div className="flex gap-8 items-start min-w-max pb-4">
 
-                {/* Round 1 — Wildcard */}
+                {/* Round 1 */}
                 {round1.length > 0 && (
                   <div className="flex flex-col gap-6">
                     <p className="text-xs font-bold uppercase tracking-wider text-center" style={{ color: "#6b6b8a" }}>
-                      Wildcard · Wk {startWeek}
+                      {roundLabels[1]} · Wk {startWeek}
                     </p>
                     {round1.map((slot) => (
                       <MatchupCard
@@ -400,11 +413,12 @@ export default async function PlayoffsPage({
                   <div className="flex items-center self-center" style={{ color: "#2a2a40", fontSize: 24 }}>→</div>
                 )}
 
-                {/* Round 2 — Semis */}
+                {/* Round 2 */}
                 {round2.length > 0 && (
                   <div className="flex flex-col gap-6">
-                    <p className="text-xs font-bold uppercase tracking-wider text-center" style={{ color: "#6b6b8a" }}>
-                      Semifinals · Wk {startWeek + 1}
+                    <p className="text-xs font-bold uppercase tracking-wider text-center"
+                      style={{ color: playoffTeams === 4 ? GOLD : "#6b6b8a" }}>
+                      {playoffTeams === 4 ? "🏆 " : ""}{roundLabels[2]} · Wk {playoffTeams === 4 ? (league.championship_week ?? 17) : startWeek + 1}
                     </p>
                     {round2.map((slot) => (
                       <MatchupCard
@@ -412,7 +426,7 @@ export default async function PlayoffsPage({
                         slot={slot}
                         memberA={memberMap.get(slot.member_id_a ?? "")}
                         memberB={memberMap.get(slot.member_id_b ?? "")}
-                        label={`R2 · Slot ${slot.slot}`}
+                        label={playoffTeams === 4 ? "Championship" : `R2 · Slot ${slot.slot}`}
                         livePoints={livePoints}
                       />
                     ))}
@@ -424,7 +438,7 @@ export default async function PlayoffsPage({
                   <div className="flex items-center self-center" style={{ color: "#2a2a40", fontSize: 24 }}>→</div>
                 )}
 
-                {/* Round 3 — Championship */}
+                {/* Round 3 — Championship (6-team and 8-team only) */}
                 {round3.length > 0 && (
                   <div className="flex flex-col gap-6">
                     <p className="text-xs font-bold uppercase tracking-wider text-center" style={{ color: GOLD }}>
