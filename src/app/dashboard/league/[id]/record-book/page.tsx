@@ -110,8 +110,10 @@ function buildRecords(rows: MatchupRow[]): RecordEntry[] {
     const bName = b.league_members?.team_name ?? "Unknown";
     if (!memberResults[a.member_id]) memberResults[a.member_id] = [];
     if (!memberResults[b.member_id]) memberResults[b.member_id] = [];
-    if (!b.void_result || aWins) memberResults[a.member_id].push({ week: a.week, win: aWins && !b.void_result ? true : false, name: aName, faction: a.league_members?.faction ?? null });
-    if (!a.void_result || bWins) memberResults[b.member_id].push({ week: b.week, win: bWins && !a.void_result ? true : false, name: bName, faction: b.league_members?.faction ?? null });
+    // void_result on a row = Insurance token used; that member's loss is voided.
+    // Winner always gets a win recorded. Insured loser gets no entry (streak unbroken).
+    if (!a.void_result) memberResults[a.member_id].push({ week: a.week, win: aWins, name: aName, faction: a.league_members?.faction ?? null });
+    if (!b.void_result) memberResults[b.member_id].push({ week: b.week, win: bWins, name: bName, faction: b.league_members?.faction ?? null });
   }
 
   let bestStreak = 0;

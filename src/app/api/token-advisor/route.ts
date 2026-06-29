@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
 
       if (oppRow) {
         oppProjected = oppRow.projected ?? null;
-        const lm = oppRow.league_members as { team_name: string; faction: string } | null;
+        const lm = oppRow.league_members as unknown as { team_name: string; faction: string } | null;
         oppTeamName = lm?.team_name ?? null;
         oppFaction = lm?.faction ?? null;
       }
