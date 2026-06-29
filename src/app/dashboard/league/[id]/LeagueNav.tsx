@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const BASE_NAV = [
   { label: "League",        href: "" },
+  { label: "Managers",      href: "/managers" },
   { label: "Roster",        href: "/roster" },
   { label: "Matchups",      href: "/matchups" },
   { label: "Standings",     href: "/standings" },

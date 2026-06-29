@@ -75,6 +75,24 @@ export default async function DashboardLayout({
       <div className="flex-1">
         {children}
       </div>
+
+      {/* ── Footer ── */}
+      <footer
+        className="px-6 sm:px-12 py-4"
+        style={{ borderTop: "1px solid #2a2a40", color: "#6b6b8a" }}
+      >
+        <div className="mx-auto max-w-6xl flex items-center justify-between text-xs">
+          <span>© {new Date().getFullYear()} Ultimate Fantasy Football</span>
+          <div className="flex items-center gap-4">
+            <Link href="/about" className="hover:underline" style={{ color: "#6b6b8a" }}>
+              About UFF
+            </Link>
+            <Link href="/guide" className="hover:underline" style={{ color: "#6b6b8a" }}>
+              Powers &amp; Guide
+            </Link>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
