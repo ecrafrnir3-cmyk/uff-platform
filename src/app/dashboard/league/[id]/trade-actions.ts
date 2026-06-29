@@ -32,10 +32,10 @@ async function getPlayerNames(supabase: Awaited<ReturnType<typeof createClient>>
   if (playerIds.length === 0) return [];
   const { data } = await supabase
     .from("players")
-    .select("sleeper_id, full_name")
-    .in("sleeper_id", playerIds);
+    .select("id, full_name")
+    .in("id", playerIds);
   const nameMap: Record<string, string> = {};
-  for (const p of data ?? []) nameMap[p.sleeper_id] = p.full_name;
+  for (const p of data ?? []) nameMap[p.id] = p.full_name;
   return playerIds.map((id) => nameMap[id] ?? id);
 }
 
