@@ -1,13 +1,7 @@
-import { Resend } from "resend";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 const FROM = process.env.EMAIL_FROM ?? "UFF <onboarding@resend.dev>";
-
-function getResend() {
-  const key = process.env.RESEND_API_KEY;
-  if (!key) return null;
-  return new Resend(key);
-}
+const RESEND_URL = "https://api.resend.com/emails";
 
 export async function sendEmail({
   to,
@@ -18,13 +12,24 @@ export async function sendEmail({
   subject: string;
   html: string;
 }) {
-  const resend = getResend();
-  if (!resend) {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) {
     console.warn("[email] RESEND_API_KEY not set — skipping");
     return;
   }
   try {
-    await resend.emails.send({ from: FROM, to, subject, html });
+    const res = await fetch(RESEND_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ from: FROM, to, subject, html }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      console.error("[email] Resend API error:", res.status, text);
+    }
   } catch (err) {
     // Email failures must never crash the calling action
     console.error("[email] send failed:", err);
@@ -33,7 +38,6 @@ export async function sendEmail({
 
 /**
  * Returns a map of userId → email for all users in the Supabase project.
- * Batches a single listUsers call (up to 1000 users).
  */
 export async function getAllUserEmails(): Promise<Record<string, string>> {
   const admin = createAdminClient();
@@ -91,10 +95,8 @@ export function tradeProposedHtml({
     <p><strong>${proposerTeamName}</strong> has sent you a trade offer in <strong>${leagueName}</strong>.</p>
     <p><strong>They offer:</strong> ${proposerPlayers.join(", ") || "—"}</p>
     <p><strong>They want:</strong> ${receiverPlayers.join(", ") || "—"}</p>
-    <p style="margin-top:24px;">
-      <a href="${url}" style="${linkStyle}">Review the offer →</a>
-    </p>
-    <p style="${mutedStyle};margin-top:32px;">Ultimate Fantasy Football · You received this because you have an active trade offer.</p>
+    <p style="margin-top:24px;"><a href="${url}" style="${linkStyle}">Review the offer →</a></p>
+    <p style="${mutedStyle};margin-top:32px;">Ultimate Fantasy Football · Trade notification.</p>
   </div>`;
 }
 
@@ -112,20 +114,16 @@ export function tradeRespondedHtml({
   pendingReview?: boolean;
 }) {
   const url = `https://uff-platform.vercel.app/dashboard/league/${leagueId}/trade`;
+  const color = accepted ? "#3DDC84" : "#CC0000";
   const status = pendingReview
     ? "accepted (pending commissioner review)"
-    : accepted
-    ? "accepted ✅"
-    : "rejected ❌";
-  const color = accepted ? "#3DDC84" : "#CC0000";
+    : accepted ? "accepted ✅" : "rejected ❌";
   return `<div style="${baseStyle}">
     <p style="${goldStyle}">⚡ Ultimate Fantasy Football</p>
     <h2 style="color:${color};margin:8px 0 16px;">Trade ${accepted ? "Accepted" : "Rejected"}</h2>
     <p><strong>${responderTeamName}</strong> has <strong>${status}</strong> your trade offer in <strong>${leagueName}</strong>.</p>
     ${pendingReview ? '<p style="color:#FFD700;">The commissioner will review before rosters are updated.</p>' : ""}
-    <p style="margin-top:24px;">
-      <a href="${url}" style="${linkStyle}">View trade history →</a>
-    </p>
+    <p style="margin-top:24px;"><a href="${url}" style="${linkStyle}">View trade history →</a></p>
     <p style="${mutedStyle};margin-top:32px;">Ultimate Fantasy Football · Trade notification.</p>
   </div>`;
 }
@@ -145,9 +143,7 @@ export function tradeVetoedHtml({
     <h2 style="color:#CC0000;margin:8px 0 16px;">Trade Vetoed</h2>
     <p>The commissioner has vetoed your trade in <strong>${leagueName}</strong>.</p>
     ${reason ? `<p style="color:#d4d4e8;font-style:italic;">"${reason}"</p>` : ""}
-    <p style="margin-top:24px;">
-      <a href="${url}" style="${linkStyle}">View trade history →</a>
-    </p>
+    <p style="margin-top:24px;"><a href="${url}" style="${linkStyle}">View trade history →</a></p>
     <p style="${mutedStyle};margin-top:32px;">Ultimate Fantasy Football · Trade notification.</p>
   </div>`;
 }
@@ -164,7 +160,6 @@ export function newsletterHtml({
   content: string;
 }) {
   const url = `https://uff-platform.vercel.app/dashboard/league/${leagueId}`;
-  // Convert plain paragraphs to <p> tags
   const body = content
     .split(/\n\n+/)
     .map((p) => `<p style="line-height:1.7;margin:0 0 16px;">${p.trim()}</p>`)
@@ -173,12 +168,8 @@ export function newsletterHtml({
     <p style="${goldStyle}">⚡ Ultimate Fantasy Football</p>
     <h2 style="color:#0057FF;margin:8px 0 4px;">${leagueName}</h2>
     <p style="${mutedStyle};margin:0 0 24px;">Week ${week} Newsletter · The Oracle Speaks</p>
-    <div style="border-left:3px solid #FFD700;padding-left:16px;">
-      ${body}
-    </div>
-    <p style="margin-top:24px;">
-      <a href="${url}" style="${linkStyle}">View league →</a>
-    </p>
+    <div style="border-left:3px solid #FFD700;padding-left:16px;">${body}</div>
+    <p style="margin-top:24px;"><a href="${url}" style="${linkStyle}">View league →</a></p>
     <p style="${mutedStyle};margin-top:32px;">Ultimate Fantasy Football · Weekly newsletter.</p>
   </div>`;
 }
