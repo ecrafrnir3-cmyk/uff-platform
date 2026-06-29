@@ -4,6 +4,42 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentNFLWeek } from "@/lib/nfl-utils";
+import {
+  sendEmail,
+  getUserEmail,
+  tradeProposedHtml,
+  tradeRespondedHtml,
+  tradeVetoedHtml,
+} from "@/lib/email";
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+async function getLeagueName(supabase: Awaited<ReturnType<typeof createClient>>, leagueId: string) {
+  const { data } = await supabase.from("uff_leagues").select("name").eq("id", leagueId).maybeSingle();
+  return data?.name ?? "Your League";
+}
+
+async function getMemberInfo(supabase: Awaited<ReturnType<typeof createClient>>, memberId: string) {
+  const { data } = await supabase
+    .from("league_members")
+    .select("user_id, team_name")
+    .eq("id", memberId)
+    .maybeSingle();
+  return data;
+}
+
+async function getPlayerNames(supabase: Awaited<ReturnType<typeof createClient>>, playerIds: string[]) {
+  if (playerIds.length === 0) return [];
+  const { data } = await supabase
+    .from("players")
+    .select("sleeper_id, full_name")
+    .in("sleeper_id", playerIds);
+  const nameMap: Record<string, string> = {};
+  for (const p of data ?? []) nameMap[p.sleeper_id] = p.full_name;
+  return playerIds.map((id) => nameMap[id] ?? id);
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
 
 export async function proposeTrade(formData: FormData) {
   const supabase = await createClient();
@@ -51,6 +87,35 @@ export async function proposeTrade(formData: FormData) {
     redirect(`/dashboard/league/${leagueId}/trade?error=${encodeURIComponent(error.message)}`);
   }
 
+  // ── Email notification to receiver ─────────────────────────────────────────
+  try {
+    const [receiverInfo, proposerInfo, leagueName, pNames, rNames] = await Promise.all([
+      getMemberInfo(supabase, receiverId),
+      supabase.from("league_members").select("team_name").eq("league_id", leagueId).eq("user_id", user.id).maybeSingle(),
+      getLeagueName(supabase, leagueId),
+      getPlayerNames(supabase, proposerPlayers),
+      getPlayerNames(supabase, receiverPlayers),
+    ]);
+    if (receiverInfo?.user_id) {
+      const receiverEmail = await getUserEmail(receiverInfo.user_id);
+      if (receiverEmail) {
+        await sendEmail({
+          to: receiverEmail,
+          subject: `New trade offer in ${leagueName}`,
+          html: tradeProposedHtml({
+            leagueId,
+            leagueName,
+            proposerTeamName: proposerInfo.data?.team_name ?? "A manager",
+            proposerPlayers: pNames,
+            receiverPlayers: rNames,
+          }),
+        });
+      }
+    }
+  } catch (emailErr) {
+    console.error("[trade] email notification failed:", emailErr);
+  }
+
   revalidatePath(`/dashboard/league/${leagueId}/roster`);
   redirect(`/dashboard/league/${leagueId}/roster?trade=proposed`);
 }
@@ -90,18 +155,47 @@ export async function respondToTrade(formData: FormData) {
     redirect(`/dashboard/league/${leagueId}/roster?error=${encodeURIComponent(error.message)}`);
   }
 
+  // Re-read trade to get proposer_id and final status
+  const { data: updatedTrade } = await supabase
+    .from("uff_trades")
+    .select("status, proposer_id")
+    .eq("id", tradeId)
+    .maybeSingle();
+  const tradeStatus = updatedTrade?.status ?? (accept ? "accepted" : "rejected");
+
+  // ── Email notification to proposer ─────────────────────────────────────────
+  try {
+    if (updatedTrade?.proposer_id) {
+      const [proposerInfo, responderInfo, leagueName] = await Promise.all([
+        getMemberInfo(supabase, updatedTrade.proposer_id),
+        supabase.from("league_members").select("team_name").eq("league_id", leagueId).eq("user_id", user.id).maybeSingle(),
+        getLeagueName(supabase, leagueId),
+      ]);
+      if (proposerInfo?.user_id) {
+        const proposerEmail = await getUserEmail(proposerInfo.user_id);
+        if (proposerEmail) {
+          await sendEmail({
+            to: proposerEmail,
+            subject: `Your trade was ${accept ? "accepted" : "rejected"} in ${leagueName}`,
+            html: tradeRespondedHtml({
+              leagueId,
+              leagueName,
+              responderTeamName: responderInfo.data?.team_name ?? "Your trade partner",
+              accepted: accept,
+              pendingReview: tradeStatus === "pending_review",
+            }),
+          });
+        }
+      }
+    }
+  } catch (emailErr) {
+    console.error("[trade] email notification failed:", emailErr);
+  }
+
   revalidatePath(`/dashboard/league/${leagueId}/roster`);
   if (!accept) {
     redirect(`/dashboard/league/${leagueId}/roster?trade=rejected`);
   }
-  // The RPC sets status to 'pending_review' when commissioner_review is on,
-  // or 'accepted' when it's off. Distinguish by re-reading the trade status.
-  const { data: updatedTrade } = await supabase
-    .from("uff_trades")
-    .select("status")
-    .eq("id", tradeId)
-    .maybeSingle();
-  const tradeStatus = updatedTrade?.status ?? "accepted";
   redirect(`/dashboard/league/${leagueId}/roster?trade=${tradeStatus === "pending_review" ? "review" : "accepted"}`);
 }
 
@@ -113,9 +207,41 @@ export async function approveTrade(formData: FormData) {
   const leagueId = formData.get("leagueId") as string;
   const tradeId  = formData.get("tradeId") as string;
 
+  // Grab trade parties before approving
+  const { data: trade } = await supabase
+    .from("uff_trades")
+    .select("proposer_id, receiver_id")
+    .eq("id", tradeId)
+    .maybeSingle();
+
   const { error } = await supabase.rpc("approve_trade", { p_trade_id: tradeId });
   if (error) {
     redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent(error.message)}`);
+  }
+
+  // ── Email both parties ──────────────────────────────────────────────────────
+  try {
+    const leagueName = await getLeagueName(supabase, leagueId);
+    const partyIds = [trade?.proposer_id, trade?.receiver_id].filter(Boolean) as string[];
+    await Promise.all(partyIds.map(async (memberId) => {
+      const info = await getMemberInfo(supabase, memberId);
+      if (!info?.user_id) return;
+      const email = await getUserEmail(info.user_id);
+      if (!email) return;
+      await sendEmail({
+        to: email,
+        subject: `Trade approved in ${leagueName}`,
+        html: tradeRespondedHtml({
+          leagueId,
+          leagueName,
+          responderTeamName: "The Commissioner",
+          accepted: true,
+          pendingReview: false,
+        }),
+      });
+    }));
+  } catch (emailErr) {
+    console.error("[trade] approval email failed:", emailErr);
   }
 
   revalidatePath(`/dashboard/league/${leagueId}/roster`);
@@ -132,12 +258,38 @@ export async function vetoTrade(formData: FormData) {
   const tradeId  = formData.get("tradeId") as string;
   const reason   = (formData.get("reason") as string)?.trim() || null;
 
+  // Grab trade parties before vetoing
+  const { data: trade } = await supabase
+    .from("uff_trades")
+    .select("proposer_id, receiver_id")
+    .eq("id", tradeId)
+    .maybeSingle();
+
   const { error } = await supabase.rpc("veto_trade", {
     p_trade_id: tradeId,
     p_reason:   reason,
   });
   if (error) {
     redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent(error.message)}`);
+  }
+
+  // ── Email both parties ──────────────────────────────────────────────────────
+  try {
+    const leagueName = await getLeagueName(supabase, leagueId);
+    const partyIds = [trade?.proposer_id, trade?.receiver_id].filter(Boolean) as string[];
+    await Promise.all(partyIds.map(async (memberId) => {
+      const info = await getMemberInfo(supabase, memberId);
+      if (!info?.user_id) return;
+      const email = await getUserEmail(info.user_id);
+      if (!email) return;
+      await sendEmail({
+        to: email,
+        subject: `Trade vetoed in ${leagueName}`,
+        html: tradeVetoedHtml({ leagueId, leagueName, reason }),
+      });
+    }));
+  } catch (emailErr) {
+    console.error("[trade] veto email failed:", emailErr);
   }
 
   revalidatePath(`/dashboard/league/${leagueId}/roster`);

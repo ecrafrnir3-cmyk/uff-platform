@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function finalizeWeek(formData: FormData) {
   const supabase = await createClient();
@@ -34,4 +35,74 @@ export async function finalizeWeek(formData: FormData) {
   revalidatePath(`/dashboard/league/${leagueId}/matchups`);
   revalidatePath(`/dashboard/league/${leagueId}/standings`);
   redirect(`/dashboard/league/${leagueId}/matchups?week=${week}&saved=1`);
+}
+
+/**
+ * Commissioner-only: manually adjust a team's score for a given matchup row.
+ * delta can be positive or negative (e.g. +5 or -3.5).
+ */
+export async function adjustScore(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const leagueId     = formData.get("leagueId") as string;
+  const matchupRowId = formData.get("matchupRowId") as string;
+  const week         = formData.get("week") as string;
+  const deltaRaw     = formData.get("delta") as string;
+  const delta        = parseFloat(deltaRaw);
+
+  if (isNaN(delta) || delta === 0) {
+    redirect(
+      `/dashboard/league/${leagueId}/matchups?week=${week}&error=` +
+        encodeURIComponent("Enter a non-zero adjustment amount.")
+    );
+  }
+
+  // Verify commissioner
+  const { data: league } = await supabase
+    .from("uff_leagues")
+    .select("commissioner_id")
+    .eq("id", leagueId)
+    .maybeSingle();
+
+  if (league?.commissioner_id !== user.id) {
+    redirect(
+      `/dashboard/league/${leagueId}/matchups?week=${week}&error=` +
+        encodeURIComponent("Only the commissioner can adjust scores.")
+    );
+  }
+
+  // Fetch current points using admin client (bypasses RLS)
+  const admin = createAdminClient();
+  const { data: row, error: fetchErr } = await admin
+    .from("uff_matchups")
+    .select("points")
+    .eq("id", matchupRowId)
+    .maybeSingle();
+
+  if (fetchErr || !row) {
+    redirect(
+      `/dashboard/league/${leagueId}/matchups?week=${week}&error=` +
+        encodeURIComponent("Matchup row not found.")
+    );
+  }
+
+  const newPoints = Math.max(0, (row.points ?? 0) + delta);
+
+  const { error: updateErr } = await admin
+    .from("uff_matchups")
+    .update({ points: newPoints })
+    .eq("id", matchupRowId);
+
+  if (updateErr) {
+    redirect(
+      `/dashboard/league/${leagueId}/matchups?week=${week}&error=` +
+        encodeURIComponent(updateErr.message)
+    );
+  }
+
+  revalidatePath(`/dashboard/league/${leagueId}/matchups`);
+  revalidatePath(`/dashboard/league/${leagueId}/standings`);
+  redirect(`/dashboard/league/${leagueId}/matchups?week=${week}&adjusted=1`);
 }

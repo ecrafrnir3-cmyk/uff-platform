@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getCurrentNFLWeek } from "@/lib/nfl-utils";
+import { sendEmail, getAllUserEmails, newsletterHtml } from "@/lib/email";
 
 // ─── Called by GitHub Actions every Wednesday at 07:30 UTC ──────────────────
 // Fires 30 minutes after finalize-week (07:00 UTC) to ensure all matchups
@@ -296,6 +297,43 @@ export async function POST(req: NextRequest) {
         );
 
       if (upsertErr) throw new Error(`Upsert failed: ${upsertErr.message}`);
+
+      // ── Email newsletter to all league members ──────────────────────────────
+      try {
+        const { data: members } = await supabase
+          .from("league_members")
+          .select("user_id")
+          .eq("league_id", league.id);
+
+        if (members && members.length > 0) {
+          const allEmails = await getAllUserEmails();
+          const toAddresses = members
+            .map((m: { user_id: string }) => allEmails[m.user_id])
+            .filter(Boolean) as string[];
+
+          if (toAddresses.length > 0) {
+            // Send individually so each recipient doesn't see others' emails
+            await Promise.all(
+              toAddresses.map((email) =>
+                sendEmail({
+                  to: email,
+                  subject: `${league.name} · Week ${week} Newsletter`,
+                  html: newsletterHtml({
+                    leagueId: league.id,
+                    leagueName: league.name,
+                    week,
+                    content,
+                  }),
+                })
+              )
+            );
+            console.log(`Newsletter emailed to ${toAddresses.length} members: ${league.name}`);
+          }
+        }
+      } catch (emailErr) {
+        // Email failure must not abort the cron — newsletter is already saved to DB
+        console.error(`Newsletter email failed for ${league.name}:`, emailErr);
+      }
 
       console.log(`Newsletter generated: ${league.name} week ${week}`);
       results.push({ league_id: league.id, name: league.name, ok: true });

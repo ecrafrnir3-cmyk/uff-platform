@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import MatchupView from "./MatchupView";
-import { finalizeWeek } from "./actions";
+import { finalizeWeek, adjustScore } from "./actions";
 import { getCurrentNFLWeek } from "@/lib/nfl-utils";
 
 interface MatchupRow {
@@ -24,10 +24,10 @@ export default async function MatchupsPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ week?: string; error?: string; saved?: string }>;
+  searchParams: Promise<{ week?: string; error?: string; saved?: string; adjusted?: string }>;
 }) {
   const { id: leagueId } = await params;
-  const { week: weekParam, error: pageError, saved: pageSaved } = await searchParams;
+  const { week: weekParam, error: pageError, saved: pageSaved, adjusted: pageAdjusted } = await searchParams;
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -118,6 +118,11 @@ export default async function MatchupsPage({
             {decodeURIComponent(pageError)}
           </p>
         )}
+        {pageAdjusted && (
+          <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#3DDC84", color: "#3DDC84", background: "#0e1a12" }}>
+            Score adjusted.
+          </p>
+        )}
         {pageSaved && (
           <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#3DDC84", color: "#3DDC84", background: "#0e1a12" }}>
             Week {viewWeek} finalized — winners locked in.
@@ -176,6 +181,49 @@ export default async function MatchupsPage({
                   Finalize Week {viewWeek}
                 </button>
               </form>
+            )}
+
+            {/* Commissioner score override */}
+            {isCommissioner && matchupPairs.length > 0 && (
+              <div className="rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>
+                <p className="mb-4 text-xs font-semibold uppercase tracking-widest" style={{ color: "#FFD700" }}>
+                  ⚙ Commissioner · Adjust Scores
+                </p>
+                <div className="flex flex-col gap-3">
+                  {matchupPairs.flatMap((pair) => pair).map((row) => (
+                    <form key={row.id} action={adjustScore} className="flex items-center gap-3">
+                      <input type="hidden" name="leagueId" value={leagueId} />
+                      <input type="hidden" name="matchupRowId" value={row.id} />
+                      <input type="hidden" name="week" value={viewWeek} />
+                      <span className="min-w-[140px] text-sm" style={{ color: "#f4f4f8" }}>
+                        {row.league_members?.team_name ?? "Unknown"}
+                      </span>
+                      <span className="w-16 text-right text-sm tabular-nums" style={{ color: "#a0a0b8" }}>
+                        {row.points.toFixed(2)}
+                      </span>
+                      <input
+                        name="delta"
+                        type="number"
+                        step="0.01"
+                        placeholder="±pts"
+                        required
+                        className="w-20 rounded border bg-transparent px-2 py-1 text-sm tabular-nums"
+                        style={{ borderColor: "#2a2a40", color: "#f4f4f8" }}
+                      />
+                      <button
+                        type="submit"
+                        className="rounded px-3 py-1 text-xs font-semibold"
+                        style={{ background: "#1c1c2b", color: "#FFD700", border: "1px solid #2a2a40" }}
+                      >
+                        Apply
+                      </button>
+                    </form>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs" style={{ color: "#a0a0b8" }}>
+                  Enter a positive or negative value (e.g. +5 or -3.5) and click Apply.
+                </p>
+              </div>
             )}
           </>
         )}
