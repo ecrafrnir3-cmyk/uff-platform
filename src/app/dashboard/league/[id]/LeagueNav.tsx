@@ -25,9 +25,11 @@ const COMMISSIONER_NAV = [
 export default function LeagueNav({
   leagueId,
   isCommissioner,
+  pendingTradeCount = 0,
 }: {
   leagueId: string;
   isCommissioner: boolean;
+  pendingTradeCount?: number;
 }) {
   const pathname = usePathname();
   const base = `/dashboard/league/${leagueId}`;
@@ -54,17 +56,33 @@ export default function LeagueNav({
             href === ""
               ? pathname === base || pathname === base + "/"
               : pathname.startsWith(fullHref);
+          const hasBadge = label === "Trade" && pendingTradeCount > 0;
           return (
             <Link
               key={label}
               href={fullHref}
-              className="shrink-0 px-3 py-3 text-sm font-medium transition-colors"
+              className="relative shrink-0 px-3 py-3 text-sm font-medium transition-colors"
               style={{
                 color: isActive ? "#FFD700" : "#f4f4f8",
                 borderBottom: isActive ? "2px solid #FFD700" : "2px solid transparent",
               }}
             >
               {label}
+              {hasBadge && (
+                <span
+                  className="absolute top-1.5 right-0 inline-flex items-center justify-center rounded-full font-bold"
+                  style={{
+                    background: "#CC0000",
+                    color: "#fff",
+                    fontSize: "9px",
+                    minWidth: "14px",
+                    height: "14px",
+                    padding: "0 3px",
+                  }}
+                >
+                  {pendingTradeCount}
+                </span>
+              )}
             </Link>
           );
         })}

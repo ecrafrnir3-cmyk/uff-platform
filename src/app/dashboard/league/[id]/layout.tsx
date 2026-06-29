@@ -34,9 +34,21 @@ export default async function LeagueLayout({
 
   const isCommissioner = league?.commissioner_id === user.id;
 
+  // Pending incoming trade count for nav badge
+  const { count: pendingCount } = await supabase
+    .from("uff_trades")
+    .select("id", { count: "exact", head: true })
+    .eq("league_id", leagueId)
+    .eq("receiver_id", member.id)
+    .eq("status", "pending");
+
   return (
     <>
-      <LeagueNav leagueId={leagueId} isCommissioner={isCommissioner} />
+      <LeagueNav
+        leagueId={leagueId}
+        isCommissioner={isCommissioner}
+        pendingTradeCount={pendingCount ?? 0}
+      />
       {children}
     </>
   );
