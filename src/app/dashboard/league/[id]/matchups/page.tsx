@@ -15,6 +15,7 @@ interface MatchupRow {
   token_bonus: number;
   is_complete: boolean;
   oracle_recap: string | null;
+  median_win: boolean | null;
   league_members: { team_name: string; faction: "hero" | "villain" | null } | null;
 }
 
