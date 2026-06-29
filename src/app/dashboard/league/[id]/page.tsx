@@ -138,6 +138,13 @@ export default async function LeagueDetailPage({
                 >
                   Standings
                 </Link>
+                <Link
+                  href={`/dashboard/league/${league.id}/playoffs`}
+                  className="inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold"
+                  style={{ background: "#1c1c2b", color: "#FFD700", border: "1px solid #2a2a4088" }}
+                >
+                  Playoffs
+                </Link>
               </>
             )}
             {league.draft_status !== "completed" && (
@@ -314,7 +321,8 @@ export default async function LeagueDetailPage({
               {[
                 { label: "My Team",    href: `/dashboard/league/${leagueId}/roster`,      emoji: "🏟️" },
                 { label: "Matchups",   href: `/dashboard/league/${leagueId}/matchups`,     emoji: "⚔️" },
-                { label: "Standings",  href: `/dashboard/league/${leagueId}/standings`,    emoji: "🏆" },
+                { label: "Standings",  href: `/dashboard/league/${leagueId}/standings`,    emoji: "📊" },
+                { label: "Playoffs",   href: `/dashboard/league/${leagueId}/playoffs`,     emoji: "🏆" },
                 { label: "Free Agents",href: `/dashboard/league/${leagueId}/free-agents`,  emoji: "🔍" },
                 { label: "Trade",      href: `/dashboard/league/${leagueId}/trade`,         emoji: "🔄" },
                 { label: "Settings",   href: `/dashboard/league/${leagueId}/settings`,      emoji: "⚙️" },

@@ -56,27 +56,45 @@ function MatchupCard({
   memberA,
   memberB,
   label,
+  livePoints,
 }: {
   slot: BracketSlot;
   memberA: Member | undefined;
   memberB: Member | undefined;
   label: string;
+  livePoints?: Record<string, number>; // member_id → current points
 }) {
   const aWon = slot.is_complete && slot.winner_id === slot.member_id_a;
   const bWon = slot.is_complete && slot.winner_id === slot.member_id_b;
   const tbd  = !slot.member_id_a || !slot.member_id_b;
 
+  // For in-progress games, use live points from uff_matchups
+  const liveA = slot.member_id_a ? livePoints?.[slot.member_id_a] : undefined;
+  const liveB = slot.member_id_b ? livePoints?.[slot.member_id_b] : undefined;
+  const showLive = !slot.is_complete && !tbd && (liveA !== undefined || liveB !== undefined);
+  const liveLeading = showLive && liveA !== undefined && liveB !== undefined
+    ? liveA > liveB ? slot.member_id_a : liveA < liveB ? slot.member_id_b : null
+    : null;
+
   return (
     <div
       className="flex flex-col rounded-xl border overflow-hidden"
-      style={{ borderColor: slot.is_complete ? GOLD + "55" : "#2a2a40", minWidth: 220 }}
+      style={{ borderColor: slot.is_complete ? GOLD + "55" : showLive ? "#0057FF44" : "#2a2a40", minWidth: 220 }}
     >
       {/* Label */}
       <div
-        className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider"
-        style={{ background: "#1c1c2b", color: "#6b6b8a", borderBottom: "1px solid #2a2a40" }}
+        className="flex items-center justify-between px-3 py-1.5"
+        style={{ background: "#1c1c2b", borderBottom: "1px solid #2a2a40" }}
       >
-        {label} · Wk {slot.week}
+        <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "#6b6b8a" }}>
+          {label} · Wk {slot.week}
+        </span>
+        {showLive && (
+          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full"
+            style={{ background: "rgba(0,87,255,0.15)", color: "#0057FF" }}>
+            Live
+          </span>
+        )}
       </div>
 
       {/* Team A */}
@@ -99,7 +117,16 @@ function MatchupCard({
             {slot.points_a.toFixed(2)}
           </span>
         )}
+        {showLive && liveA !== undefined && (
+          <span className="text-sm font-black tabular-nums"
+            style={{ color: liveLeading === slot.member_id_a ? "#f4f4f8" : "#6b6b8a" }}>
+            {liveA.toFixed(2)}
+          </span>
+        )}
         {aWon && <span className="text-xs" style={{ color: GOLD }}>🏆</span>}
+        {showLive && liveLeading === slot.member_id_a && (
+          <span className="text-[10px]" style={{ color: "#3DDC84" }}>▲</span>
+        )}
       </div>
 
       {/* Team B */}
@@ -119,7 +146,16 @@ function MatchupCard({
             {slot.points_b.toFixed(2)}
           </span>
         )}
+        {showLive && liveB !== undefined && (
+          <span className="text-sm font-black tabular-nums"
+            style={{ color: liveLeading === slot.member_id_b ? "#f4f4f8" : "#6b6b8a" }}>
+            {liveB.toFixed(2)}
+          </span>
+        )}
         {bWon && <span className="text-xs" style={{ color: GOLD }}>🏆</span>}
+        {showLive && liveLeading === slot.member_id_b && (
+          <span className="text-[10px]" style={{ color: "#3DDC84" }}>▲</span>
+        )}
       </div>
     </div>
   );
@@ -175,6 +211,18 @@ export default async function PlayoffsPage({
   const round1 = bracket.filter((b) => b.round === 1); // wildcard
   const round2 = bracket.filter((b) => b.round === 2); // semis
   const round3 = bracket.filter((b) => b.round === 3); // championship
+
+  // Live points for in-progress playoff matchups (so bracket shows current scores)
+  const { data: livePlayoffRows } = await supabase
+    .from("uff_matchups")
+    .select("member_id, points")
+    .eq("league_id", leagueId)
+    .eq("season", league.season)
+    .eq("is_playoff", true)
+    .eq("is_complete", false);
+
+  const livePoints: Record<string, number> = {};
+  for (const r of livePlayoffRows ?? []) livePoints[r.member_id] = r.points;
 
   // Regular season standings for seeding reference
   const { data: matchupRows } = await supabase
@@ -338,9 +386,10 @@ export default async function PlayoffsPage({
                       <MatchupCard
                         key={slot.id}
                         slot={slot}
-                        memberA={memberMap.get(slot.member_id_a ?? "") }
-                        memberB={memberMap.get(slot.member_id_b ?? "") }
+                        memberA={memberMap.get(slot.member_id_a ?? "")}
+                        memberB={memberMap.get(slot.member_id_b ?? "")}
                         label={`R1 · Slot ${slot.slot}`}
+                        livePoints={livePoints}
                       />
                     ))}
                   </div>
@@ -361,9 +410,10 @@ export default async function PlayoffsPage({
                       <MatchupCard
                         key={slot.id}
                         slot={slot}
-                        memberA={memberMap.get(slot.member_id_a ?? "") }
-                        memberB={memberMap.get(slot.member_id_b ?? "") }
+                        memberA={memberMap.get(slot.member_id_a ?? "")}
+                        memberB={memberMap.get(slot.member_id_b ?? "")}
                         label={`R2 · Slot ${slot.slot}`}
+                        livePoints={livePoints}
                       />
                     ))}
                   </div>
@@ -384,9 +434,10 @@ export default async function PlayoffsPage({
                       <MatchupCard
                         key={slot.id}
                         slot={slot}
-                        memberA={memberMap.get(slot.member_id_a ?? "") }
-                        memberB={memberMap.get(slot.member_id_b ?? "") }
+                        memberA={memberMap.get(slot.member_id_a ?? "")}
+                        memberB={memberMap.get(slot.member_id_b ?? "")}
                         label="Championship"
+                        livePoints={livePoints}
                       />
                     ))}
                   </div>
