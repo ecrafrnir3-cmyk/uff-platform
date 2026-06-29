@@ -271,7 +271,7 @@ export default async function RosterPage({
 
   const { data: me } = await supabase
     .from("league_members")
-    .select("id, team_name, faction")
+    .select("id, team_name, faction, eliminated_at")
     .eq("league_id", leagueId)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -523,6 +523,21 @@ export default async function RosterPage({
         <Link href={`/dashboard/league/${league.id}`} className="text-sm underline w-fit" style={{ color: HERO_COLOR }}>
           &larr; Back to {league.name}
         </Link>
+
+        {/* Elimination banner */}
+        {me.eliminated_at && (
+          <div
+            className="rounded-xl border px-5 py-4 text-center"
+            style={{ borderColor: "#CC0000", background: "rgba(204,0,0,0.08)", color: "#ff8a8a" }}
+          >
+            <p className="text-base font-bold uppercase tracking-wide" style={{ color: "#CC0000" }}>
+              🔒 Roster Locked — Eliminated from Playoffs
+            </p>
+            <p className="mt-1 text-sm" style={{ color: "#f4f4f8" }}>
+              Your team was eliminated. Adds, drops, and IR moves are disabled.
+            </p>
+          </div>
+        )}
 
         {/* Flash messages */}
         {error && (

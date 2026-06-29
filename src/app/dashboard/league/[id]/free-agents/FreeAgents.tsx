@@ -58,6 +58,7 @@ export default function FreeAgents({
   myBalance = 0,
   myBids = [],
   bidPlayerNames = {},
+  isEliminated = false,
 }: {
   leagueId: string;
   rosteredIds: string[];
@@ -71,6 +72,7 @@ export default function FreeAgents({
   myBalance?: number;
   myBids?: WaiverBid[];
   bidPlayerNames?: Record<string, string>;
+  isEliminated?: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [posFilter, setPosFilter] = useState("ALL");
@@ -482,7 +484,14 @@ export default function FreeAgents({
                 )}
 
                 {/* Action button */}
-                {faabEnabled ? (
+                {isEliminated ? (
+                  <span
+                    className="shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold"
+                    style={{ background: "#1c1c2b", color: "#6b6b8a", border: "1px solid #2a2a40" }}
+                  >
+                    🔒 Locked
+                  </span>
+                ) : faabEnabled ? (
                   hasBid && !form ? (
                     // Has an existing bid — show bid amount + edit button
                     <div className="flex items-center gap-1.5 shrink-0">

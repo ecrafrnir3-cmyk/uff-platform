@@ -46,7 +46,7 @@ export default async function FreeAgentsPage({
 
   const { data: me } = await supabase
     .from("league_members")
-    .select("id")
+    .select("id, eliminated_at")
     .eq("league_id", leagueId)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -238,6 +238,20 @@ export default async function FreeAgentsPage({
           </p>
         )}
 
+        {me.eliminated_at && (
+          <div
+            className="rounded-xl border px-5 py-4 text-center"
+            style={{ borderColor: "#CC0000", background: "rgba(204,0,0,0.08)", color: "#ff8a8a" }}
+          >
+            <p className="text-base font-bold uppercase tracking-wide" style={{ color: "#CC0000" }}>
+              🔒 Roster Locked — Eliminated from Playoffs
+            </p>
+            <p className="mt-1 text-sm" style={{ color: "#f4f4f8" }}>
+              Your team was eliminated. You can still view free agents, but adds, drops, and waiver bids are disabled.
+            </p>
+          </div>
+        )}
+
         <FreeAgents
           leagueId={leagueId}
           rosteredIds={[...rosteredIds]}
@@ -251,6 +265,7 @@ export default async function FreeAgentsPage({
           myBalance={myBalance}
           myBids={myBids}
           bidPlayerNames={bidPlayerNames}
+          isEliminated={!!me.eliminated_at}
         />
       </main>
     </div>
