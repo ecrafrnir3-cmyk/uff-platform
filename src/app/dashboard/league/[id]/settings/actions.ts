@@ -124,18 +124,20 @@ export async function saveLeagueSettings(formData: FormData) {
   const medianScoring      = formData.get("median_scoring") === "1";
   const tradeDeadlineRaw   = formData.get("trade_deadline_week") as string;
   const tradeDeadlineWeek  = tradeDeadlineRaw ? parseInt(tradeDeadlineRaw, 10) : null;
-  const faabBudgetRaw      = formData.get("faab_budget") as string;
-  const faabBudget         = faabBudgetRaw ? Math.max(0, parseInt(faabBudgetRaw, 10)) : 0;
+  const faabBudgetRaw       = formData.get("faab_budget") as string;
+  const faabBudget          = faabBudgetRaw ? Math.max(0, parseInt(faabBudgetRaw, 10)) : 0;
+  const commissionerReview  = formData.get("commissioner_review") === "1";
 
   const { error } = await supabase
     .from("uff_leagues")
     .update({
-      playoff_teams:       playoffTeams,
-      playoff_start_week:  playoffStartWeek,
-      championship_week:   championshipWeek,
-      median_scoring:      medianScoring,
-      trade_deadline_week: tradeDeadlineWeek,
-      faab_budget:         faabBudget,
+      playoff_teams:        playoffTeams,
+      playoff_start_week:   playoffStartWeek,
+      championship_week:    championshipWeek,
+      median_scoring:       medianScoring,
+      trade_deadline_week:  tradeDeadlineWeek,
+      faab_budget:          faabBudget,
+      commissioner_review:  commissionerReview,
     })
     .eq("id", leagueId)
     .eq("commissioner_id", user.id);

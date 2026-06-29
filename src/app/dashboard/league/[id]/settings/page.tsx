@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { saveScoringSettings, generateSchedule, extendSchedule, saveLeagueSettings, seedPlayoffs, forceFinalize, syncPlayers, processWaivers } from "./actions";
+import { approveTrade, vetoTrade } from "../trade-actions";
 import { getCurrentNFLWeek } from "@/lib/nfl-utils";
 
 const PRESETS = {
@@ -90,10 +91,10 @@ export default async function SettingsPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; saved?: string; preset?: string; claims?: string }>;
+  searchParams: Promise<{ error?: string; saved?: string; preset?: string; claims?: string; approved?: string; vetoed?: string }>;
 }) {
   const { id: leagueId } = await params;
-  const { error, saved, preset, claims } = await searchParams;
+  const { error, saved, preset, claims, approved, vetoed } = await searchParams;
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -101,7 +102,7 @@ export default async function SettingsPage({
 
   const { data: league } = await supabase
     .from("uff_leagues")
-    .select("id, name, commissioner_id, scoring_settings, draft_status, season, season_weeks, playoff_teams, playoff_start_week, championship_week, median_scoring, trade_deadline_week, faab_budget")
+    .select("id, name, commissioner_id, scoring_settings, draft_status, season, season_weeks, playoff_teams, playoff_start_week, championship_week, median_scoring, trade_deadline_week, faab_budget, commissioner_review")
     .eq("id", leagueId)
     .maybeSingle();
 
@@ -118,6 +119,38 @@ export default async function SettingsPage({
 
   const scheduleExists = (scheduleCheck?.length ?? 0) > 0;
   const currentNFLWeek = getCurrentNFLWeek();
+
+  // Pending commissioner-review trades
+  interface PendingReviewTrade {
+    id: string;
+    proposer_id: string;
+    receiver_id: string;
+    proposer_player_ids: string[];
+    receiver_player_ids: string[];
+    created_at: string;
+    updated_at: string;
+  }
+  const { data: reviewTradeRows } = await supabase
+    .from("uff_trades")
+    .select("id, proposer_id, receiver_id, proposer_player_ids, receiver_player_ids, created_at, updated_at")
+    .eq("league_id", leagueId)
+    .eq("status", "pending_review")
+    .order("updated_at", { ascending: false })
+    .returns<PendingReviewTrade[]>();
+  const reviewTrades = reviewTradeRows ?? [];
+
+  let reviewPlayerNames: Record<string, string> = {};
+  let reviewMemberNames: Record<string, string> = {};
+  if (reviewTrades.length > 0) {
+    const allPlayerIds = [...new Set(reviewTrades.flatMap(t => [...t.proposer_player_ids, ...t.receiver_player_ids]))];
+    const allMemberIds = [...new Set(reviewTrades.flatMap(t => [t.proposer_id, t.receiver_id]))];
+    const [{ data: rPlayers }, { data: rMembers }] = await Promise.all([
+      supabase.from("players").select("id, full_name").in("id", allPlayerIds).returns<{ id: string; full_name: string }[]>(),
+      supabase.from("league_members").select("id, team_name").in("id", allMemberIds).returns<{ id: string; team_name: string }[]>(),
+    ]);
+    for (const p of rPlayers ?? []) reviewPlayerNames[p.id] = p.full_name;
+    for (const m of rMembers ?? []) reviewMemberNames[m.id] = m.team_name;
+  }
   const savedSettings: Record<string, number> = league.scoring_settings ?? {};
 
   // Apply preset if requested via ?preset= query param
@@ -157,6 +190,16 @@ export default async function SettingsPage({
         {saved && claims !== undefined && (
           <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#FFD700", color: "#FFD700", background: "#1a1500" }}>
             Waivers processed — <strong>{claims}</strong> claim{claims === "1" ? "" : "s"} awarded.
+          </p>
+        )}
+        {approved && (
+          <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#3DDC84", color: "#3DDC84", background: "#0e1a12" }}>
+            Trade approved — rosters updated!
+          </p>
+        )}
+        {vetoed && (
+          <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#CC0000", color: "#ff8a8a", background: "#1a0e16" }}>
+            Trade vetoed.
           </p>
         )}
         {validPreset && !saved && (
@@ -350,6 +393,23 @@ export default async function SettingsPage({
               </div>
             </div>
 
+            {/* Commissioner trade review */}
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <label className="text-sm font-medium text-white">Commissioner Trade Review</label>
+                <span className="text-xs" style={{ color: "#6b6b8a" }}>Accepted trades go to commissioner review before executing. You approve or veto each one.</span>
+              </div>
+              <select
+                name="commissioner_review"
+                defaultValue={league.commissioner_review ? "1" : "0"}
+                className="rounded-md px-3 py-2 text-sm font-medium"
+                style={{ background: "#1c1c2b", color: "#fff", border: "1px solid #2a2a40" }}
+              >
+                <option value="0">Off</option>
+                <option value="1">On</option>
+              </select>
+            </div>
+
             <button
               type="submit"
               className="self-start rounded-md px-4 py-2 text-sm font-semibold"
@@ -359,6 +419,79 @@ export default async function SettingsPage({
             </button>
           </form>
         </section>
+
+        {/* Pending trade reviews */}
+        {league.commissioner_review && (
+          <section className="flex flex-col gap-3 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>
+            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Pending Trade Reviews</h2>
+            <p className="text-sm" style={{ color: "#8888aa" }}>
+              These trades were accepted by both parties and are awaiting your approval.
+            </p>
+            {reviewTrades.length === 0 ? (
+              <p className="text-sm" style={{ color: "#6b6b8a" }}>No trades pending review.</p>
+            ) : (
+              <div className="flex flex-col gap-4">
+                {reviewTrades.map((t) => (
+                  <div key={t.id} className="rounded-xl border p-4 flex flex-col gap-3" style={{ borderColor: "#2a2a40", background: "#13132b" }}>
+                    <p className="text-sm font-bold" style={{ color: "#f4f4f8" }}>
+                      {reviewMemberNames[t.proposer_id] ?? "Team A"} ↔ {reviewMemberNames[t.receiver_id] ?? "Team B"}
+                    </p>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-xs font-semibold uppercase mb-1" style={{ color: "#8888aa" }}>
+                          {reviewMemberNames[t.proposer_id] ?? "Proposer"} sends
+                        </p>
+                        <ul className="flex flex-col gap-0.5">
+                          {t.proposer_player_ids.map(pid => (
+                            <li key={pid} style={{ color: "#3DDC84" }}>{reviewPlayerNames[pid] ?? pid}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase mb-1" style={{ color: "#8888aa" }}>
+                          {reviewMemberNames[t.receiver_id] ?? "Receiver"} sends
+                        </p>
+                        <ul className="flex flex-col gap-0.5">
+                          {t.receiver_player_ids.map(pid => (
+                            <li key={pid} style={{ color: "#FFD700" }}>{reviewPlayerNames[pid] ?? pid}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      <form action={approveTrade}>
+                        <input type="hidden" name="leagueId" value={leagueId} />
+                        <input type="hidden" name="tradeId" value={t.id} />
+                        <button type="submit" className="rounded-md px-4 py-1.5 text-xs font-bold transition-opacity hover:opacity-90"
+                          style={{ background: "#3DDC84", color: "#0d0d1a" }}>
+                          ✓ Approve
+                        </button>
+                      </form>
+                      <form action={vetoTrade} className="flex gap-2">
+                        <input type="hidden" name="leagueId" value={leagueId} />
+                        <input type="hidden" name="tradeId" value={t.id} />
+                        <input
+                          name="reason"
+                          type="text"
+                          placeholder="Veto reason (optional)"
+                          className="rounded border px-2 py-1 text-xs"
+                          style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8", width: "180px" }}
+                        />
+                        <button type="submit" className="rounded-md px-4 py-1.5 text-xs font-bold transition-opacity hover:opacity-90"
+                          style={{ background: "#1c1c2b", color: "#CC0000", border: "1px solid rgba(204,0,0,0.3)" }}>
+                          ✗ Veto
+                        </button>
+                      </form>
+                    </div>
+                    <p className="text-xs" style={{ color: "#6b6b8a" }}>
+                      Accepted {new Date(t.updated_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Seed playoffs */}
         {scheduleExists && (

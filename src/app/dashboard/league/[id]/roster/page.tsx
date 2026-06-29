@@ -401,12 +401,12 @@ export default async function RosterPage({
     }
   }
 
-  // ── Pending trades ────────────────────────────────────────────
+  // ── Pending trades (pending + pending_review) ──────────────────
   const { data: tradeRows } = await supabase
     .from("uff_trades")
     .select("id, proposer_id, receiver_id, proposer_player_ids, receiver_player_ids, status, created_at")
     .eq("league_id", leagueId)
-    .eq("status", "pending")
+    .in("status", ["pending", "pending_review"])
     .or(`proposer_id.eq.${me.id},receiver_id.eq.${me.id}`)
     .returns<TradeRow[]>();
 
@@ -425,8 +425,9 @@ export default async function RosterPage({
     for (const m of (tradeMembers ?? [])) tradeMemberNames[m.id] = m.team_name;
   }
 
-  const incomingTrades = pendingTrades.filter(t => t.receiver_id === me.id);
-  const outgoingTrades = pendingTrades.filter(t => t.proposer_id === me.id);
+  const incomingTrades = pendingTrades.filter(t => t.receiver_id === me.id && t.status === "pending");
+  const outgoingTrades = pendingTrades.filter(t => t.proposer_id === me.id && t.status === "pending");
+  const reviewTrades   = pendingTrades.filter(t => t.status === "pending_review");
 
   // ── Live weekly pts (current week, from Sleeper) ──────────────────────────
   const FLAG_KEYS_SCORE = new Set([
@@ -535,6 +536,7 @@ export default async function RosterPage({
         {restored && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: HERO_COLOR, color: "#8ab4ff", background: "#0a0e1a" }}>Power Restore Chip used &mdash; scoring restored!</p>}
         {tradeMsg === "proposed"  && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#FFD700", color: "#FFD700", background: "#1a1a0e" }}>Trade offer sent!</p>}
         {tradeMsg === "accepted"  && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#3DDC84", color: "#3DDC84", background: "#0e1a12" }}>Trade accepted &mdash; rosters updated!</p>}
+        {tradeMsg === "review"    && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#FFD700", color: "#FFD700", background: "#1a1a0e" }}>Trade accepted &mdash; awaiting commissioner review.</p>}
         {tradeMsg === "rejected"  && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#f4f4f8", color: "#f4f4f8", background: "#13131f" }}>Trade rejected.</p>}
         {tradeMsg === "cancelled" && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#f4f4f8", color: "#f4f4f8", background: "#13131f" }}>Trade offer cancelled.</p>}
         {blockMsg === "added"     && <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#FFD700", color: "#FFD700", background: "#1a1a0e" }}>Player listed on the trade block.</p>}
@@ -616,6 +618,52 @@ export default async function RosterPage({
             irSlotsAvailable={irSlotsTotal - irSlotsUsed}
             quickFeetAvailable={quickFeetAvailable}
           />
+        )}
+
+        {/* ── Trades Awaiting Commissioner Review ── */}
+        {reviewTrades.length > 0 && (
+          <section className="flex flex-col gap-3">
+            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Awaiting Commissioner Review</h2>
+            <div className="flex flex-col gap-3">
+              {reviewTrades.map((t) => (
+                <div key={t.id} className="rounded-xl border p-4" style={{ borderColor: "#2a2a4088", background: "#13132b" }}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="rounded-full px-2 py-0.5 text-xs font-bold uppercase tracking-wide" style={{ background: "rgba(255,215,0,0.15)", color: "#FFD700" }}>
+                      Under Review
+                    </span>
+                    <p className="text-sm font-semibold" style={{ color: "#f4f4f8" }}>
+                      {tradeMemberNames[t.proposer_id] ?? "A team"} ↔ {tradeMemberNames[t.receiver_id] ?? "A team"}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-xs font-semibold uppercase mb-1" style={{ color: "#8888aa" }}>
+                        {tradeMemberNames[t.proposer_id] ?? "Proposer"} sends
+                      </p>
+                      <ul className="flex flex-col gap-0.5">
+                        {t.proposer_player_ids.map(pid => (
+                          <li key={pid} style={{ color: "#3DDC84" }}>{tradePlayerNames[pid] ?? pid}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase mb-1" style={{ color: "#8888aa" }}>
+                        {tradeMemberNames[t.receiver_id] ?? "Receiver"} sends
+                      </p>
+                      <ul className="flex flex-col gap-0.5">
+                        {t.receiver_player_ids.map(pid => (
+                          <li key={pid} style={{ color: "#FFD700" }}>{tradePlayerNames[pid] ?? pid}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                  <p className="text-xs mt-2" style={{ color: "#6b6b8a" }}>
+                    The commissioner will approve or veto this trade.
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
         )}
 
         {/* ── Trade Inbox ── */}
