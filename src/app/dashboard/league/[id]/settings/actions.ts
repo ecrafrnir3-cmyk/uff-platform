@@ -124,6 +124,8 @@ export async function saveLeagueSettings(formData: FormData) {
   const medianScoring      = formData.get("median_scoring") === "1";
   const tradeDeadlineRaw   = formData.get("trade_deadline_week") as string;
   const tradeDeadlineWeek  = tradeDeadlineRaw ? parseInt(tradeDeadlineRaw, 10) : null;
+  const faabBudgetRaw      = formData.get("faab_budget") as string;
+  const faabBudget         = faabBudgetRaw ? Math.max(0, parseInt(faabBudgetRaw, 10)) : 0;
 
   const { error } = await supabase
     .from("uff_leagues")
@@ -133,6 +135,7 @@ export async function saveLeagueSettings(formData: FormData) {
       championship_week:   championshipWeek,
       median_scoring:      medianScoring,
       trade_deadline_week: tradeDeadlineWeek,
+      faab_budget:         faabBudget,
     })
     .eq("id", leagueId)
     .eq("commissioner_id", user.id);
@@ -141,8 +144,44 @@ export async function saveLeagueSettings(formData: FormData) {
     redirect(`/dashboard/league/${leagueId}/settings?error=` + encodeURIComponent(error.message));
   }
 
+  // If FAAB is enabled, initialize balances for any members who don't have one yet
+  if (faabBudget > 0) {
+    await supabase
+      .from("league_members")
+      .update({ faab_balance: faabBudget })
+      .eq("league_id", leagueId)
+      .is("faab_balance", null);
+  }
+
   revalidatePath(`/dashboard/league/${leagueId}/settings`);
   redirect(`/dashboard/league/${leagueId}/settings?saved=1`);
+}
+
+export async function processWaivers(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const leagueId = formData.get("leagueId") as string;
+  const week     = parseInt(formData.get("week") as string, 10);
+
+  if (isNaN(week) || week < 1 || week > 18) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("Invalid week.")}`);
+  }
+
+  const { data, error } = await supabase.rpc("process_waiver_bids", {
+    p_league_id: leagueId,
+    p_user_id:   user.id,
+    p_week:      week,
+  });
+
+  if (error) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath(`/dashboard/league/${leagueId}/free-agents`);
+  revalidatePath(`/dashboard/league/${leagueId}/roster`);
+  redirect(`/dashboard/league/${leagueId}/settings?saved=1&claims=${data ?? 0}`);
 }
 
 export async function seedPlayoffs(formData: FormData) {

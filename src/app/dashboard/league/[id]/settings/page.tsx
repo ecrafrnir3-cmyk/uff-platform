@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { saveScoringSettings, generateSchedule, extendSchedule, saveLeagueSettings, seedPlayoffs, forceFinalize, syncPlayers } from "./actions";
+import { saveScoringSettings, generateSchedule, extendSchedule, saveLeagueSettings, seedPlayoffs, forceFinalize, syncPlayers, processWaivers } from "./actions";
 import { getCurrentNFLWeek } from "@/lib/nfl-utils";
 
 const PRESETS = {
@@ -101,7 +101,7 @@ export default async function SettingsPage({
 
   const { data: league } = await supabase
     .from("uff_leagues")
-    .select("id, name, commissioner_id, scoring_settings, draft_status, season, season_weeks, playoff_teams, playoff_start_week, championship_week, median_scoring, trade_deadline_week")
+    .select("id, name, commissioner_id, scoring_settings, draft_status, season, season_weeks, playoff_teams, playoff_start_week, championship_week, median_scoring, trade_deadline_week, faab_budget")
     .eq("id", leagueId)
     .maybeSingle();
 
@@ -324,6 +324,27 @@ export default async function SettingsPage({
               </select>
             </div>
 
+            {/* FAAB budget */}
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <label className="text-sm font-medium text-white">FAAB Budget</label>
+                <span className="text-xs" style={{ color: "#6b6b8a" }}>Free Agent Acquisition Budget per team. 0 = instant free-for-all adds (no bidding).</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-bold" style={{ color: "#FFD700" }}>$</span>
+                <input
+                  name="faab_budget"
+                  type="number"
+                  min={0}
+                  max={10000}
+                  step={1}
+                  defaultValue={league.faab_budget ?? 0}
+                  className="w-24 rounded border px-2 py-1 text-sm text-center tabular-nums"
+                  style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
+                />
+              </div>
+            </div>
+
             <button
               type="submit"
               className="self-start rounded-md px-4 py-2 text-sm font-semibold"
@@ -384,6 +405,38 @@ export default async function SettingsPage({
             </button>
           </form>
         </section>
+
+        {/* Process waivers (only shown when FAAB is enabled) */}
+        {(league.faab_budget ?? 0) > 0 && (
+          <section className="flex flex-col gap-3 rounded-lg border p-5" style={{ borderColor: "#FFD70044" }}>
+            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Process FAAB Waivers</h2>
+            <p className="text-sm text-white">
+              Evaluates all pending FAAB bids for the selected week. Highest bidder wins each player,
+              FAAB is deducted, and rosters are updated. Losing bids are revealed after processing.
+            </p>
+            <form action={processWaivers} className="flex items-center gap-3 flex-wrap">
+              <input type="hidden" name="leagueId" value={leagueId} />
+              <label htmlFor="waiver-week" className="text-sm text-white shrink-0">Week</label>
+              <input
+                id="waiver-week"
+                name="week"
+                type="number"
+                min={1}
+                max={18}
+                defaultValue={currentNFLWeek}
+                className="w-20 rounded border px-2 py-1 text-sm text-center tabular-nums"
+                style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
+              />
+              <button
+                type="submit"
+                className="rounded-md px-4 py-2 text-sm font-semibold"
+                style={{ background: "#FFD700", color: "#0d0d1a" }}
+              >
+                Process Waivers
+              </button>
+            </form>
+          </section>
+        )}
 
         {/* Sync player data */}
         <section className="flex flex-col gap-3 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>

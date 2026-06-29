@@ -38,7 +38,7 @@ export default async function FreeAgentsPage({
 
   const { data: league } = await supabase
     .from("uff_leagues")
-    .select("id, name, season, scoring_settings, draft_rounds, ir_spots")
+    .select("id, name, season, scoring_settings, draft_rounds, ir_spots, faab_budget")
     .eq("id", leagueId)
     .maybeSingle();
 
@@ -111,6 +111,31 @@ export default async function FreeAgentsPage({
 
   const hasProjections = Object.keys(projMap).length > 0;
 
+  // FAAB data — only needed when FAAB is enabled for this league
+  const faabEnabled = (league.faab_budget ?? 0) > 0;
+  let myBalance = 0;
+  let myBids: { id: string; player_id: string; bid_amount: number; drop_player_id: string | null; status: string }[] = [];
+
+  if (faabEnabled) {
+    // Get user's current FAAB balance
+    const { data: memberFaab } = await supabase
+      .from("league_members")
+      .select("faab_balance")
+      .eq("id", me.id)
+      .maybeSingle();
+    myBalance = memberFaab?.faab_balance ?? (league.faab_budget ?? 0);
+
+    // Get user's pending bids for this week
+    const { data: bidsRaw } = await supabase
+      .from("uff_waiver_bids")
+      .select("id, player_id, bid_amount, drop_player_id, status")
+      .eq("league_id", leagueId)
+      .eq("member_id", me.id)
+      .eq("week", week)
+      .eq("status", "pending");
+    myBids = bidsRaw ?? [];
+  }
+
   return (
     <div className="min-h-screen px-6 py-12 sm:px-12" style={{ background: "#0d0d1a", color: "#f4f4f8" }}>
       <main className="mx-auto flex max-w-3xl flex-col gap-8">
@@ -137,6 +162,14 @@ export default async function FreeAgentsPage({
                 {myIRCount} / {league.ir_spots}
               </span>
             </span>
+            {faabEnabled && (
+              <span>
+                FAAB:{" "}
+                <span className="font-semibold" style={{ color: "#FFD700" }}>
+                  ${myBalance} remaining
+                </span>
+              </span>
+            )}
             {!hasProjections && (
               <span style={{ color: "#f4f4f8" }}>
                 Projections available once the season starts (Sept 9)
@@ -170,6 +203,9 @@ export default async function FreeAgentsPage({
           maxActive={league.draft_rounds}
           week={week}
           myActiveRoster={myActiveRoster}
+          faabEnabled={faabEnabled}
+          myBalance={myBalance}
+          myBids={myBids}
         />
       </main>
     </div>
