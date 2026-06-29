@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { saveScoringSettings, generateSchedule, forceFinalize, syncPlayers } from "./actions";
+import { saveScoringSettings, generateSchedule, extendSchedule, saveLeagueSettings, seedPlayoffs, forceFinalize, syncPlayers } from "./actions";
 import { getCurrentNFLWeek } from "@/lib/nfl-utils";
 
 const PRESETS = {
@@ -101,7 +101,7 @@ export default async function SettingsPage({
 
   const { data: league } = await supabase
     .from("uff_leagues")
-    .select("id, name, commissioner_id, scoring_settings, draft_status, season, season_weeks")
+    .select("id, name, commissioner_id, scoring_settings, draft_status, season, season_weeks, playoff_teams, playoff_start_week, championship_week, median_scoring, trade_deadline_week")
     .eq("id", leagueId)
     .maybeSingle();
 
@@ -160,16 +160,47 @@ export default async function SettingsPage({
           </p>
         )}
 
-        {/* Schedule generator */}
+        {/* Schedule generator / extender */}
         <section className="flex flex-col gap-3 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>
           <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Matchup Schedule</h2>
           {scheduleExists ? (
-            <p className="text-sm text-white">
-              {league.season_weeks ?? 14}-week regular season schedule is generated. &mdash; View it on the{" "}
-              <Link href={`/dashboard/league/${leagueId}/matchups`} className="underline" style={{ color: "#0057FF" }}>
-                Matchups page
-              </Link>.
-            </p>
+            <>
+              <p className="text-sm text-white">
+                {league.season_weeks ?? 14}-week regular season schedule is generated. &mdash; View it on the{" "}
+                <Link href={`/dashboard/league/${leagueId}/matchups`} className="underline" style={{ color: "#0057FF" }}>
+                  Matchups page
+                </Link>.
+              </p>
+              {(league.season_weeks ?? 14) < 18 && (
+                <>
+                  <p className="text-sm" style={{ color: "#8888aa" }}>
+                    Extend the regular season by adding weeks. Completed weeks are preserved — only new empty weeks are added.
+                  </p>
+                  <form action={extendSchedule} className="flex items-center gap-3 flex-wrap">
+                    <input type="hidden" name="leagueId" value={leagueId} />
+                    <label htmlFor="new-weeks" className="text-sm text-white shrink-0">Extend to week</label>
+                    <select
+                      id="new-weeks"
+                      name="new_weeks"
+                      defaultValue={String((league.season_weeks ?? 14) + 1)}
+                      className="rounded-md px-3 py-2 text-sm font-medium"
+                      style={{ background: "#1c1c2b", color: "#fff", border: "1px solid #2a2a40" }}
+                    >
+                      {Array.from({ length: 18 - (league.season_weeks ?? 14) }, (_, i) => (league.season_weeks ?? 14) + i + 1).map((w) => (
+                        <option key={w} value={w}>Week {w}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="submit"
+                      className="rounded-md px-4 py-2 text-sm font-semibold"
+                      style={{ background: "#FFD700", color: "#0d0d1a" }}
+                    >
+                      Extend Schedule
+                    </button>
+                  </form>
+                </>
+              )}
+            </>
           ) : (
             <>
               <p className="text-sm text-white">
@@ -200,6 +231,129 @@ export default async function SettingsPage({
             </>
           )}
         </section>
+
+        {/* Playoff & league settings */}
+        <section className="flex flex-col gap-3 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>
+          <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Playoffs &amp; League Rules</h2>
+          <p className="text-sm" style={{ color: "#8888aa" }}>
+            Configure playoff structure, championship week, and scoring rules. Changes take effect immediately.
+          </p>
+          <form action={saveLeagueSettings} className="flex flex-col gap-4">
+            <input type="hidden" name="leagueId" value={leagueId} />
+
+            {/* Playoff teams */}
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <label className="text-sm font-medium text-white">Playoff Teams</label>
+                <span className="text-xs" style={{ color: "#6b6b8a" }}>How many teams qualify for playoffs</span>
+              </div>
+              <select
+                name="playoff_teams"
+                defaultValue={String(league.playoff_teams ?? 6)}
+                className="rounded-md px-3 py-2 text-sm font-medium"
+                style={{ background: "#1c1c2b", color: "#fff", border: "1px solid #2a2a40" }}
+              >
+                {[4, 6, 8].map((n) => <option key={n} value={n}>{n} teams</option>)}
+              </select>
+            </div>
+
+            {/* Playoff start week */}
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <label className="text-sm font-medium text-white">Playoffs Start Week</label>
+                <span className="text-xs" style={{ color: "#6b6b8a" }}>First week of playoff games (wildcard round)</span>
+              </div>
+              <select
+                name="playoff_start_week"
+                defaultValue={String(league.playoff_start_week ?? 15)}
+                className="rounded-md px-3 py-2 text-sm font-medium"
+                style={{ background: "#1c1c2b", color: "#fff", border: "1px solid #2a2a40" }}
+              >
+                {[14, 15, 16, 17].map((w) => <option key={w} value={w}>Week {w}</option>)}
+              </select>
+            </div>
+
+            {/* Championship week */}
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <label className="text-sm font-medium text-white">Championship Week</label>
+                <span className="text-xs" style={{ color: "#6b6b8a" }}>Final matchup — can be week 17 or 18</span>
+              </div>
+              <select
+                name="championship_week"
+                defaultValue={String(league.championship_week ?? 17)}
+                className="rounded-md px-3 py-2 text-sm font-medium"
+                style={{ background: "#1c1c2b", color: "#fff", border: "1px solid #2a2a40" }}
+              >
+                {[16, 17, 18].map((w) => <option key={w} value={w}>Week {w}</option>)}
+              </select>
+            </div>
+
+            {/* Trade deadline */}
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <label className="text-sm font-medium text-white">Trade Deadline</label>
+                <span className="text-xs" style={{ color: "#6b6b8a" }}>Trades blocked after this week. Leave blank for no deadline.</span>
+              </div>
+              <input
+                name="trade_deadline_week"
+                type="number"
+                min={1}
+                max={18}
+                defaultValue={league.trade_deadline_week ?? ""}
+                placeholder="None"
+                className="w-24 rounded border px-2 py-1 text-sm text-center tabular-nums"
+                style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
+              />
+            </div>
+
+            {/* Median scoring */}
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <label className="text-sm font-medium text-white">Play Against Median Score</label>
+                <span className="text-xs" style={{ color: "#6b6b8a" }}>Each week: bonus W if you beat the league median, bonus L if you don&apos;t</span>
+              </div>
+              <select
+                name="median_scoring"
+                defaultValue={league.median_scoring ? "1" : "0"}
+                className="rounded-md px-3 py-2 text-sm font-medium"
+                style={{ background: "#1c1c2b", color: "#fff", border: "1px solid #2a2a40" }}
+              >
+                <option value="0">Off</option>
+                <option value="1">On</option>
+              </select>
+            </div>
+
+            <button
+              type="submit"
+              className="self-start rounded-md px-4 py-2 text-sm font-semibold"
+              style={{ background: "#0057FF", color: "#f4f4f8" }}
+            >
+              Save League Settings
+            </button>
+          </form>
+        </section>
+
+        {/* Seed playoffs */}
+        {scheduleExists && (
+          <section className="flex flex-col gap-3 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>
+            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Seed Playoff Bracket</h2>
+            <p className="text-sm text-white">
+              Seeds all playoff teams by final standings (wins → points for). Run this after the regular season ends.
+              Generates the wildcard matchups and sets up the bracket.
+            </p>
+            <form action={seedPlayoffs}>
+              <input type="hidden" name="leagueId" value={leagueId} />
+              <button
+                type="submit"
+                className="rounded-md px-4 py-2 text-sm font-semibold"
+                style={{ background: "#FFD700", color: "#0d0d1a" }}
+              >
+                Seed Playoffs &rarr;
+              </button>
+            </form>
+          </section>
+        )}
 
         {/* Force finalize */}
         <section className="flex flex-col gap-3 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>

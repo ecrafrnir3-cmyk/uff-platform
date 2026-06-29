@@ -14,6 +14,7 @@ const BASE_NAV = [
   { label: "Transactions",  href: "/transactions" },
   { label: "Record Book",   href: "/record-book" },
   { label: "Trade Block",   href: "/trade-block" },
+  { label: "Playoffs",      href: "/playoffs" },
 ];
 
 const COMMISSIONER_NAV = [

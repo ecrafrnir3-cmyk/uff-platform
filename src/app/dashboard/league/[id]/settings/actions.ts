@@ -86,6 +86,85 @@ export async function forceFinalize(formData: FormData) {
   redirect(`/dashboard/league/${leagueId}/settings?saved=1`);
 }
 
+export async function extendSchedule(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const leagueId  = formData.get("leagueId") as string;
+  const newWeeks  = parseInt(formData.get("new_weeks") as string, 10);
+
+  if (isNaN(newWeeks) || newWeeks < 1 || newWeeks > 18) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("Invalid week count (must be 1–18).")}`);
+  }
+
+  const { error } = await supabase.rpc("extend_schedule", {
+    p_league_id: leagueId,
+    p_user_id:   user.id,
+    p_new_weeks: newWeeks,
+  });
+
+  if (error) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=` + encodeURIComponent(error.message));
+  }
+
+  revalidatePath(`/dashboard/league/${leagueId}/matchups`);
+  redirect(`/dashboard/league/${leagueId}/settings?saved=1`);
+}
+
+export async function saveLeagueSettings(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const leagueId           = formData.get("leagueId") as string;
+  const playoffTeams       = parseInt(formData.get("playoff_teams") as string, 10);
+  const playoffStartWeek   = parseInt(formData.get("playoff_start_week") as string, 10);
+  const championshipWeek   = parseInt(formData.get("championship_week") as string, 10);
+  const medianScoring      = formData.get("median_scoring") === "1";
+  const tradeDeadlineRaw   = formData.get("trade_deadline_week") as string;
+  const tradeDeadlineWeek  = tradeDeadlineRaw ? parseInt(tradeDeadlineRaw, 10) : null;
+
+  const { error } = await supabase
+    .from("uff_leagues")
+    .update({
+      playoff_teams:       playoffTeams,
+      playoff_start_week:  playoffStartWeek,
+      championship_week:   championshipWeek,
+      median_scoring:      medianScoring,
+      trade_deadline_week: tradeDeadlineWeek,
+    })
+    .eq("id", leagueId)
+    .eq("commissioner_id", user.id);
+
+  if (error) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=` + encodeURIComponent(error.message));
+  }
+
+  revalidatePath(`/dashboard/league/${leagueId}/settings`);
+  redirect(`/dashboard/league/${leagueId}/settings?saved=1`);
+}
+
+export async function seedPlayoffs(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const leagueId = formData.get("leagueId") as string;
+
+  const { error } = await supabase.rpc("seed_playoffs", {
+    p_league_id: leagueId,
+    p_user_id:   user.id,
+  });
+
+  if (error) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=` + encodeURIComponent(error.message));
+  }
+
+  revalidatePath(`/dashboard/league/${leagueId}/playoffs`);
+  redirect(`/dashboard/league/${leagueId}/playoffs`);
+}
+
 export async function syncPlayers(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
