@@ -53,6 +53,13 @@ export default async function FreeAgentsPage({
 
   if (!me) redirect("/dashboard?error=" + encodeURIComponent("You're not a member of that league."));
 
+  // Can't Cut List for this league
+  const { data: cantCutRows } = await supabase
+    .from("uff_cant_cut_list")
+    .select("player_id")
+    .eq("league_id", leagueId);
+  const cantCutPlayerIds = (cantCutRows ?? []).map((r) => r.player_id);
+
   // My roster counts
   const { data: myRosterRaw } = await supabase
     .from("uff_roster_players")
@@ -266,6 +273,7 @@ export default async function FreeAgentsPage({
           myBids={myBids}
           bidPlayerNames={bidPlayerNames}
           isEliminated={!!me.eliminated_at}
+          cantCutPlayerIds={cantCutPlayerIds}
         />
       </main>
     </div>

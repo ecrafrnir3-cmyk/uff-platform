@@ -8,13 +8,27 @@ export default function DropButton({
   playerId,
   playerName,
   returnTo = "roster",
+  cantCut = false,
 }: {
   leagueId: string;
   playerId: string;
   playerName: string;
   returnTo?: string;
+  cantCut?: boolean;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
+
+  if (cantCut) {
+    return (
+      <span
+        className="rounded px-2 py-0.5 text-xs font-semibold"
+        title="This player is on the Can't Cut List"
+        style={{ background: "rgba(204,0,0,0.12)", color: "#CC0000", border: "1px solid #CC000033" }}
+      >
+        Protected
+      </span>
+    );
+  }
 
   return (
     <form ref={formRef} action={dropPlayer}>

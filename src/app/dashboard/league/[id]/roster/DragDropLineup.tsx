@@ -98,6 +98,7 @@ export default function DragDropLineup({
   playerPowers,
   irSlotsAvailable = 0,
   quickFeetAvailable = false,
+  cantCutPlayerIds = [],
 }: {
   leagueId: string;
   week: number;
@@ -111,7 +112,9 @@ export default function DragDropLineup({
   playerPowers?: Record<string, { emoji: string; name: string }>;
   irSlotsAvailable?: number;
   quickFeetAvailable?: boolean;
+  cantCutPlayerIds?: string[];
 }) {
+  const cantCutSet = new Set(cantCutPlayerIds);
   const [assignments, setAssignments] = useState<Record<string, string>>(currentLineup);
   // selected: { id: player_id, source: slot-name | "bench" }
   const [selected, setSelected] = useState<{ id: string; source: string } | null>(null);
@@ -660,7 +663,12 @@ export default function DragDropLineup({
                   )}
                   {/* Drop button */}
                   <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
-                    <DropButton leagueId={leagueId} playerId={p.player_id} playerName={p.full_name} />
+                    <DropButton
+                      leagueId={leagueId}
+                      playerId={p.player_id}
+                      playerName={p.full_name}
+                      cantCut={cantCutSet.has(p.player_id)}
+                    />
                   </div>
                 </div>
               );

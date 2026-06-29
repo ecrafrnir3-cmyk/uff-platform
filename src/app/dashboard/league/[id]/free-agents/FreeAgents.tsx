@@ -59,6 +59,7 @@ export default function FreeAgents({
   myBids = [],
   bidPlayerNames = {},
   isEliminated = false,
+  cantCutPlayerIds = [],
 }: {
   leagueId: string;
   rosteredIds: string[];
@@ -73,6 +74,7 @@ export default function FreeAgents({
   myBids?: WaiverBid[];
   bidPlayerNames?: Record<string, string>;
   isEliminated?: boolean;
+  cantCutPlayerIds?: string[];
 }) {
   const [search, setSearch] = useState("");
   const [posFilter, setPosFilter] = useState("ALL");
@@ -92,6 +94,7 @@ export default function FreeAgents({
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   const rosteredSet = new Set(rosteredIds);
+  const cantCutSet  = new Set(cantCutPlayerIds);
 
   useEffect(() => {
     const fetchPlayers = async () => {
@@ -376,8 +379,12 @@ export default function FreeAgents({
             >
               <option value="">— Choose a player to drop —</option>
               {myActiveRoster.map((rp) => (
-                <option key={rp.player_id} value={rp.player_id}>
-                  [{(rp.position ?? "?").toUpperCase()}] {rp.full_name}
+                <option
+                  key={rp.player_id}
+                  value={rp.player_id}
+                  disabled={cantCutSet.has(rp.player_id)}
+                >
+                  [{(rp.position ?? "?").toUpperCase()}] {rp.full_name}{cantCutSet.has(rp.player_id) ? " (Protected)" : ""}
                 </option>
               ))}
             </select>
@@ -570,8 +577,12 @@ export default function FreeAgents({
                     >
                       <option value="">{rosterFull ? "— Select drop (required) —" : "— Drop player (optional) —"}</option>
                       {myActiveRoster.map((rp) => (
-                        <option key={rp.player_id} value={rp.player_id}>
-                          [{(rp.position ?? "?").toUpperCase()}] {rp.full_name}
+                        <option
+                          key={rp.player_id}
+                          value={rp.player_id}
+                          disabled={cantCutSet.has(rp.player_id)}
+                        >
+                          [{(rp.position ?? "?").toUpperCase()}] {rp.full_name}{cantCutSet.has(rp.player_id) ? " (Protected)" : ""}
                         </option>
                       ))}
                     </select>

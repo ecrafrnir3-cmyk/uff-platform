@@ -218,6 +218,54 @@ export async function seedPlayoffs(formData: FormData) {
   redirect(`/dashboard/league/${leagueId}/playoffs`);
 }
 
+export async function addToCantCutList(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const leagueId = formData.get("leagueId") as string;
+  const playerId  = formData.get("playerId")  as string;
+
+  if (!playerId) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("No player selected.")}`);
+  }
+
+  const { error } = await supabase.rpc("add_to_cant_cut", {
+    p_league_id: leagueId,
+    p_user_id:   user.id,
+    p_player_id: playerId,
+  });
+
+  if (error) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath(`/dashboard/league/${leagueId}/settings`);
+  redirect(`/dashboard/league/${leagueId}/settings?saved=1#cant-cut`);
+}
+
+export async function removeFromCantCutList(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const leagueId = formData.get("leagueId") as string;
+  const playerId  = formData.get("playerId")  as string;
+
+  const { error } = await supabase.rpc("remove_from_cant_cut", {
+    p_league_id: leagueId,
+    p_user_id:   user.id,
+    p_player_id: playerId,
+  });
+
+  if (error) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath(`/dashboard/league/${leagueId}/settings`);
+  redirect(`/dashboard/league/${leagueId}/settings?saved=1#cant-cut`);
+}
+
 export async function syncPlayers(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();

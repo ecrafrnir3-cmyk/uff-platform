@@ -367,6 +367,13 @@ export default async function RosterPage({
 
   const quickFeetAvailable = !!qfToken;
 
+  // ── Can't Cut List ─────────────────────────────────────────────────────────
+  const { data: cantCutRows } = await supabase
+    .from("uff_cant_cut_list")
+    .select("player_id")
+    .eq("league_id", leagueId);
+  const cantCutSet = new Set((cantCutRows ?? []).map((r) => r.player_id));
+
   // ── Token 9 (Recon): reveal opponent's token ────────────────────────────────────────
   let opponentTokenId: number | null = null;
   if (weeklyToken?.token_id === 9 && weeklyToken.status === "pending") {
@@ -632,6 +639,7 @@ export default async function RosterPage({
             playerPowers={Object.keys(playerPowers).length > 0 ? playerPowers : undefined}
             irSlotsAvailable={irSlotsTotal - irSlotsUsed}
             quickFeetAvailable={quickFeetAvailable}
+            cantCutPlayerIds={[...cantCutSet]}
           />
         )}
 
@@ -881,6 +889,7 @@ export default async function RosterPage({
                       leagueId={leagueId}
                       playerId={r.player_id}
                       playerName={player?.full_name ?? r.player_id}
+                      cantCut={cantCutSet.has(r.player_id)}
                     />
                   </div>
                 );

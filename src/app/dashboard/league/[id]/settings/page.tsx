@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { saveScoringSettings, generateSchedule, extendSchedule, saveLeagueSettings, seedPlayoffs, forceFinalize, syncPlayers, processWaivers } from "./actions";
+import { saveScoringSettings, generateSchedule, extendSchedule, saveLeagueSettings, seedPlayoffs, forceFinalize, syncPlayers, processWaivers, addToCantCutList, removeFromCantCutList } from "./actions";
+import CantCutManager from "./CantCutManager";
 import { approveTrade, vetoTrade } from "../trade-actions";
 import { getCurrentNFLWeek } from "@/lib/nfl-utils";
 
@@ -152,6 +153,22 @@ export default async function SettingsPage({
     for (const m of rMembers ?? []) reviewMemberNames[m.id] = m.team_name;
   }
   const savedSettings: Record<string, number> = league.scoring_settings ?? {};
+
+  // Can't Cut List
+  const { data: cantCutRows } = await supabase
+    .from("uff_cant_cut_list")
+    .select("player_id")
+    .eq("league_id", leagueId);
+  const cantCutPlayerIds = (cantCutRows ?? []).map((r) => r.player_id);
+
+  let cantCutPlayers: { id: string; full_name: string; position: string | null; team: string | null }[] = [];
+  if (cantCutPlayerIds.length > 0) {
+    const { data: ccPlayers } = await supabase
+      .from("players")
+      .select("id, full_name, position, team")
+      .in("id", cantCutPlayerIds);
+    cantCutPlayers = ccPlayers ?? [];
+  }
 
   // Apply preset if requested via ?preset= query param
   const validPreset = preset === "Full PPR" || preset === "Half PPR" || preset === "Standard" ? preset : null;
@@ -710,6 +727,56 @@ export default async function SettingsPage({
               Sync Players
             </button>
           </form>
+        </section>
+
+        {/* Can't Cut List */}
+        <section id="cant-cut" className="flex flex-col gap-4 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Can&apos;t Cut List</h2>
+            <p className="text-sm" style={{ color: "#8888aa" }}>
+              Players on this list cannot be dropped by any team. Useful for protecting marquee players from being cut to the waiver wire.
+            </p>
+          </div>
+
+          {/* Current list */}
+          {cantCutPlayers.length > 0 ? (
+            <div className="flex flex-col gap-1">
+              {cantCutPlayers.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
+                  style={{ borderColor: "#CC000033", background: "rgba(204,0,0,0.04)" }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="inline-block rounded px-1.5 py-0.5 text-xs font-bold uppercase"
+                      style={{ background: "#CC000022", color: "#CC0000" }}
+                    >
+                      {(p.position ?? "?").toUpperCase()}
+                    </span>
+                    <span className="text-sm font-semibold">{p.full_name}</span>
+                    <span className="text-xs" style={{ color: "#6b6b8a" }}>{p.team ?? "FA"}</span>
+                  </div>
+                  <form action={removeFromCantCutList}>
+                    <input type="hidden" name="leagueId" value={leagueId} />
+                    <input type="hidden" name="playerId" value={p.id} />
+                    <button
+                      type="submit"
+                      className="rounded px-2 py-1 text-xs font-semibold"
+                      style={{ background: "rgba(204,0,0,0.12)", color: "#CC0000", border: "1px solid #CC000033" }}
+                    >
+                      Remove
+                    </button>
+                  </form>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm" style={{ color: "#6b6b8a" }}>No players protected. Use the form below to add players.</p>
+          )}
+
+          {/* Add player — client component with search */}
+          <CantCutManager leagueId={leagueId} cantCutPlayerIds={cantCutPlayerIds} />
         </section>
 
         {/* Scoring settings */}
