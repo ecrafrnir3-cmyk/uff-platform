@@ -60,6 +60,8 @@ export default function FreeAgents({
   bidPlayerNames = {},
   isEliminated = false,
   cantCutPlayerIds = [],
+  waiverType = "faab",
+  myPriority = null,
 }: {
   leagueId: string;
   rosteredIds: string[];
@@ -75,6 +77,8 @@ export default function FreeAgents({
   bidPlayerNames?: Record<string, string>;
   isEliminated?: boolean;
   cantCutPlayerIds?: string[];
+  waiverType?: "faab" | "priority";
+  myPriority?: number | null;
 }) {
   const [search, setSearch] = useState("");
   const [posFilter, setPosFilter] = useState("ALL");
@@ -84,6 +88,9 @@ export default function FreeAgents({
   // ── Instant-add mode state ──────────────────────────────────────────────────
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [dropPlayerId, setDropPlayerId] = useState<string>("");
+
+  // Derived: are we in priority waiver mode?
+  const isPriorityMode = waiverType === "priority";
 
   // ── FAAB mode state ─────────────────────────────────────────────────────────
   // bid form open + input per player
@@ -183,15 +190,18 @@ export default function FreeAgents({
     const form = bidForm[player.id];
     if (!form) return;
 
-    const amount = parseInt(form.amount, 10);
-    if (isNaN(amount) || amount < 0) {
-      setBidError("Enter a valid bid amount (0 or more).");
-      return;
+    if (!isPriorityMode) {
+      const amount = parseInt(form.amount, 10);
+      if (isNaN(amount) || amount < 0) {
+        setBidError("Enter a valid bid amount (0 or more).");
+        return;
+      }
+      if (amount > myBalance) {
+        setBidError(`Bid exceeds your balance ($${myBalance}).`);
+        return;
+      }
     }
-    if (amount > myBalance) {
-      setBidError(`Bid exceeds your balance ($${myBalance}).`);
-      return;
-    }
+
     if (rosterFull && !form.dropId) {
       setBidError("Your roster is full — select a player to drop.");
       return;
@@ -202,7 +212,7 @@ export default function FreeAgents({
     const fd = new FormData();
     fd.append("leagueId", leagueId);
     fd.append("playerId", player.id);
-    fd.append("bidAmount", String(amount));
+    fd.append("bidAmount", isPriorityMode ? "0" : form.amount);
     fd.append("dropPlayerId", form.dropId);
     fd.append("week", String(week));
 
@@ -210,8 +220,6 @@ export default function FreeAgents({
     if (result.error) {
       setBidError(result.error);
     } else {
-      // Fetch real bids from DB so we have the actual UUID for cancellation
-      // RLS ensures we only see our own pending bids
       const { data: freshBids } = await supabase
         .from("uff_waiver_bids")
         .select("id, player_id, bid_amount, drop_player_id, status")
@@ -274,11 +282,39 @@ export default function FreeAgents({
         </div>
       )}
 
-      {/* ── Pending bids this week ──────────────────────────────────────────── */}
-      {faabEnabled && pendingBids.length > 0 && (
+      {/* ── Priority waiver banner ──────────────────────────────────────────── */}
+      {isPriorityMode && (
+        <div
+          className="flex items-center justify-between rounded-lg border px-4 py-3"
+          style={{ borderColor: "#0057FF44", background: "rgba(0,87,255,0.04)" }}
+        >
+          <div className="flex flex-col gap-0.5">
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#0057FF" }}>
+              Waiver Priority
+            </p>
+            <p className="text-2xl font-black tabular-nums" style={{ color: "#0057FF" }}>
+              {myPriority != null ? `#${myPriority}` : "Not set"}
+            </p>
+            <p className="text-xs" style={{ color: "#8888aa" }}>
+              Lowest number claims first. Winners move to the back of the queue.
+            </p>
+          </div>
+          {pendingBids.length > 0 && (
+            <div
+              className="rounded-full px-3 py-1 text-xs font-bold"
+              style={{ background: "rgba(0,87,255,0.12)", color: "#0057FF", border: "1px solid #0057FF33" }}
+            >
+              {pendingBids.length} pending claim{pendingBids.length !== 1 ? "s" : ""}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Pending bids / claims this week ────────────────────────────────── */}
+      {(faabEnabled || isPriorityMode) && pendingBids.length > 0 && (
         <div className="flex flex-col gap-2">
           <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#6b6b8a" }}>
-            My Bids · Week {week}
+            {isPriorityMode ? "My Claims" : "My Bids"} · Week {week}
           </p>
           {pendingBids.map((bid) => {
             const dropName = myActiveRoster.find((r) => r.player_id === bid.drop_player_id)?.full_name;
@@ -298,12 +334,14 @@ export default function FreeAgents({
                     </p>
                   )}
                 </div>
-                <span
-                  className="text-sm font-black tabular-nums shrink-0"
-                  style={{ color: "#FFD700" }}
-                >
-                  ${bid.bid_amount}
-                </span>
+                {!isPriorityMode && (
+                  <span
+                    className="text-sm font-black tabular-nums shrink-0"
+                    style={{ color: "#FFD700" }}
+                  >
+                    ${bid.bid_amount}
+                  </span>
+                )}
                 <button
                   disabled={cancellingId === bid.id}
                   onClick={() => handleCancelBid(bid.id)}
@@ -356,6 +394,11 @@ export default function FreeAgents({
         {faabEnabled && (
           <p className="text-xs" style={{ color: "#8888aa" }}>
             Click <strong style={{ color: "#0057FF" }}>Bid</strong> to submit a FAAB waiver claim. Bids are sealed until the commissioner processes waivers.
+          </p>
+        )}
+        {isPriorityMode && (
+          <p className="text-xs" style={{ color: "#8888aa" }}>
+            Click <strong style={{ color: "#0057FF" }}>Claim</strong> to queue a waiver claim. Claims process in priority order — your #1 pick gets first shot.
           </p>
         )}
       </div>
@@ -498,13 +541,18 @@ export default function FreeAgents({
                   >
                     🔒 Locked
                   </span>
-                ) : faabEnabled ? (
+                ) : faabEnabled || isPriorityMode ? (
                   hasBid && !form ? (
-                    // Has an existing bid — show bid amount + edit button
+                    // Has an existing bid/claim — show status + edit button
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="text-xs font-bold tabular-nums" style={{ color: "#0057FF" }}>
-                        ${existingBid?.bid_amount ?? 0}
-                      </span>
+                      {!isPriorityMode && (
+                        <span className="text-xs font-bold tabular-nums" style={{ color: "#0057FF" }}>
+                          ${existingBid?.bid_amount ?? 0}
+                        </span>
+                      )}
+                      {isPriorityMode && (
+                        <span className="text-xs font-bold" style={{ color: "#0057FF" }}>Claimed</span>
+                      )}
                       <button
                         onClick={() => {
                           setBidForm((prev) => ({
@@ -515,7 +563,7 @@ export default function FreeAgents({
                         className="shrink-0 rounded-md px-2.5 py-1.5 text-xs font-semibold"
                         style={{ background: "#1c1c2b", color: "#0057FF", border: "1px solid #0057FF44" }}
                       >
-                        Edit
+                        {isPriorityMode ? "Cancel" : "Edit"}
                       </button>
                     </div>
                   ) : form ? null : (
@@ -524,7 +572,7 @@ export default function FreeAgents({
                       className="shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold"
                       style={{ background: "#0057FF", color: "#f4f4f8" }}
                     >
-                      Bid
+                      {isPriorityMode ? "Claim" : "Bid"}
                     </button>
                   )
                 ) : (
@@ -540,31 +588,34 @@ export default function FreeAgents({
                 )}
               </div>
 
-              {/* ── FAAB bid form (inline) ──────────────────────────────────────── */}
-              {faabEnabled && form && (
+              {/* ── Bid / Claim form (inline) ───────────────────────────────────── */}
+              {(faabEnabled || isPriorityMode) && form && (
                 <div
                   className="mt-1 flex flex-col gap-2 rounded-lg border p-3"
                   style={{ borderColor: "#0057FF33", background: "rgba(0,87,255,0.04)" }}
                 >
                   <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#0057FF" }}>
-                    Submit FAAB Bid — {p.full_name}
+                    {isPriorityMode ? `Claim ${p.full_name}` : `Submit FAAB Bid — ${p.full_name}`}
                   </p>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-semibold" style={{ color: "#FFD700" }}>$</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={myBalance}
-                        value={form.amount}
-                        onChange={(e) =>
-                          setBidForm((prev) => ({ ...prev, [p.id]: { ...prev[p.id], amount: e.target.value } }))
-                        }
-                        className="w-20 rounded border px-2 py-1 text-sm text-center tabular-nums"
-                        style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
-                      />
-                      <span className="text-xs" style={{ color: "#8888aa" }}>/ ${myBalance}</span>
-                    </div>
+                    {/* FAAB amount — hidden for priority mode */}
+                    {!isPriorityMode && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-semibold" style={{ color: "#FFD700" }}>$</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={myBalance}
+                          value={form.amount}
+                          onChange={(e) =>
+                            setBidForm((prev) => ({ ...prev, [p.id]: { ...prev[p.id], amount: e.target.value } }))
+                          }
+                          className="w-20 rounded border px-2 py-1 text-sm text-center tabular-nums"
+                          style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
+                        />
+                        <span className="text-xs" style={{ color: "#8888aa" }}>/ ${myBalance}</span>
+                      </div>
+                    )}
 
                     {/* Drop selector — required if full, optional otherwise */}
                     <select
@@ -595,7 +646,11 @@ export default function FreeAgents({
                       className="rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
                       style={{ background: "#0057FF", color: "#f4f4f8" }}
                     >
-                      {bidSubmitting === p.id ? "Submitting…" : hasBid ? "Update Bid" : "Submit Bid"}
+                      {bidSubmitting === p.id
+                        ? "Submitting…"
+                        : isPriorityMode
+                          ? (hasBid ? "Update Claim" : "Submit Claim")
+                          : (hasBid ? "Update Bid" : "Submit Bid")}
                     </button>
                     <button
                       onClick={() => closeBidForm(p.id)}

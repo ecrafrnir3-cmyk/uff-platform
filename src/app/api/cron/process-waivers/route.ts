@@ -14,6 +14,7 @@ interface LeagueRow {
   commissioner_id: string;
   waiver_day: number;
   waiver_hour: number;
+  waiver_type: "faab" | "priority";
 }
 
 export async function GET(req: NextRequest) {
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest) {
   // Find leagues with auto-waiver enabled for this exact ET day + hour
   const { data: leagues, error: fetchErr } = await supabase
     .from("uff_leagues")
-    .select("id, name, commissioner_id, waiver_day, waiver_hour")
+    .select("id, name, commissioner_id, waiver_day, waiver_hour, waiver_type")
     .eq("waiver_auto", true)
     .eq("waiver_day", etDow)
     .eq("waiver_hour", etHour)
@@ -63,11 +64,17 @@ export async function GET(req: NextRequest) {
 
   const results = [];
   for (const league of leagues) {
-    const { data, error } = await supabase.rpc("process_waiver_bids", {
-      p_league_id: league.id,
-      p_user_id:   league.commissioner_id,
-      p_week:      week,
-    });
+    const isFaab = league.waiver_type !== "priority";
+    const { data, error } = isFaab
+      ? await supabase.rpc("process_waiver_bids", {
+          p_league_id: league.id,
+          p_user_id:   league.commissioner_id,
+          p_week:      week,
+        })
+      : await supabase.rpc("process_priority_waivers", {
+          p_league_id: league.id,
+          p_week:      week,
+        });
     results.push({
       league_id:   league.id,
       league_name: league.name,

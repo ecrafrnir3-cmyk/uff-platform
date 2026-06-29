@@ -134,6 +134,8 @@ export async function saveLeagueSettings(formData: FormData) {
   const waiverAuto          = formData.get("waiver_auto") === "1";
   const waiverDay           = parseInt((formData.get("waiver_day")  as string) ?? "3", 10);
   const waiverHour          = parseInt((formData.get("waiver_hour") as string) ?? "3", 10);
+  const waiverTypeRaw       = formData.get("waiver_type") as string;
+  const waiverType          = waiverTypeRaw === "priority" ? "priority" : "faab";
 
   const { error } = await supabase
     .from("uff_leagues")
@@ -150,6 +152,7 @@ export async function saveLeagueSettings(formData: FormData) {
       waiver_auto:          waiverAuto,
       waiver_day:           isNaN(waiverDay)  ? 3 : Math.min(6, Math.max(0, waiverDay)),
       waiver_hour:          isNaN(waiverHour) ? 3 : Math.min(23, Math.max(0, waiverHour)),
+      waiver_type:          waiverType,
     })
     .eq("id", leagueId)
     .eq("commissioner_id", user.id);
@@ -176,18 +179,18 @@ export async function processWaivers(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const leagueId = formData.get("leagueId") as string;
-  const week     = parseInt(formData.get("week") as string, 10);
+  const leagueId   = formData.get("leagueId") as string;
+  const week       = parseInt(formData.get("week") as string, 10);
+  const waiverType = formData.get("waiver_type") as string;
 
   if (isNaN(week) || week < 1 || week > 18) {
     redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("Invalid week.")}`);
   }
 
-  const { data, error } = await supabase.rpc("process_waiver_bids", {
-    p_league_id: leagueId,
-    p_user_id:   user.id,
-    p_week:      week,
-  });
+  const isPriority = waiverType === "priority";
+  const { data, error } = isPriority
+    ? await supabase.rpc("process_priority_waivers", { p_league_id: leagueId, p_week: week })
+    : await supabase.rpc("process_waiver_bids", { p_league_id: leagueId, p_user_id: user.id, p_week: week });
 
   if (error) {
     redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent(error.message)}`);
@@ -196,6 +199,38 @@ export async function processWaivers(formData: FormData) {
   revalidatePath(`/dashboard/league/${leagueId}/free-agents`);
   revalidatePath(`/dashboard/league/${leagueId}/roster`);
   redirect(`/dashboard/league/${leagueId}/settings?saved=1&claims=${data ?? 0}`);
+}
+
+export async function resetWaiverPriority(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const leagueId = formData.get("leagueId") as string;
+  const season   = parseInt(formData.get("season") as string, 10);
+
+  // Verify commissioner
+  const { data: league } = await supabase
+    .from("uff_leagues")
+    .select("commissioner_id")
+    .eq("id", leagueId)
+    .maybeSingle();
+  if (league?.commissioner_id !== user.id) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=` + encodeURIComponent("Not authorized."));
+  }
+
+  const { error } = await supabase.rpc("reset_waiver_priority", {
+    p_league_id: leagueId,
+    p_season:    season,
+  });
+
+  if (error) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath(`/dashboard/league/${leagueId}/settings`);
+  revalidatePath(`/dashboard/league/${leagueId}/free-agents`);
+  redirect(`/dashboard/league/${leagueId}/settings?saved=1`);
 }
 
 export async function seedPlayoffs(formData: FormData) {

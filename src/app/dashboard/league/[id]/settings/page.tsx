@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { saveScoringSettings, generateSchedule, extendSchedule, saveLeagueSettings, seedPlayoffs, forceFinalize, syncPlayers, processWaivers, addToCantCutList, removeFromCantCutList } from "./actions";
+import { saveScoringSettings, generateSchedule, extendSchedule, saveLeagueSettings, seedPlayoffs, forceFinalize, syncPlayers, processWaivers, resetWaiverPriority, addToCantCutList, removeFromCantCutList } from "./actions";
 import CantCutManager from "./CantCutManager";
 import { approveTrade, vetoTrade } from "../trade-actions";
 import { getCurrentNFLWeek } from "@/lib/nfl-utils";
@@ -103,7 +103,7 @@ export default async function SettingsPage({
 
   const { data: league } = await supabase
     .from("uff_leagues")
-    .select("id, name, commissioner_id, scoring_settings, draft_status, season, season_weeks, playoff_teams, playoff_start_week, championship_week, median_scoring, trade_deadline_week, faab_budget, commissioner_review, max_adds_per_week, max_adds_per_season, waiver_auto, waiver_day, waiver_hour")
+    .select("id, name, commissioner_id, scoring_settings, draft_status, season, season_weeks, playoff_teams, playoff_start_week, championship_week, median_scoring, trade_deadline_week, faab_budget, commissioner_review, max_adds_per_week, max_adds_per_season, waiver_auto, waiver_day, waiver_hour, waiver_type")
     .eq("id", leagueId)
     .maybeSingle();
 
@@ -594,10 +594,10 @@ export default async function SettingsPage({
           </form>
         </section>
 
-        {/* Process waivers (only shown when FAAB is enabled) */}
-        {(league.faab_budget ?? 0) > 0 && (
+        {/* Waiver settings (shown when FAAB budget set OR using priority waivers) */}
+        {((league.faab_budget ?? 0) > 0 || (league.waiver_type ?? "faab") === "priority") && (
           <section className="flex flex-col gap-4 rounded-lg border p-5" style={{ borderColor: "#FFD70044" }}>
-            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>FAAB Waivers</h2>
+            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Waiver Settings</h2>
 
             {/* Auto-schedule config */}
             <form action={saveLeagueSettings} className="flex flex-col gap-4">
@@ -612,6 +612,25 @@ export default async function SettingsPage({
               <input type="hidden" name="commissioner_review" value={league.commissioner_review ? "1" : "0"} />
               <input type="hidden" name="max_adds_per_week"   value={String(league.max_adds_per_week ?? 0)} />
               <input type="hidden" name="max_adds_per_season" value={String(league.max_adds_per_season ?? 0)} />
+
+              {/* Waiver system type */}
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col gap-0.5">
+                  <label className="text-sm font-medium text-white">Waiver System</label>
+                  <span className="text-xs" style={{ color: "#6b6b8a" }}>
+                    FAAB: blind bidding. Priority: inverse standings order.
+                  </span>
+                </div>
+                <select
+                  name="waiver_type"
+                  defaultValue={league.waiver_type ?? "faab"}
+                  className="rounded-md px-3 py-2 text-sm font-medium"
+                  style={{ background: "#1c1c2b", color: "#fff", border: "1px solid #2a2a40" }}
+                >
+                  <option value="faab">FAAB (blind bid)</option>
+                  <option value="priority">Priority (inverse standings)</option>
+                </select>
+              </div>
 
               <div className="flex items-center justify-between gap-4">
                 <div className="flex flex-col gap-0.5">
@@ -682,11 +701,13 @@ export default async function SettingsPage({
             <div className="flex flex-col gap-2">
               <p className="text-sm text-white font-medium">Manual Processing</p>
               <p className="text-sm" style={{ color: "#8888aa" }}>
-                Evaluates all pending FAAB bids for the selected week. Highest bidder wins each player,
-                FAAB is deducted, and rosters are updated.
+                {(league.waiver_type ?? "faab") === "priority"
+                  ? "Processes pending claims in priority order. First eligible claim wins; winner moves to back of queue."
+                  : "Evaluates all pending FAAB bids for the selected week. Highest bidder wins each player, FAAB is deducted, and rosters are updated."}
               </p>
               <form action={processWaivers} className="flex items-center gap-3 flex-wrap">
                 <input type="hidden" name="leagueId" value={leagueId} />
+                <input type="hidden" name="waiver_type" value={league.waiver_type ?? "faab"} />
                 <label htmlFor="waiver-week" className="text-sm text-white shrink-0">Week</label>
                 <input
                   id="waiver-week"
@@ -707,6 +728,31 @@ export default async function SettingsPage({
                 </button>
               </form>
             </div>
+
+            {/* Priority reset — only shown for priority leagues */}
+            {(league.waiver_type ?? "faab") === "priority" && (
+              <>
+                <hr style={{ borderColor: "#2a2a40" }} />
+                <div className="flex flex-col gap-2">
+                  <p className="text-sm text-white font-medium">Reset Waiver Priority Order</p>
+                  <p className="text-sm" style={{ color: "#8888aa" }}>
+                    Re-ranks all managers by inverse standings (worst record = #1 priority). Run this at the
+                    start of the season or after a bye week reset.
+                  </p>
+                  <form action={resetWaiverPriority} className="flex items-center gap-3">
+                    <input type="hidden" name="leagueId" value={leagueId} />
+                    <input type="hidden" name="season"   value={String(league.season ?? new Date().getFullYear())} />
+                    <button
+                      type="submit"
+                      className="rounded-md px-4 py-2 text-sm font-semibold"
+                      style={{ background: "#CC0000", color: "#f4f4f8" }}
+                    >
+                      Reset Priority by Standings
+                    </button>
+                  </form>
+                </div>
+              </>
+            )}
           </section>
         )}
 

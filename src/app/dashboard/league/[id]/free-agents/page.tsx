@@ -38,7 +38,7 @@ export default async function FreeAgentsPage({
 
   const { data: league } = await supabase
     .from("uff_leagues")
-    .select("id, name, season, scoring_settings, draft_rounds, ir_spots, faab_budget, max_adds_per_week, max_adds_per_season")
+    .select("id, name, season, scoring_settings, draft_rounds, ir_spots, faab_budget, max_adds_per_week, max_adds_per_season, waiver_type")
     .eq("id", leagueId)
     .maybeSingle();
 
@@ -46,7 +46,7 @@ export default async function FreeAgentsPage({
 
   const { data: me } = await supabase
     .from("league_members")
-    .select("id, eliminated_at")
+    .select("id, eliminated_at, waiver_priority")
     .eq("league_id", leagueId)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -118,8 +118,11 @@ export default async function FreeAgentsPage({
 
   const hasProjections = Object.keys(projMap).length > 0;
 
-  // FAAB data — only needed when FAAB is enabled for this league
-  const faabEnabled = (league.faab_budget ?? 0) > 0;
+  // Waiver system type
+  const waiverType = (league.waiver_type ?? "faab") as "faab" | "priority";
+  const faabEnabled = (league.faab_budget ?? 0) > 0 && waiverType === "faab";
+  const priorityEnabled = waiverType === "priority";
+
   let myBalance = 0;
   let myBids: { id: string; player_id: string; bid_amount: number; drop_player_id: string | null; status: string }[] = [];
 
@@ -131,8 +134,10 @@ export default async function FreeAgentsPage({
       .eq("id", me.id)
       .maybeSingle();
     myBalance = memberFaab?.faab_balance ?? (league.faab_budget ?? 0);
+  }
 
-    // Get user's pending bids for this week
+  // Fetch pending bids for FAAB or pending claims for priority
+  if (faabEnabled || priorityEnabled) {
     const { data: bidsRaw } = await supabase
       .from("uff_waiver_bids")
       .select("id, player_id, bid_amount, drop_player_id, status")
@@ -274,6 +279,8 @@ export default async function FreeAgentsPage({
           bidPlayerNames={bidPlayerNames}
           isEliminated={!!me.eliminated_at}
           cantCutPlayerIds={cantCutPlayerIds}
+          waiverType={waiverType}
+          myPriority={me.waiver_priority ?? null}
         />
       </main>
     </div>
