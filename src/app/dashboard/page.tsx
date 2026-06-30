@@ -277,6 +277,16 @@ export default async function DashboardPage({
             </form>
           </section>
         </div>
+
+        {/* Footer links */}
+        <footer className="flex justify-center gap-6 pt-4 border-t" style={{ borderColor: "#2a2a40" }}>
+          <Link href="/about" className="text-xs hover:underline" style={{ color: "#8888aa" }}>
+            About UFF
+          </Link>
+          <Link href="/guide" className="text-xs hover:underline" style={{ color: "#8888aa" }}>
+            Rules &amp; Guide
+          </Link>
+        </footer>
       </main>
     </div>
   );

@@ -893,7 +893,7 @@ export default async function RosterPage({
           </h2>
           <p className="text-xs" style={{ color: "#f4f4f8" }}>
             IR players do not score or count toward your active roster cap.
-            Must have an official Injured Reserve designation.
+            Available for players with an injury designation (IR, Out, or Doubtful).
           </p>
           {irRoster.length === 0 ? (
             <p className="rounded-lg border p-4 text-sm" style={{ borderColor: "#2a2a40", color: "#f4f4f8" }}>No players on IR.</p>

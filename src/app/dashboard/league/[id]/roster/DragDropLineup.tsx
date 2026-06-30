@@ -675,8 +675,8 @@ export default function DragDropLineup({
                       &#128274;
                     </span>
                   )}
-                  {/* Move to IR — only when player has official IR designation and slots are open */}
-                  {p.status === "Injured Reserve" && irSlotsAvailable > 0 && (
+                  {/* Move to IR — player must have an injury designation and slots must be open */}
+                  {(p.status === "Injured Reserve" || p.injury_status === "IR" || p.injury_status === "Out" || p.injury_status === "Doubtful") && irSlotsAvailable > 0 && (
                     <form action={moveToIR} onClick={(e) => e.stopPropagation()}>
                       <input type="hidden" name="leagueId" value={leagueId} />
                       <input type="hidden" name="playerId" value={p.player_id} />
