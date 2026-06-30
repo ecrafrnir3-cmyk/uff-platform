@@ -4,6 +4,13 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { TOKEN_NAMES } from "@/lib/token-names";
 
+type BreakdownPlayer = { player_id: string; name: string; pos: string; team: string; points: number };
+type BreakdownData = {
+  hasData: boolean;
+  a: { team_name: string; players: BreakdownPlayer[] };
+  b: { team_name: string; players: BreakdownPlayer[] };
+};
+
 const supabase = createClient();
 
 const HERO_COLOR = "#0057FF";
@@ -141,6 +148,26 @@ export default function MatchupView({
     }
     return init;
   });
+
+  // Breakdown state: matchup_id → { data, loading, error }
+  const [breakdownState, setBreakdownState] = useState<Record<number, { data?: BreakdownData; loading: boolean; error?: string }>>({});
+
+  async function getBreakdown(matchup_id: number, matchupWeek: number, member_a_id: string, member_b_id: string) {
+    setBreakdownState(prev => ({ ...prev, [matchup_id]: { loading: true } }));
+    try {
+      const res = await fetch("/api/matchup-breakdown", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ league_id: leagueId, week: matchupWeek, member_a_id, member_b_id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to load breakdown");
+      setBreakdownState(prev => ({ ...prev, [matchup_id]: { data, loading: false } }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setBreakdownState(prev => ({ ...prev, [matchup_id]: { loading: false, error: msg } }));
+    }
+  }
 
   async function getPreview(matchup_id: number) {
     setPreviewState((prev) => ({ ...prev, [matchup_id]: { loading: true } }));
@@ -345,6 +372,87 @@ export default function MatchupView({
                       style={{ background: "rgba(255,215,0,0.1)", color: "#FFD700", border: "1px solid #FFD70033" }}
                     >
                       🔮 Consult the Oracle
+                    </button>
+                  </div>
+                );
+              })()}
+
+              {/* ── Score Breakdown ── */}
+              {(() => {
+                const bd = breakdownState[a.matchup_id];
+                if (bd?.data) {
+                  const noData = !bd.data.hasData || (bd.data.a.players.length === 0 && bd.data.b.players.length === 0);
+                  return (
+                    <div className="mt-3 flex flex-col gap-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#8888aa" }}>
+                          📊 Score Breakdown
+                        </p>
+                        <button
+                          onClick={() => setBreakdownState(prev => ({ ...prev, [a.matchup_id]: { loading: false } }))}
+                          className="text-xs"
+                          style={{ color: "#8888aa" }}
+                        >
+                          Hide
+                        </button>
+                      </div>
+                      {noData ? (
+                        <p className="text-xs text-center py-2" style={{ color: "#8888aa" }}>
+                          No lineup data available for this week.
+                        </p>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-3 rounded-lg border p-3" style={{ borderColor: "#2a2a40" }}>
+                          {/* Team A */}
+                          <div className="flex flex-col gap-1.5">
+                            <p className="text-xs font-semibold truncate" style={{ color: factionColor(pairs.flat().find(r => r.member_id === a.member_id)?.league_members?.faction ?? null) }}>
+                              {bd.data.a.team_name}
+                            </p>
+                            {bd.data.a.players.map(p => (
+                              <div key={p.player_id} className="flex items-center gap-1.5 text-xs">
+                                <span className="shrink-0 w-6 rounded text-center font-bold text-xs leading-4"
+                                  style={{ background: "#1c1c2b", color: "#8888aa" }}>
+                                  {p.pos}
+                                </span>
+                                <span className="flex-1 truncate" style={{ color: "#d4d4e8" }}>{p.name}</span>
+                                <span className="shrink-0 font-bold tabular-nums" style={{ color: p.points > 0 ? "#f4f4f8" : "#8888aa" }}>
+                                  {p.points.toFixed(2)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                          {/* Team B */}
+                          <div className="flex flex-col gap-1.5">
+                            <p className="text-xs font-semibold truncate" style={{ color: factionColor(pairs.flat().find(r => r.member_id === b.member_id)?.league_members?.faction ?? null) }}>
+                              {bd.data.b.team_name}
+                            </p>
+                            {bd.data.b.players.map(p => (
+                              <div key={p.player_id} className="flex items-center gap-1.5 text-xs">
+                                <span className="shrink-0 w-6 rounded text-center font-bold text-xs leading-4"
+                                  style={{ background: "#1c1c2b", color: "#8888aa" }}>
+                                  {p.pos}
+                                </span>
+                                <span className="flex-1 truncate" style={{ color: "#d4d4e8" }}>{p.name}</span>
+                                <span className="shrink-0 font-bold tabular-nums" style={{ color: p.points > 0 ? "#f4f4f8" : "#8888aa" }}>
+                                  {p.points.toFixed(2)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+                return (
+                  <div className="mt-2 flex flex-col items-center gap-1">
+                    {bd?.error && <p className="text-xs" style={{ color: "#ff8a8a" }}>{bd.error}</p>}
+                    <button
+                      onClick={() => getBreakdown(a.matchup_id, a.week, a.member_id, b.member_id)}
+                      disabled={bd?.loading}
+                      className="rounded-full px-4 py-1.5 text-xs font-semibold transition hover:opacity-80 disabled:opacity-50"
+                      style={{ background: "rgba(136,136,170,0.1)", color: "#8888aa", border: "1px solid #2a2a4066" }}
+                    >
+                      {bd?.loading ? "Loading…" : "📊 Score Breakdown"}
                     </button>
                   </div>
                 );

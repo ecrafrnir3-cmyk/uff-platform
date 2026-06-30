@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import FreeAgents from "./FreeAgents";
+import TrendingPlayers from "@/components/TrendingPlayers";
 import { getCurrentNFLWeek } from "@/lib/nfl-utils";
 
 const FLAG_KEYS = new Set([
@@ -263,6 +264,8 @@ export default async function FreeAgentsPage({
             </p>
           </div>
         )}
+
+        <TrendingPlayers leagueId={leagueId} />
 
         <FreeAgents
           leagueId={leagueId}

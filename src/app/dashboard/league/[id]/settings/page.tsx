@@ -3,8 +3,11 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { saveScoringSettings, generateSchedule, extendSchedule, saveLeagueSettings, seedPlayoffs, forceFinalize, syncPlayers, processWaivers, resetWaiverPriority, addToCantCutList, removeFromCantCutList } from "./actions";
 import CantCutManager from "./CantCutManager";
+import DraftOrderManager from "./DraftOrderManager";
+import WaiverPriorityManager from "./WaiverPriorityManager";
 import { approveTrade, vetoTrade } from "../trade-actions";
 import { getCurrentNFLWeek } from "@/lib/nfl-utils";
+import VetoAnalyzer from "./VetoAnalyzer";
 
 const PRESETS = {
   "Full PPR": {
@@ -103,7 +106,7 @@ export default async function SettingsPage({
 
   const { data: league } = await supabase
     .from("uff_leagues")
-    .select("id, name, commissioner_id, scoring_settings, draft_status, season, season_weeks, playoff_teams, playoff_start_week, championship_week, median_scoring, trade_deadline_week, faab_budget, commissioner_review, max_adds_per_week, max_adds_per_season, waiver_auto, waiver_day, waiver_hour, waiver_type")
+    .select("id, name, commissioner_id, scoring_settings, draft_status, draft_order, season, season_weeks, playoff_teams, playoff_start_week, championship_week, median_scoring, trade_deadline_week, faab_budget, commissioner_review, max_adds_per_week, max_adds_per_season, waiver_auto, waiver_day, waiver_hour, waiver_type")
     .eq("id", leagueId)
     .maybeSingle();
 
@@ -153,6 +156,15 @@ export default async function SettingsPage({
     for (const m of rMembers ?? []) reviewMemberNames[m.id] = m.team_name;
   }
   const savedSettings: Record<string, number> = league.scoring_settings ?? {};
+
+  // Draft order + waiver priority — fetch members
+  const { data: leagueMembers } = await supabase
+    .from("league_members")
+    .select("id, team_name, faction, waiver_priority")
+    .eq("league_id", leagueId)
+    .order("joined_at", { ascending: true });
+  const draftMembers = (leagueMembers ?? []) as { id: string; team_name: string; faction: "hero" | "villain" | null }[];
+  const priorityMembers = (leagueMembers ?? []) as { id: string; team_name: string; faction: "hero" | "villain" | null; waiver_priority: number | null }[];
 
   // Can't Cut List
   const { data: cantCutRows } = await supabase
@@ -508,6 +520,7 @@ export default async function SettingsPage({
                         </ul>
                       </div>
                     </div>
+                    <VetoAnalyzer leagueId={leagueId} tradeId={t.id} />
                     <div className="flex gap-2 flex-wrap">
                       <form action={approveTrade}>
                         <input type="hidden" name="leagueId" value={leagueId} />
@@ -733,11 +746,20 @@ export default async function SettingsPage({
             {(league.waiver_type ?? "faab") === "priority" && (
               <>
                 <hr style={{ borderColor: "#2a2a40" }} />
-                <div className="flex flex-col gap-2">
-                  <p className="text-sm text-white font-medium">Reset Waiver Priority Order</p>
+                <div className="flex flex-col gap-3">
+                  <p className="text-sm text-white font-medium">Manual Priority Order</p>
                   <p className="text-sm" style={{ color: "#8888aa" }}>
-                    Re-ranks all managers by inverse standings (worst record = #1 priority). Run this at the
-                    start of the season or after a bye week reset.
+                    Drag to set the claim order. #1 gets first pick off waivers.
+                  </p>
+                  <WaiverPriorityManager leagueId={leagueId} members={priorityMembers} />
+                </div>
+
+                <hr style={{ borderColor: "#2a2a40" }} />
+
+                <div className="flex flex-col gap-2">
+                  <p className="text-sm text-white font-medium">Reset by Standings</p>
+                  <p className="text-sm" style={{ color: "#8888aa" }}>
+                    Auto-re-rank all managers by inverse standings (worst record = #1 priority).
                   </p>
                   <form action={resetWaiverPriority} className="flex items-center gap-3">
                     <input type="hidden" name="leagueId" value={leagueId} />
@@ -757,6 +779,25 @@ export default async function SettingsPage({
         )}
 
         {/* Sync player data */}
+        {/* Draft Order Manager */}
+        <section className="flex flex-col gap-3 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>
+          <div>
+            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Draft Order</h2>
+            <p className="text-sm text-white mt-1">
+              Set the pick order before the draft starts. Randomize or drag to reorder.
+              {league.draft_status !== "not_started" && (
+                <span className="ml-1 font-semibold" style={{ color: "#8888aa" }}>(Locked — draft has started)</span>
+              )}
+            </p>
+          </div>
+          <DraftOrderManager
+            leagueId={leagueId}
+            members={draftMembers}
+            initialOrder={(league.draft_order as string[]) ?? []}
+            draftStatus={league.draft_status}
+          />
+        </section>
+
         <section className="flex flex-col gap-3 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>
           <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Sync Player Data</h2>
           <p className="text-sm text-white">

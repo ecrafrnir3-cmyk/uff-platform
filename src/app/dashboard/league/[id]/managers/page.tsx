@@ -51,12 +51,19 @@ interface Badge {
 
 /**
  * Compute per-member streak/achievement badges from completed matchup data.
- * `weeklyHighScorers`: Set of member_ids who led the league in scoring for at least one week.
+ *
+ * @param matchups       ALL completed matchups for the league (all members, all weeks)
+ * @param memberId       The member to compute badges for
+ * @param weeklyHighScorers  memberId → count of weeks they were top scorer
+ * @param leagueWeeklyLowScorers  memberId → count of weeks they were lowest scorer
+ * @param allMemberIds   All member IDs (for last-place calculations)
  */
 function computeBadges(
   matchups: MatchupRow[],
   memberId: string,
-  weeklyHighScorers: Record<string, number> // memberId → count of weeks led
+  weeklyHighScorers: Record<string, number>,
+  weeklyLowScorers: Record<string, number>,
+  leagueAvgByWeek: Record<number, number> // week → league avg pts
 ): Badge[] {
   const badges: Badge[] = [];
 
@@ -75,6 +82,9 @@ function computeBadges(
   type Result = "W" | "L" | "T" | "V";
   const results: Result[] = [];
   let biggestWin = 0;
+  let biggestLoss = 0;
+  let aboveAvgWeeks = 0;
+  let closestGameMargin = Infinity;
 
   for (const myRow of myGames) {
     const pair = byMatchup[myRow.matchup_id];
@@ -82,6 +92,15 @@ function computeBadges(
     const opp = pair.find((r) => r.member_id !== memberId);
     if (!opp) continue;
     const margin = myRow.points - opp.points;
+    const absMargin = Math.abs(margin);
+
+    // Above-average week
+    const leagueAvg = leagueAvgByWeek[myRow.week] ?? 0;
+    if (leagueAvg > 0 && myRow.points > leagueAvg) aboveAvgWeeks++;
+
+    // Closest game (near-miss win or nail-biter win)
+    if (absMargin < closestGameMargin && absMargin > 0) closestGameMargin = absMargin;
+
     if (myRow.void_result && opp.points > myRow.points) {
       results.push("V");
     } else if (myRow.points > opp.points) {
@@ -89,16 +108,28 @@ function computeBadges(
       if (margin > biggestWin) biggestWin = margin;
     } else if (myRow.points < opp.points) {
       results.push("L");
+      if (absMargin > biggestLoss) biggestLoss = absMargin;
     } else {
       results.push("T");
     }
   }
+
+  const totalGames = results.length;
+  const wins = results.filter((r) => r === "W").length;
+  const losses = results.filter((r) => r === "L").length;
 
   // Current win streak (from end of schedule)
   let winStreak = 0;
   for (let i = results.length - 1; i >= 0; i--) {
     if (results[i] === "W") winStreak++;
     else break;
+  }
+
+  // Max win streak ever
+  let maxWinStreak = 0, curStreak = 0;
+  for (const r of results) {
+    if (r === "W") { curStreak++; if (curStreak > maxWinStreak) maxWinStreak = curStreak; }
+    else curStreak = 0;
   }
 
   // Current loss streak (from end of schedule)
@@ -108,28 +139,82 @@ function computeBadges(
     else break;
   }
 
-  if (winStreak >= 2) {
-    badges.push({ emoji: "🔥", label: `${winStreak}-game streak`, color: "#FFD700" });
+  // ── Badge conditions ────────────────────────────────────────────────────────
+
+  // 🔥 Hot streak (current)
+  if (winStreak >= 3) {
+    badges.push({ emoji: "🔥", label: `${winStreak}-game hot streak`, color: "#FFD700" });
+  } else if (winStreak === 2) {
+    badges.push({ emoji: "🔥", label: "2-game streak", color: "#FFD700" });
   }
+
+  // ❄️ Cold streak (current)
   if (lossStreak >= 3) {
     badges.push({ emoji: "❄️", label: `${lossStreak}-game skid`, color: "#6b9fff" });
   }
-  if (biggestWin >= 35) {
+
+  // 💥 Biggest blowout delivered
+  if (biggestWin >= 50) {
+    badges.push({ emoji: "💥", label: `${Math.round(biggestWin)}-pt blowout`, color: "#ff4444" });
+  } else if (biggestWin >= 35) {
     badges.push({ emoji: "💥", label: `${Math.round(biggestWin)}-pt blowout`, color: "#ff6060" });
   }
 
-  // Undefeated (no losses, at least 3 decisive games)
+  // 😬 Nail-biter — closest win (< 3 pts)
+  if (closestGameMargin > 0 && closestGameMargin <= 3 && results.includes("W")) {
+    badges.push({ emoji: "😬", label: `Nail-biter (${closestGameMargin.toFixed(2)} pts)`, color: "#FFD700" });
+  }
+
+  // ⚡ Undefeated (no losses, at least 3 decisive games)
   const decisiveGames = results.filter((r) => r === "W" || r === "L").length;
   if (!results.includes("L") && decisiveGames >= 3) {
     badges.push({ emoji: "⚡", label: "Undefeated", color: "#3DDC84" });
   }
 
-  // Weekly top scorer
+  // 💯 Win rate ≥ 75% (min 4 games)
+  if (totalGames >= 4 && wins / totalGames >= 0.75 && results.includes("L")) {
+    badges.push({ emoji: "💯", label: `${Math.round(wins / totalGames * 100)}% win rate`, color: "#3DDC84" });
+  }
+
+  // 👑 Top scorer weeks
   const topWeeks = weeklyHighScorers[memberId] ?? 0;
-  if (topWeeks >= 2) {
+  if (topWeeks >= 3) {
     badges.push({ emoji: "👑", label: `Top scorer ×${topWeeks}`, color: "#FFD700" });
-  } else if (topWeeks === 1) {
-    badges.push({ emoji: "👑", label: "Top scorer", color: "#FFD700" });
+  } else if (topWeeks >= 1) {
+    badges.push({ emoji: "👑", label: topWeeks === 1 ? "Top scorer" : `Top scorer ×${topWeeks}`, color: "#FFD700" });
+  }
+
+  // 📉 Basement dweller — lowest scorer 3+ weeks
+  const lowWeeks = weeklyLowScorers[memberId] ?? 0;
+  if (lowWeeks >= 3) {
+    badges.push({ emoji: "📉", label: `Lowest scorer ×${lowWeeks}`, color: "#CC0000" });
+  }
+
+  // 📈 Consistent — above league avg 70%+ of weeks (min 4)
+  if (totalGames >= 4 && aboveAvgWeeks / totalGames >= 0.7) {
+    badges.push({ emoji: "📈", label: "Above average", color: "#3DDC84" });
+  }
+
+  // 🤝 Tie machine
+  const ties = results.filter((r) => r === "T").length;
+  if (ties >= 2) {
+    badges.push({ emoji: "🤝", label: `${ties} ties`, color: "#8888aa" });
+  }
+
+  // 🛡️ Insurance token used (void result)
+  const voided = results.filter((r) => r === "V").length;
+  if (voided >= 1) {
+    badges.push({ emoji: "🛡️", label: voided === 1 ? "Insurance saved" : `Insurance ×${voided}`, color: "#0057FF" });
+  }
+
+  // 🏆 All-time streak (maxWinStreak ≥ 5, not current — season long)
+  if (maxWinStreak >= 5 && winStreak < maxWinStreak) {
+    badges.push({ emoji: "🏆", label: `${maxWinStreak}-win best streak`, color: "#FFD700" });
+  }
+
+  // 😤 Hard luck — most losses overall (only show if ≥ 50% loss rate, min 4 games)
+  if (totalGames >= 4 && losses / totalGames >= 0.6) {
+    badges.push({ emoji: "😤", label: `${losses}–${wins} record`, color: "#CC0000" });
   }
 
   return badges;
@@ -228,22 +313,42 @@ export default async function ManagersPage({
   const allMatchups = matchupRows ?? [];
   const standings = computeStandings(allMatchups);
 
-  // Compute weekly high scorers: for each week, who scored the most?
+  // Compute weekly high scorers and low scorers, plus league avg by week
   const weeklyHighScorers: Record<string, number> = {};
+  const weeklyLowScorers: Record<string, number> = {};
   const weekBest: Record<number, { memberId: string; score: number }> = {};
+  const weekWorst: Record<number, { memberId: string; score: number }> = {};
+  const weekScores: Record<number, number[]> = {};
+
   for (const r of allMatchups) {
+    if (!weekScores[r.week]) weekScores[r.week] = [];
+    weekScores[r.week].push(r.points);
+
     if (!weekBest[r.week] || r.points > weekBest[r.week].score) {
       weekBest[r.week] = { memberId: r.member_id, score: r.points };
     }
+    if (!weekWorst[r.week] || r.points < weekWorst[r.week].score) {
+      weekWorst[r.week] = { memberId: r.member_id, score: r.points };
+    }
   }
+
   for (const { memberId } of Object.values(weekBest)) {
     weeklyHighScorers[memberId] = (weeklyHighScorers[memberId] ?? 0) + 1;
+  }
+  for (const { memberId } of Object.values(weekWorst)) {
+    weeklyLowScorers[memberId] = (weeklyLowScorers[memberId] ?? 0) + 1;
+  }
+
+  // League avg pts by week
+  const leagueAvgByWeek: Record<number, number> = {};
+  for (const [week, scores] of Object.entries(weekScores)) {
+    leagueAvgByWeek[Number(week)] = scores.reduce((s, v) => s + v, 0) / scores.length;
   }
 
   // Pre-compute badges for all members
   const memberBadges: Record<string, Badge[]> = {};
   for (const m of membersRaw ?? []) {
-    memberBadges[m.id] = computeBadges(allMatchups, m.id, weeklyHighScorers);
+    memberBadges[m.id] = computeBadges(allMatchups, m.id, weeklyHighScorers, weeklyLowScorers, leagueAvgByWeek);
   }
 
   // Sort members: by wins desc, then PF desc
@@ -292,6 +397,13 @@ export default async function ManagersPage({
           <p className="text-sm" style={{ color: "#8888aa" }}>
             Season {league.season} · {members.length} manager{members.length !== 1 ? "s" : ""} · {heroes.length} Heroes vs {villains.length} Villains
           </p>
+          <Link
+            href={`/dashboard/league/${leagueId}/h2h`}
+            className="self-start text-sm font-semibold rounded-md px-3 py-1.5 mt-1"
+            style={{ background: "rgba(0,87,255,0.12)", color: "#0057FF", border: "1px solid rgba(0,87,255,0.3)" }}
+          >
+            ⚡ Head-to-Head Comparison
+          </Link>
         </header>
 
         {/* Faction groups */}

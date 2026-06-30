@@ -11,6 +11,8 @@ import {
   tradeRespondedHtml,
   tradeVetoedHtml,
 } from "@/lib/email";
+import { getRecord, CompletedMatchupRow } from "@/lib/get-record";
+import { createNotification } from "@/lib/notifications";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -87,15 +89,78 @@ export async function proposeTrade(formData: FormData) {
     redirect(`/dashboard/league/${leagueId}/trade?error=${encodeURIComponent(error.message)}`);
   }
 
-  // ── Email notification to receiver ─────────────────────────────────────────
+  // ── Email notification to receiver (with Oracle AI analysis) ──────────────
   try {
     const [receiverInfo, proposerInfo, leagueName, pNames, rNames] = await Promise.all([
       getMemberInfo(supabase, receiverId),
-      supabase.from("league_members").select("team_name").eq("league_id", leagueId).eq("user_id", user.id).maybeSingle(),
+      supabase
+        .from("league_members")
+        .select("id, team_name, faction")
+        .eq("league_id", leagueId)
+        .eq("user_id", user.id)
+        .maybeSingle(),
       getLeagueName(supabase, leagueId),
       getPlayerNames(supabase, proposerPlayers),
       getPlayerNames(supabase, receiverPlayers),
     ]);
+
+    // ── Oracle trade analysis ──────────────────────────────────────────────
+    let aiAnalysis: string | undefined;
+    try {
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (apiKey && proposerInfo.data?.id) {
+        const [{ data: allMatchups }, { data: receiverMember }] = await Promise.all([
+          supabase
+            .from("uff_matchups")
+            .select("matchup_id, member_id, points")
+            .eq("league_id", leagueId)
+            .eq("is_complete", true)
+            .returns<CompletedMatchupRow[]>(),
+          supabase
+            .from("league_members")
+            .select("team_name, faction")
+            .eq("id", receiverId)
+            .maybeSingle(),
+        ]);
+
+        const rows = allMatchups ?? [];
+        const proposerRecord = getRecord(proposerInfo.data.id, rows);
+        const receiverRecord = getRecord(receiverId, rows);
+
+        const proposerTeam = proposerInfo.data.team_name ?? "Team A";
+        const receiverTeam = receiverMember?.team_name ?? "Team B";
+
+        const prompt = `You are the Oracle of Ultimate Fantasy Football. Evaluate this trade briefly.
+
+${proposerTeam} [${proposerInfo.data.faction ?? "?"}] (${proposerRecord.wins}W-${proposerRecord.losses}L) SENDS: ${pNames.join(", ")}
+${receiverTeam} [${receiverMember?.faction ?? "?"}] (${receiverRecord.wins}W-${receiverRecord.losses}L) SENDS BACK: ${rNames.join(", ")}
+
+2-3 sentence analysis only. Who benefits more and why? End with exactly one of: VERDICT: FAIR | VERDICT: SLIGHT EDGE TO [team name] | VERDICT: AVOID — [team name] is getting robbed`;
+
+        const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 200,
+            messages: [{ role: "user", content: prompt }],
+          }),
+        });
+
+        if (anthropicRes.ok) {
+          const aiData = await anthropicRes.json();
+          aiAnalysis = aiData.content?.[0]?.text ?? undefined;
+        }
+      }
+    } catch (aiErr) {
+      console.error("[trade] AI analysis failed (non-blocking):", aiErr);
+      // Non-blocking — email sends without analysis if this fails
+    }
+
     if (receiverInfo?.user_id) {
       const receiverEmail = await getUserEmail(receiverInfo.user_id);
       if (receiverEmail) {
@@ -108,9 +173,18 @@ export async function proposeTrade(formData: FormData) {
             proposerTeamName: proposerInfo.data?.team_name ?? "A manager",
             proposerPlayers: pNames,
             receiverPlayers: rNames,
+            aiAnalysis,
           }),
         });
       }
+      // In-app notification
+      await createNotification({
+        leagueId,
+        userId: receiverInfo.user_id,
+        type: "trade_proposed",
+        title: `Trade offer from ${proposerInfo.data?.team_name ?? "A manager"}`,
+        body: `They offer: ${pNames.join(", ")} — They want: ${rNames.join(", ")}`,
+      });
     }
   } catch (emailErr) {
     console.error("[trade] email notification failed:", emailErr);
@@ -186,6 +260,16 @@ export async function respondToTrade(formData: FormData) {
             }),
           });
         }
+        // In-app notification
+        const responder = responderInfo.data?.team_name ?? "Your trade partner";
+        await createNotification({
+          leagueId,
+          userId: proposerInfo.user_id,
+          type: accept ? "trade_accepted" : "trade_rejected",
+          title: accept
+            ? `${responder} accepted your trade${tradeStatus === "pending_review" ? " (pending commissioner review)" : ""}`
+            : `${responder} rejected your trade`,
+        });
       }
     }
   } catch (emailErr) {
@@ -227,17 +311,26 @@ export async function approveTrade(formData: FormData) {
       const info = await getMemberInfo(supabase, memberId);
       if (!info?.user_id) return;
       const email = await getUserEmail(info.user_id);
-      if (!email) return;
-      await sendEmail({
-        to: email,
-        subject: `Trade approved in ${leagueName}`,
-        html: tradeRespondedHtml({
-          leagueId,
-          leagueName,
-          responderTeamName: "The Commissioner",
-          accepted: true,
-          pendingReview: false,
-        }),
+      if (email) {
+        await sendEmail({
+          to: email,
+          subject: `Trade approved in ${leagueName}`,
+          html: tradeRespondedHtml({
+            leagueId,
+            leagueName,
+            responderTeamName: "The Commissioner",
+            accepted: true,
+            pendingReview: false,
+          }),
+        });
+      }
+      // In-app notification
+      await createNotification({
+        leagueId,
+        userId: info.user_id,
+        type: "trade_approved",
+        title: "Your trade was approved by the commissioner",
+        body: "Rosters have been updated.",
       });
     }));
   } catch (emailErr) {
@@ -281,11 +374,20 @@ export async function vetoTrade(formData: FormData) {
       const info = await getMemberInfo(supabase, memberId);
       if (!info?.user_id) return;
       const email = await getUserEmail(info.user_id);
-      if (!email) return;
-      await sendEmail({
-        to: email,
-        subject: `Trade vetoed in ${leagueName}`,
-        html: tradeVetoedHtml({ leagueId, leagueName, reason }),
+      if (email) {
+        await sendEmail({
+          to: email,
+          subject: `Trade vetoed in ${leagueName}`,
+          html: tradeVetoedHtml({ leagueId, leagueName, reason }),
+        });
+      }
+      // In-app notification
+      await createNotification({
+        leagueId,
+        userId: info.user_id,
+        type: "trade_vetoed",
+        title: "Your trade was vetoed by the commissioner",
+        body: reason ? `Reason: "${reason}"` : undefined,
       });
     }));
   } catch (emailErr) {

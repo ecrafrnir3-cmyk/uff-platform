@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getCurrentNFLWeek } from "@/lib/nfl-utils";
 import { sendEmail, getUserEmail, waiverResultsHtml } from "@/lib/email";
+import { createNotification } from "@/lib/notifications";
 
 // ─── Called by GitHub Actions every hour ────────────────────────────────────
 // Checks each FAAB league's waiver schedule (waiver_day + waiver_hour in ET).
@@ -127,25 +128,43 @@ export async function GET(req: NextRequest) {
             Object.entries(byMember).map(async ([memberId, { awarded, rejected }]) => {
               const userId = memberUserMap[memberId];
               if (!userId) return;
+              const awardedNames = awarded.map((b: { player_id: string; bid_amount: number }) => ({
+                playerName: playerMap[b.player_id] ?? b.player_id,
+                bidAmount: b.bid_amount,
+              }));
+              const rejectedNames = rejected.map((b: { player_id: string; bid_amount: number }) => ({
+                playerName: playerMap[b.player_id] ?? b.player_id,
+                bidAmount: b.bid_amount,
+              }));
+
               const email = await getUserEmail(userId);
-              if (!email) return;
-              await sendEmail({
-                to: email,
-                subject: `${league.name} · Week ${week} Waiver Results`,
-                html: waiverResultsHtml({
+              if (email) {
+                await sendEmail({
+                  to: email,
+                  subject: `${league.name} · Week ${week} Waiver Results`,
+                  html: waiverResultsHtml({
+                    leagueId: league.id,
+                    leagueName: league.name,
+                    week,
+                    awarded: awardedNames,
+                    rejected: rejectedNames,
+                  }),
+                });
+              }
+
+              // In-app notification
+              if (awardedNames.length > 0 || rejectedNames.length > 0) {
+                const parts: string[] = [];
+                if (awardedNames.length > 0) parts.push(`Awarded: ${awardedNames.map(a => a.playerName).join(", ")}`);
+                if (rejectedNames.length > 0) parts.push(`Missed: ${rejectedNames.map(r => r.playerName).join(", ")}`);
+                await createNotification({
                   leagueId: league.id,
-                  leagueName: league.name,
-                  week,
-                  awarded: awarded.map((b: { player_id: string; bid_amount: number }) => ({
-                    playerName: playerMap[b.player_id] ?? b.player_id,
-                    bidAmount: b.bid_amount,
-                  })),
-                  rejected: rejected.map((b: { player_id: string; bid_amount: number }) => ({
-                    playerName: playerMap[b.player_id] ?? b.player_id,
-                    bidAmount: b.bid_amount,
-                  })),
-                }),
-              });
+                  userId,
+                  type: "waiver_results",
+                  title: `Week ${week} waiver results`,
+                  body: parts.join(" · "),
+                });
+              }
             })
           );
           console.log(`[process-waivers] Emailed waiver results to ${Object.keys(byMember).length} managers: ${league.name}`);

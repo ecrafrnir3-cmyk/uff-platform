@@ -11,6 +11,28 @@ interface RosterPlayer {
   position: string;
   team?: string;
   status?: string;
+  injury_status?: string;
+}
+
+function InjuryBadge({ injuryStatus }: { injuryStatus: string | undefined }) {
+  if (!injuryStatus) return null;
+  const map: Record<string, { label: string; bg: string; color: string }> = {
+    "Out":         { label: "OUT", bg: "rgba(204,0,0,0.18)",    color: "#ff6b6b" },
+    "Doubtful":    { label: "D",   bg: "rgba(204,0,0,0.12)",    color: "#ff8a8a" },
+    "Questionable":{ label: "Q",   bg: "rgba(255,215,0,0.15)",  color: "#FFD700" },
+    "Probable":    { label: "P",   bg: "rgba(61,220,132,0.12)", color: "#3DDC84" },
+    "IR":          { label: "IR",  bg: "rgba(136,136,170,0.15)", color: "#8888aa" },
+  };
+  const style = map[injuryStatus];
+  if (!style) return null;
+  return (
+    <span style={{
+      display: "inline-block", padding: "1px 5px", borderRadius: 4,
+      fontSize: 10, fontWeight: 700, background: style.bg, color: style.color, flexShrink: 0,
+    }}>
+      {style.label}
+    </span>
+  );
 }
 
 const SLOT_ELIGIBLE: Record<string, string[]> = {
@@ -439,9 +461,12 @@ export default function DragDropLineup({
                     size={38}
                   />
                   <div className="flex-1 min-w-0 overflow-hidden">
-                    <p className="text-sm font-semibold truncate" style={{ color: "#f4f4f8" }}>
-                      {player.full_name}
-                    </p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-sm font-semibold truncate" style={{ color: "#f4f4f8" }}>
+                        {player.full_name}
+                      </p>
+                      <InjuryBadge injuryStatus={player.injury_status} />
+                    </div>
                     <p className="text-xs truncate" style={{ color: "#f4f4f8" }}>
                       <span style={{ color: posColor, fontWeight: 600 }}>{player.position}</span>
                       {player.team ? " · " + player.team : ""}
@@ -609,9 +634,12 @@ export default function DragDropLineup({
                     size={36}
                   />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate" style={{ color: "#f4f4f8" }}>
-                      {p.full_name}
-                    </p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-sm font-semibold truncate" style={{ color: "#f4f4f8" }}>
+                        {p.full_name}
+                      </p>
+                      <InjuryBadge injuryStatus={p.injury_status} />
+                    </div>
                     <p className="text-xs" style={{ color: "#f4f4f8" }}>
                       <span style={{ color: posColor + "aa", fontWeight: 600 }}>{p.position}</span>
                       {p.team ? " · " + p.team : ""}

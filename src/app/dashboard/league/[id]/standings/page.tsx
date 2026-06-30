@@ -9,7 +9,7 @@ interface MatchupRow {
   points: number;
   is_complete: boolean;
   void_result: boolean;
-  median_win: boolean;
+  median_win: boolean | null;
 }
 
 interface MemberInfo {

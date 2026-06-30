@@ -233,6 +233,42 @@ export async function resetWaiverPriority(formData: FormData) {
   redirect(`/dashboard/league/${leagueId}/settings?saved=1`);
 }
 
+export async function saveWaiverPriority(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const leagueId = formData.get("leagueId") as string;
+  const orderJson = formData.get("order") as string;
+
+  const { data: league } = await supabase
+    .from("uff_leagues")
+    .select("commissioner_id")
+    .eq("id", leagueId)
+    .maybeSingle();
+  if (league?.commissioner_id !== user.id) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("Only the commissioner can set waiver priority.")}`);
+  }
+
+  let memberIds: string[];
+  try {
+    memberIds = JSON.parse(orderJson);
+    if (!Array.isArray(memberIds)) throw new Error();
+  } catch {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("Invalid priority order.")}`);
+  }
+
+  // Update each member's waiver_priority by position in the array (1-indexed)
+  const updates = memberIds.map((id, idx) =>
+    supabase.from("league_members").update({ waiver_priority: idx + 1 }).eq("id", id).eq("league_id", leagueId)
+  );
+  await Promise.all(updates);
+
+  revalidatePath(`/dashboard/league/${leagueId}/settings`);
+  revalidatePath(`/dashboard/league/${leagueId}/free-agents`);
+  redirect(`/dashboard/league/${leagueId}/settings?saved=1`);
+}
+
 export async function seedPlayoffs(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -299,6 +335,49 @@ export async function removeFromCantCutList(formData: FormData) {
 
   revalidatePath(`/dashboard/league/${leagueId}/settings`);
   redirect(`/dashboard/league/${leagueId}/settings?saved=1#cant-cut`);
+}
+
+export async function saveDraftOrder(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const leagueId = formData.get("leagueId") as string;
+  const orderJson = formData.get("order") as string;
+
+  // Commissioner check
+  const { data: league } = await supabase
+    .from("uff_leagues")
+    .select("commissioner_id, draft_status")
+    .eq("id", leagueId)
+    .maybeSingle();
+
+  if (league?.commissioner_id !== user.id) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("Only the commissioner can set draft order.")}`);
+  }
+  if (league?.draft_status !== "not_started") {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("Draft order cannot be changed after the draft has started.")}`);
+  }
+
+  let order: string[];
+  try {
+    order = JSON.parse(orderJson);
+    if (!Array.isArray(order) || order.some((v) => typeof v !== "string")) throw new Error("bad");
+  } catch {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("Invalid draft order data.")}`);
+    return;
+  }
+
+  const { error } = await supabase
+    .from("uff_leagues")
+    .update({ draft_order: order })
+    .eq("id", leagueId);
+
+  if (error) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("Failed to save draft order.")}`);
+  }
+
+  redirect(`/dashboard/league/${leagueId}/settings?saved=1`);
 }
 
 export async function syncPlayers(formData: FormData) {

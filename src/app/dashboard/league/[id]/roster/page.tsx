@@ -7,9 +7,31 @@ import DragDropLineup from "./DragDropLineup";
 import TokenChoicePicker from "./TokenChoicePicker";
 import DropButton from "./DropButton";
 import TokenAdvisor from "./TokenAdvisor";
+import StartSitAdvisor from "./StartSitAdvisor";
 import { getCurrentNFLWeek, isLineupLocked, getWeekLockTime } from "@/lib/nfl-utils";
 
 interface GameScheduleRow { team: string; kickoff_utc: string; }
+
+function InjuryBadge({ injuryStatus }: { injuryStatus: string | null }) {
+  if (!injuryStatus) return null;
+  const map: Record<string, { label: string; bg: string; color: string }> = {
+    "Out":         { label: "OUT", bg: "rgba(204,0,0,0.18)",    color: "#ff6b6b" },
+    "Doubtful":    { label: "D",   bg: "rgba(204,0,0,0.12)",    color: "#ff8a8a" },
+    "Questionable":{ label: "Q",   bg: "rgba(255,215,0,0.15)",  color: "#FFD700" },
+    "Probable":    { label: "P",   bg: "rgba(61,220,132,0.12)", color: "#3DDC84" },
+    "IR":          { label: "IR",  bg: "rgba(136,136,170,0.15)", color: "#8888aa" },
+  };
+  const style = map[injuryStatus];
+  if (!style) return null;
+  return (
+    <span style={{
+      display: "inline-block", padding: "1px 5px", borderRadius: 4,
+      fontSize: 10, fontWeight: 700, background: style.bg, color: style.color, flexShrink: 0,
+    }}>
+      {style.label}
+    </span>
+  );
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface RosterRow {
@@ -24,6 +46,7 @@ interface RosterRow {
     position: string | null;
     team: string | null;
     status: string | null;
+    injury_status: string | null;
   } | null;
 }
 interface TeamFactionRow { abbr: string; faction: "hero" | "villain"; }
@@ -295,7 +318,7 @@ export default async function RosterPage({
   ] = await Promise.all([
     supabase
       .from("uff_roster_players")
-      .select("id, added_at, player_id, slot, on_trade_block, players(id, full_name, position, team, status)")
+      .select("id, added_at, player_id, slot, on_trade_block, players(id, full_name, position, team, status, injury_status)")
       .eq("member_id", me.id)
       .is("dropped_at", null)
       .order("added_at", { ascending: true })
@@ -508,11 +531,12 @@ export default async function RosterPage({
   const activeRosterForLineup = activeRoster
     .filter((r) => r.players?.position)
     .map((r) => ({
-      player_id: r.player_id,
-      full_name: r.players!.full_name,
-      position:  r.players!.position!,
-      team:      r.players!.team ?? undefined,
-      status:    r.players!.status ?? undefined,
+      player_id:    r.player_id,
+      full_name:    r.players!.full_name,
+      position:     r.players!.position!,
+      team:         r.players!.team ?? undefined,
+      status:       r.players!.status ?? undefined,
+      injury_status: r.players!.injury_status ?? undefined,
     }));
 
   // Build team -> kickoff map for per-player lock UI
@@ -622,6 +646,11 @@ export default async function RosterPage({
               />
             )}
           </>
+        )}
+
+        {/* ── Start/Sit AI Advisor ── */}
+        {activeRosterForLineup.length > 0 && !me.eliminated_at && (
+          <StartSitAdvisor leagueId={leagueId} />
         )}
 
         {/* ── Drag-and-Drop Lineup ── */}
@@ -819,7 +848,10 @@ export default async function RosterPage({
                     >
                       <PosBadge position={player?.position ?? null} />
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold truncate">{player?.full_name ?? r.player_id}</p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="font-semibold truncate">{player?.full_name ?? r.player_id}</p>
+                          <InjuryBadge injuryStatus={player?.injury_status ?? null} />
+                        </div>
                         <p className="text-xs" style={{ color: "#8888aa" }}>{player?.team ?? "FA"}</p>
                       </div>
                       {isOnBlock && (
@@ -874,7 +906,10 @@ export default async function RosterPage({
                     style={{ borderColor: "rgba(204,0,0,0.4)", background: "rgba(204,0,0,0.04)" }}>
                     <PosBadge position={player?.position ?? null} />
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold truncate">{player?.full_name ?? r.player_id}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="font-semibold truncate">{player?.full_name ?? r.player_id}</p>
+                        <InjuryBadge injuryStatus={player?.injury_status ?? null} />
+                      </div>
                       <p className="text-sm" style={{ color: VILLAIN_COLOR }}>
                         {player?.team ?? "FA"} &middot; Injured Reserve
                       </p>

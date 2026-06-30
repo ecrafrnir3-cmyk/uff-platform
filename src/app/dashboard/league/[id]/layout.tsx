@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import LeagueNav from "./LeagueNav";
 
 export default async function LeagueLayout({
@@ -34,13 +35,22 @@ export default async function LeagueLayout({
 
   const isCommissioner = league?.commissioner_id === user.id;
 
-  // Pending incoming trade count for nav badge
-  const { count: pendingCount } = await supabase
-    .from("uff_trades")
-    .select("id", { count: "exact", head: true })
-    .eq("league_id", leagueId)
-    .eq("receiver_id", member.id)
-    .eq("status", "pending");
+  // Pending incoming trade count + unread notifications in parallel
+  const admin = createAdminClient();
+  const [{ count: pendingCount }, { count: unreadCount }] = await Promise.all([
+    supabase
+      .from("uff_trades")
+      .select("id", { count: "exact", head: true })
+      .eq("league_id", leagueId)
+      .eq("receiver_id", member.id)
+      .eq("status", "pending"),
+    admin
+      .from("uff_notifications")
+      .select("id", { count: "exact", head: true })
+      .eq("league_id", leagueId)
+      .eq("user_id", user.id)
+      .eq("read", false),
+  ]);
 
   return (
     <>
@@ -48,6 +58,7 @@ export default async function LeagueLayout({
         leagueId={leagueId}
         isCommissioner={isCommissioner}
         pendingTradeCount={pendingCount ?? 0}
+        unreadNotifCount={unreadCount ?? 0}
       />
       {children}
     </>

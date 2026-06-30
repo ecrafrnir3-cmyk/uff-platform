@@ -74,12 +74,22 @@ export default async function LeagueDetailPage({
 
   const { data: me } = await supabase
     .from("league_members")
-    .select("id, faction")
+    .select("id, faction, is_commissioner")
     .eq("league_id", leagueId)
     .eq("user_id", user.id)
     .maybeSingle();
 
   if (!me) redirect("/dashboard?error=" + encodeURIComponent("You're not a member of that league."));
+
+  // Fetch recent announcements (pinned first, then latest 3)
+  const { data: announcementsRaw } = await supabase
+    .from("uff_announcements")
+    .select("id, title, body, pinned, created_at")
+    .eq("league_id", leagueId)
+    .order("pinned", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(3);
+  const announcements = (announcementsRaw ?? []) as { id: string; title: string; body: string; pinned: boolean; created_at: string }[];
 
   // Fetch the most recent newsletter for this league (if any)
   const { data: newsletter } = league.draft_status === "completed"
@@ -368,6 +378,40 @@ export default async function LeagueDetailPage({
           </section>
         )}
 
+        {/* Bulletin Board — shows if any announcements exist */}
+        {announcements.length > 0 && (
+          <section className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>📌 Bulletin Board</h2>
+              <Link href={`/dashboard/league/${leagueId}/announcements`} className="text-xs underline" style={{ color: "#0057FF" }}>
+                View all
+              </Link>
+            </div>
+            <div className="flex flex-col gap-2">
+              {announcements.map((a) => (
+                <div key={a.id} className="rounded-lg border px-4 py-3 flex flex-col gap-1"
+                  style={{ borderColor: a.pinned ? "rgba(255,215,0,0.35)" : "#2a2a40", background: a.pinned ? "rgba(255,215,0,0.03)" : "#0d0d1a" }}>
+                  <p className="font-semibold text-sm" style={{ color: a.pinned ? "#FFD700" : "#f4f4f8" }}>
+                    {a.pinned && "📌 "}{a.title}
+                  </p>
+                  <p className="text-xs leading-relaxed line-clamp-2" style={{ color: "#d4d4e8" }}>{a.body}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Commissioner shortcut to post when no announcements */}
+        {announcements.length === 0 && me.is_commissioner && (
+          <section>
+            <Link href={`/dashboard/league/${leagueId}/announcements`}
+              className="block rounded-lg border px-4 py-3 text-sm text-center transition hover:border-yellow-500"
+              style={{ borderColor: "#2a2a40", color: "#8888aa", borderStyle: "dashed" }}>
+              📌 Post a bulletin board announcement
+            </Link>
+          </section>
+        )}
+
         {league.draft_status === "completed" && recentActivity.length > 0 && (
           <section className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
@@ -438,9 +482,10 @@ export default async function LeagueDetailPage({
                 { label: "Matchups",   href: `/dashboard/league/${leagueId}/matchups`,     emoji: "⚔️" },
                 { label: "Standings",  href: `/dashboard/league/${leagueId}/standings`,    emoji: "📊" },
                 { label: "Playoffs",   href: `/dashboard/league/${leagueId}/playoffs`,     emoji: "🏆" },
-                { label: "Free Agents",href: `/dashboard/league/${leagueId}/free-agents`,  emoji: "🔍" },
-                { label: "Trade",      href: `/dashboard/league/${leagueId}/trade`,         emoji: "🔄" },
-                { label: "Settings",   href: `/dashboard/league/${leagueId}/settings`,      emoji: "⚙️" },
+                { label: "Free Agents",href: `/dashboard/league/${leagueId}/free-agents`,   emoji: "🔍" },
+                { label: "Trade",      href: `/dashboard/league/${leagueId}/trade`,          emoji: "🔄" },
+                { label: "Schedule",   href: `/dashboard/league/${leagueId}/schedule`,       emoji: "📅" },
+                { label: "Settings",   href: `/dashboard/league/${leagueId}/settings`,       emoji: "⚙️" },
               ].map(({ label, href, emoji }) => (
                 <Link
                   key={label}

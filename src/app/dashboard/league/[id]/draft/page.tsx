@@ -64,7 +64,7 @@ export default async function DraftPage({
   const me = (members ?? []).find((m) => m.user_id === user.id);
   if (!me) redirect("/dashboard?error=" + encodeURIComponent("You're not a member of that league."));
 
-  const [{ data: picks }, { data: myPowers }] = await Promise.all([
+  const [{ data: picks }, { data: myPowers }, { data: watchlistRows }] = await Promise.all([
     supabase
       .from("uff_draft_picks")
       .select("id, round, pick_no, member_id, player_id, picked_at, players(full_name, position, team)")
@@ -77,6 +77,11 @@ export default async function DraftPage({
       .eq("member_id", me.id)
       .order("round", { ascending: true })
       .returns<PowerRow[]>(),
+    supabase
+      .from("uff_watchlist")
+      .select("player_id, players(full_name, position, team, injury_status)")
+      .eq("member_id", me.id)
+      .returns<{ player_id: string; players: { full_name: string; position: string | null; team: string | null; injury_status: string | null } | null }[]>(),
   ]);
 
   return (
@@ -94,6 +99,7 @@ export default async function DraftPage({
       isCommissioner={league.commissioner_id === user.id}
       initialPicks={picks ?? []}
       myPowers={myPowers ?? []}
+      initialWatchlist={(watchlistRows ?? []).map((r) => r.player_id)}
     />
   );
 }

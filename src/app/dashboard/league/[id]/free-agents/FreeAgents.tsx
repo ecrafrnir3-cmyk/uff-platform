@@ -15,6 +15,7 @@ interface Player {
   position: string | null;
   team: string | null;
   status: string | null;
+  injury_status: string | null;
   adp: number | null;
 }
 
@@ -38,6 +39,28 @@ function statusColor(status: string | null) {
   if (status === "Questionable") return "#FFD700";
   if (status === "Doubtful" || status === "Out") return "#ff8a8a";
   return "#f4f4f8";
+}
+
+function InjuryBadge({ injuryStatus }: { injuryStatus: string | null }) {
+  if (!injuryStatus) return null;
+  const map: Record<string, { label: string; bg: string; color: string }> = {
+    "Out":         { label: "OUT",  bg: "rgba(204,0,0,0.18)",    color: "#ff6b6b" },
+    "Doubtful":    { label: "D",    bg: "rgba(204,0,0,0.12)",    color: "#ff8a8a" },
+    "Questionable":{ label: "Q",    bg: "rgba(255,215,0,0.15)",  color: "#FFD700" },
+    "Probable":    { label: "P",    bg: "rgba(61,220,132,0.12)", color: "#3DDC84" },
+    "IR":          { label: "IR",   bg: "rgba(136,136,170,0.15)","color": "#8888aa" },
+  };
+  const style = map[injuryStatus];
+  if (!style) return null;
+  return (
+    <span style={{
+      display: "inline-block", padding: "1px 5px", borderRadius: 4,
+      fontSize: 10, fontWeight: 700, letterSpacing: "0.05em",
+      background: style.bg, color: style.color, flexShrink: 0,
+    }}>
+      {style.label}
+    </span>
+  );
 }
 
 const POS_COLOR: Record<string, string> = {
@@ -110,7 +133,7 @@ export default function FreeAgents({
 
       let q = supabase
         .from("players")
-        .select("id, full_name, position, team, status, adp")
+        .select("id, full_name, position, team, status, injury_status, adp")
         .not("position", "is", null)
         .not("position", "eq", "");
 
@@ -497,14 +520,12 @@ export default function FreeAgents({
 
                 {/* Player info */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate">{p.full_name}</p>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p className="text-sm font-semibold truncate">{p.full_name}</p>
+                    <InjuryBadge injuryStatus={p.injury_status} />
+                  </div>
                   <p className="text-xs text-white">
                     {p.position ?? "?"} &middot; {p.team ?? "FA"}
-                    {p.status && p.status !== "Active" && (
-                      <span className="ml-1 font-semibold" style={{ color: sColor ?? undefined }}>
-                        · {p.status}
-                      </span>
-                    )}
                   </p>
                 </div>
 
@@ -553,18 +574,31 @@ export default function FreeAgents({
                       {isPriorityMode && (
                         <span className="text-xs font-bold" style={{ color: "#0057FF" }}>Claimed</span>
                       )}
-                      <button
-                        onClick={() => {
-                          setBidForm((prev) => ({
-                            ...prev,
-                            [p.id]: { amount: String(existingBid?.bid_amount ?? 0), dropId: existingBid?.drop_player_id ?? "" },
-                          }));
-                        }}
-                        className="shrink-0 rounded-md px-2.5 py-1.5 text-xs font-semibold"
-                        style={{ background: "#1c1c2b", color: "#0057FF", border: "1px solid #0057FF44" }}
-                      >
-                        {isPriorityMode ? "Cancel" : "Edit"}
-                      </button>
+                      {isPriorityMode ? (
+                        // Priority mode: "Cancel" directly removes the claim
+                        <button
+                          disabled={cancellingId === existingBid?.id}
+                          onClick={() => existingBid && handleCancelBid(existingBid.id)}
+                          className="shrink-0 rounded-md px-2.5 py-1.5 text-xs font-semibold disabled:opacity-40"
+                          style={{ background: "rgba(204,0,0,0.12)", color: "#CC0000", border: "1px solid #CC000033" }}
+                        >
+                          {cancellingId === existingBid?.id ? "…" : "Cancel"}
+                        </button>
+                      ) : (
+                        // FAAB mode: "Edit" opens bid form to update amount
+                        <button
+                          onClick={() => {
+                            setBidForm((prev) => ({
+                              ...prev,
+                              [p.id]: { amount: String(existingBid?.bid_amount ?? 0), dropId: existingBid?.drop_player_id ?? "" },
+                            }));
+                          }}
+                          className="shrink-0 rounded-md px-2.5 py-1.5 text-xs font-semibold"
+                          style={{ background: "#1c1c2b", color: "#0057FF", border: "1px solid #0057FF44" }}
+                        >
+                          Edit
+                        </button>
+                      )}
                     </div>
                   ) : form ? null : (
                     <button

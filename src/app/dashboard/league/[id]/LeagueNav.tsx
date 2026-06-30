@@ -10,11 +10,16 @@ const BASE_NAV = [
   { label: "Matchups",      href: "/matchups" },
   { label: "Standings",     href: "/standings" },
   { label: "Free Agents",   href: "/free-agents" },
+  { label: "Players",       href: "/players" },
   { label: "Trade",         href: "/trade" },
+  { label: "Trade Log",     href: "/trades" },
   { label: "Transactions",  href: "/transactions" },
   { label: "Record Book",   href: "/record-book" },
   { label: "Trade Block",   href: "/trade-block" },
   { label: "Playoffs",      href: "/playoffs" },
+  { label: "Schedule",        href: "/schedule" },
+  { label: "Bulletin Board",  href: "/announcements" },
+  { label: "Chat",             href: "/chat" },
 ];
 
 const COMMISSIONER_NAV = [
@@ -26,10 +31,12 @@ export default function LeagueNav({
   leagueId,
   isCommissioner,
   pendingTradeCount = 0,
+  unreadNotifCount = 0,
 }: {
   leagueId: string;
   isCommissioner: boolean;
   pendingTradeCount?: number;
+  unreadNotifCount?: number;
 }) {
   const pathname = usePathname();
   const base = `/dashboard/league/${leagueId}`;
@@ -56,7 +63,7 @@ export default function LeagueNav({
             href === ""
               ? pathname === base || pathname === base + "/"
               : pathname.startsWith(fullHref);
-          const hasBadge = label === "Trade" && pendingTradeCount > 0;
+          const hasTradeBadge = label === "Trade" && pendingTradeCount > 0;
           return (
             <Link
               key={label}
@@ -68,7 +75,7 @@ export default function LeagueNav({
               }}
             >
               {label}
-              {hasBadge && (
+              {hasTradeBadge && (
                 <span
                   className="absolute top-1.5 right-0 inline-flex items-center justify-center rounded-full font-bold"
                   style={{
@@ -86,6 +93,31 @@ export default function LeagueNav({
             </Link>
           );
         })}
+
+        {/* Notification bell — far right */}
+        <Link
+          href={`${base}/notifications`}
+          className="relative ml-auto shrink-0 px-2 py-3 text-base transition-opacity hover:opacity-70"
+          style={{ color: pathname.startsWith(`${base}/notifications`) ? "#FFD700" : "#d4d4e8" }}
+          title="Notifications"
+        >
+          🔔
+          {unreadNotifCount > 0 && (
+            <span
+              className="absolute top-1.5 right-0 inline-flex items-center justify-center rounded-full font-bold"
+              style={{
+                background: "#0057FF",
+                color: "#fff",
+                fontSize: "9px",
+                minWidth: "14px",
+                height: "14px",
+                padding: "0 3px",
+              }}
+            >
+              {unreadNotifCount > 9 ? "9+" : unreadNotifCount}
+            </span>
+          )}
+        </Link>
       </div>
     </nav>
   );

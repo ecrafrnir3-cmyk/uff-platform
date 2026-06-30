@@ -3,8 +3,10 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import TrendingPlayers from "@/components/TrendingPlayers";
 import { makeDraftPick, assignPowerToPick, assignVampireBite, swapForesightCoin, executeHeist, restoreHeistOrder, revealNextPower } from "./actions";
 import { addToQueue, removeFromQueue, saveQueueOrder, executeAutodraft } from "./queue-actions";
+import { addToWatchlist, removeFromWatchlist } from "./watchlist-actions";
 import { startDraft } from "../actions";
 
 const supabase = createClient();
@@ -15,7 +17,29 @@ interface Player {
   position: string | null;
   team: string | null;
   status: string | null;
+  injury_status: string | null;
   adp: number | null;
+}
+
+function InjuryBadge({ injuryStatus }: { injuryStatus: string | null }) {
+  if (!injuryStatus) return null;
+  const map: Record<string, { label: string; bg: string; color: string }> = {
+    "Out":         { label: "OUT", bg: "rgba(204,0,0,0.18)",    color: "#ff6b6b" },
+    "Doubtful":    { label: "D",   bg: "rgba(204,0,0,0.12)",    color: "#ff8a8a" },
+    "Questionable":{ label: "Q",   bg: "rgba(255,215,0,0.15)",  color: "#FFD700" },
+    "Probable":    { label: "P",   bg: "rgba(61,220,132,0.12)", color: "#3DDC84" },
+    "IR":          { label: "IR",  bg: "rgba(136,136,170,0.15)", color: "#8888aa" },
+  };
+  const style = map[injuryStatus];
+  if (!style) return null;
+  return (
+    <span style={{
+      display: "inline-block", padding: "1px 5px", borderRadius: 4,
+      fontSize: 10, fontWeight: 700, background: style.bg, color: style.color, flexShrink: 0,
+    }}>
+      {style.label}
+    </span>
+  );
 }
 
 interface QueueItem {
@@ -586,6 +610,40 @@ function PreDraftLobby({
           ))}
         </div>
 
+        {/* Draft Order Display */}
+        {league.draft_order && league.draft_order.length > 0 && (
+          <div className="flex flex-col gap-2 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>
+            <h2 className="font-semibold" style={{ color: "#FFD700" }}>Draft Order</h2>
+            <p className="text-xs text-white mb-1">Pick 1 drafts first. Snake order — odd rounds go 1→{league.max_teams}, even rounds reverse.</p>
+            <div className="flex flex-col gap-1">
+              {league.draft_order.map((memberId, i) => {
+                const m = members.find((x) => x.id === memberId);
+                if (!m) return null;
+                const isMe = m.id === myMemberId;
+                return (
+                  <div key={memberId} className="flex items-center gap-3 rounded-md border px-3 py-1.5"
+                    style={{ borderColor: isMe ? "#0057FF" : "#2a2a40", background: isMe ? "rgba(0,87,255,0.06)" : "#15151f" }}>
+                    <span className="text-sm font-bold tabular-nums w-5 text-right" style={{ color: "#FFD700" }}>{i + 1}</span>
+                    <span className="flex-1 text-sm" style={{ color: isMe ? "#6fa3ff" : "#f4f4f8" }}>
+                      {m.team_name}{isMe && " (you)"}
+                    </span>
+                    {m.faction && (
+                      <span className="text-xs capitalize" style={{ color: m.faction === "hero" ? "#0057FF" : "#CC0000" }}>
+                        {m.faction}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {isCommissioner && (
+              <p className="text-xs mt-1" style={{ color: "#8888aa" }}>
+                Change the draft order in <a href={`/dashboard/league/${league.id}/settings`} style={{ color: "#0057FF", textDecoration: "underline" }}>Settings</a>.
+              </p>
+            )}
+          </div>
+        )}
+
         {isCommissioner ? (
           <div
             className="flex flex-col gap-3 rounded-lg border p-5"
@@ -613,8 +671,7 @@ function PreDraftLobby({
             ) : (
               <p className="text-sm text-white">
                 {unassigned} manager{unassigned !== 1 ? "s" : ""} still need
-                {unassigned === 1 ? "s" : ""} a faction.
-                Go back to the league page to randomize.
+                {unassigned === 1 ? "s" : ""} a faction assigned before the draft can start.
               </p>
             )}
           </div>
@@ -628,6 +685,9 @@ function PreDraftLobby({
             </p>
           </div>
         )}
+
+        {/* Pre-draft scouting: trending pickups */}
+        <TrendingPlayers leagueId={league.id} />
       </div>
     </div>
   );
@@ -641,6 +701,7 @@ export default function DraftRoom({
   isCommissioner,
   initialPicks,
   myPowers,
+  initialWatchlist = [],
 }: {
   league: League;
   members: Member[];
@@ -648,6 +709,7 @@ export default function DraftRoom({
   isCommissioner: boolean;
   initialPicks: Pick[];
   myPowers: PowerRow[];
+  initialWatchlist?: string[];
 }) {
   const leagueId = league.id;
 
@@ -680,6 +742,9 @@ export default function DraftRoom({
   const [autodraftSubmitting, setAutodraftSubmitting] = useState(false);
   // Draft Advisor
   const [advisorState, setAdvisorState] = useState<{ advice?: string; loading: boolean; error?: string }>({ loading: false });
+  // Watchlist
+  const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set(initialWatchlist));
+  const [watchlistPlayers, setWatchlistPlayers] = useState<Player[]>([]);
 
   // ---- Pre-return derived state (must be here so effects can use them) ------
   const totalPicksEarly = league.max_teams * league.draft_rounds;
@@ -772,7 +837,7 @@ export default function DraftRoom({
 
       let q = supabase
         .from("players")
-        .select("id, full_name, position, team, status, adp")
+        .select("id, full_name, position, team, status, injury_status, adp")
         .not("position", "is", null);
 
       if (hasSearch) q = q.ilike("full_name", `%${search.trim()}%`);
@@ -791,6 +856,17 @@ export default function DraftRoom({
   useEffect(() => {
     if (draftStatus !== "not_started") fetchQueue();
   }, [fetchQueue, draftStatus]);
+
+  // Sync watchlist player details whenever watchlistIds changes
+  useEffect(() => {
+    const ids = [...watchlistIds];
+    if (ids.length === 0) { setWatchlistPlayers([]); return; }
+    supabase
+      .from("players")
+      .select("id, full_name, position, team, status, injury_status, adp")
+      .in("id", ids)
+      .then(({ data }) => { if (data) setWatchlistPlayers(data as Player[]); });
+  }, [watchlistIds]);
 
   // ---- Early return: pre-draft lobby -----------------------------------------
   if (draftStatus === "not_started") {
@@ -867,6 +943,22 @@ export default function DraftRoom({
       saveQueueOrder(leagueId, next.map((q) => q.player_id));
       return next;
     });
+  }
+
+  // ---- Watchlist handlers ----------------------------------------------------
+  async function handleToggleWatchlist(playerId: string) {
+    const inList = watchlistIds.has(playerId);
+    // Optimistic update
+    setWatchlistIds((prev) => {
+      const next = new Set(prev);
+      if (inList) next.delete(playerId); else next.add(playerId);
+      return next;
+    });
+    if (inList) {
+      await removeFromWatchlist(myMemberId, playerId, leagueId);
+    } else {
+      await addToWatchlist(myMemberId, playerId, leagueId);
+    }
   }
 
   // ---- Draft Advisor ---------------------------------------------------------
@@ -1326,26 +1418,37 @@ export default function DraftRoom({
               )}
               {availablePlayers.map((p) => {
                 const inQueue = queuedIds.has(p.id);
+                const inWatch = watchlistIds.has(p.id);
                 return (
                   <div
                     key={p.id}
                     className="flex items-center justify-between rounded-lg border px-3 py-2"
-                    style={{ borderColor: "#2a2a40" }}
+                    style={{ borderColor: inWatch ? "rgba(61,220,132,0.3)" : "#2a2a40" }}
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <button
                         onClick={() => inQueue ? handleRemoveFromQueue(p.id) : handleAddToQueue(p)}
-                              title={inQueue ? "Remove from queue" : "Add to queue"}
+                        title={inQueue ? "Remove from queue" : "Add to queue"}
                         className="shrink-0 text-base leading-none transition-colors"
                         style={{ color: inQueue ? "#FFD700" : "#2a2a40" }}
                       >
                         &#9733;
                       </button>
+                      <button
+                        onClick={() => handleToggleWatchlist(p.id)}
+                        title={inWatch ? "Remove from watchlist" : "Add to watchlist"}
+                        className="shrink-0 text-sm leading-none transition-colors"
+                        style={{ color: inWatch ? "#3DDC84" : "#2a2a40" }}
+                      >
+                        ♥
+                      </button>
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold truncate">{p.full_name}</p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="text-sm font-semibold truncate">{p.full_name}</p>
+                          <InjuryBadge injuryStatus={p.injury_status} />
+                        </div>
                         <p className="text-xs text-white">
                           {p.position ?? "?"} - {p.team ?? "FA"}
-                          {p.status && p.status !== "Active" ? ` - ${p.status}` : ""}
                         </p>
                       </div>
                     </div>
@@ -1496,6 +1599,63 @@ export default function DraftRoom({
                           className="ml-1 shrink-0 text-xs leading-none"
                           style={{ color: "#CC0000" }}
                           title="Remove from queue"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Watchlist */}
+            <div className="flex flex-col gap-2">
+              <h3 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "#3DDC84" }}>
+                Watchlist {watchlistIds.size > 0 && <span className="ml-1 text-xs font-normal" style={{ color: "#f4f4f8" }}>({watchlistIds.size})</span>}
+              </h3>
+              {watchlistIds.size === 0 ? (
+                <p className="text-xs" style={{ color: "#f4f4f8" }}>
+                  Click ♥ on a player to add them to your watchlist.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  {watchlistPlayers.map((p) => {
+                    const isDrafted = pickedIds.has(p.id);
+                    return (
+                      <div
+                        key={p.id}
+                        className="flex items-center gap-2 rounded border px-2 py-1.5"
+                        style={{
+                          borderColor: isDrafted ? "#1a1a2e" : "rgba(61,220,132,0.25)",
+                          background: isDrafted ? "rgba(255,255,255,0.02)" : "transparent",
+                          opacity: isDrafted ? 0.45 : 1,
+                        }}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold truncate" style={{ color: "#f4f4f8" }}>
+                            {p.full_name}
+                          </p>
+                          <p className="text-xs" style={{ color: isDrafted ? "#CC0000" : "#8888aa" }}>
+                            {p.position ?? "?"} · {p.team ?? "FA"}
+                            {isDrafted && " · Drafted"}
+                          </p>
+                        </div>
+                        {!isDrafted && isMyTurn && (
+                          <button
+                            onClick={() => handlePick(p.id, p.position ?? "")}
+                            disabled={submitting}
+                            className="shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold disabled:opacity-50"
+                            style={{ background: "#0057FF", color: "#f4f4f8" }}
+                          >
+                            Draft
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleToggleWatchlist(p.id)}
+                          className="shrink-0 text-xs leading-none"
+                          style={{ color: "#CC0000" }}
+                          title="Remove from watchlist"
                         >
                           &times;
                         </button>

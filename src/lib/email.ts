@@ -81,20 +81,29 @@ export function tradeProposedHtml({
   proposerTeamName,
   proposerPlayers,
   receiverPlayers,
+  aiAnalysis,
 }: {
   leagueId: string;
   leagueName: string;
   proposerTeamName: string;
   proposerPlayers: string[];
   receiverPlayers: string[];
+  aiAnalysis?: string;
 }) {
   const url = `https://uff-platform.vercel.app/dashboard/league/${leagueId}/trade`;
+  const oracleBlock = aiAnalysis
+    ? `<div style="margin:20px 0;padding:14px 16px;border-left:3px solid #FFD700;background:rgba(255,215,0,0.05);">
+        <p style="margin:0 0 6px;font-size:11px;font-weight:700;letter-spacing:0.1em;color:#FFD700;text-transform:uppercase;">🔮 Oracle&apos;s Trade Analysis</p>
+        <p style="margin:0;font-size:14px;line-height:1.6;color:#d4d4e8;font-style:italic;">${aiAnalysis}</p>
+      </div>`
+    : "";
   return `<div style="${baseStyle}">
     <p style="${goldStyle}">⚡ Ultimate Fantasy Football</p>
     <h2 style="color:#0057FF;margin:8px 0 16px;">New Trade Offer</h2>
     <p><strong>${proposerTeamName}</strong> has sent you a trade offer in <strong>${leagueName}</strong>.</p>
     <p><strong>They offer:</strong> ${proposerPlayers.join(", ") || "—"}</p>
     <p><strong>They want:</strong> ${receiverPlayers.join(", ") || "—"}</p>
+    ${oracleBlock}
     <p style="margin-top:24px;"><a href="${url}" style="${linkStyle}">Review the offer →</a></p>
     <p style="${mutedStyle};margin-top:32px;">Ultimate Fantasy Football · Trade notification.</p>
   </div>`;
@@ -204,5 +213,34 @@ export function newsletterHtml({
     <div style="border-left:3px solid #FFD700;padding-left:16px;">${body}</div>
     <p style="margin-top:24px;"><a href="${url}" style="${linkStyle}">View league →</a></p>
     <p style="${mutedStyle};margin-top:32px;">Ultimate Fantasy Football · Weekly newsletter.</p>
+  </div>`;
+}
+
+export function announcementHtml({
+  leagueId,
+  leagueName,
+  title,
+  body,
+}: {
+  leagueId: string;
+  leagueName: string;
+  title: string;
+  body: string;
+}) {
+  const url = `https://uff-platform.vercel.app/dashboard/league/${leagueId}/announcements`;
+  const bodyHtml = body
+    .split(/\n\n+/)
+    .map((p) => `<p style="line-height:1.7;margin:0 0 14px;">${p.trim()}</p>`)
+    .join("");
+  return `<div style="${baseStyle}">
+    <p style="${goldStyle}">⚡ Ultimate Fantasy Football</p>
+    <h2 style="color:#0057FF;margin:8px 0 4px;">${leagueName}</h2>
+    <p style="${mutedStyle};margin:0 0 20px;">📢 Commissioner Announcement</p>
+    <div style="border-left:3px solid #FFD700;padding:12px 16px;background:rgba(255,215,0,0.05);margin-bottom:24px;">
+      <p style="margin:0 0 10px;font-weight:700;font-size:16px;">${title}</p>
+      <div style="font-size:14px;">${bodyHtml}</div>
+    </div>
+    <p><a href="${url}" style="${linkStyle}">View announcement →</a></p>
+    <p style="${mutedStyle};margin-top:32px;">Ultimate Fantasy Football · Commissioner announcement.</p>
   </div>`;
 }
