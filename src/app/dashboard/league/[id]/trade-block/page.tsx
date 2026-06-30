@@ -185,15 +185,15 @@ export default async function TradeBlockPage({
                         style={{ borderColor: "rgba(255,215,0,0.2)", background: "rgba(255,215,0,0.02)" }}
                       >
                         <PosBadge pos={p?.position ?? null} />
-                        {/* Headshot */}
-                        {p?.position !== "DEF" && p?.position !== "DST" && (
-                          <img
-                            src={`https://sleepercdn.com/content/nfl/players/thumb/${row.player_id}.jpg`}
-                            alt=""
-                            width={32} height={32}
-                            onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden"; }}
-                            style={{ borderRadius: "50%", objectFit: "cover", flexShrink: 0, width: 32, height: 32, background: "#1c1c2b" }}
-                          />
+                        {/* Player initials avatar */}
+                        {p?.full_name && p?.position !== "DEF" && p?.position !== "DST" && (
+                          <div style={{
+                            width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+                            background: "#1c1c2b", display: "flex", alignItems: "center",
+                            justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#8888aa",
+                          }}>
+                            {p.full_name.split(" ").map((w: string) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase()}
+                          </div>
                         )}
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold truncate">{p?.full_name ?? row.player_id}</p>
