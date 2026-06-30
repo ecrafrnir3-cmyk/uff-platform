@@ -58,9 +58,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Matchup not finalized yet" }, { status: 400 });
     }
 
-    // Return cached recap if already generated
-    if (rows[0].oracle_recap) {
-      return NextResponse.json({ recap: rows[0].oracle_recap });
+    // Return cached recap if already generated (check both rows — order is not guaranteed)
+    const cached = rows[0].oracle_recap ?? rows[1]?.oracle_recap;
+    if (cached) {
+      return NextResponse.json({ recap: cached });
     }
 
     const [a, b] = rows;

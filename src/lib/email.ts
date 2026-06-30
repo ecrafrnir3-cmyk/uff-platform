@@ -38,14 +38,20 @@ export async function sendEmail({
 
 /**
  * Returns a map of userId → email for all users in the Supabase project.
+ * Paginates to handle >1000 users correctly.
  */
 export async function getAllUserEmails(): Promise<Record<string, string>> {
   const admin = createAdminClient();
-  const { data, error } = await admin.auth.admin.listUsers({ perPage: 1000 });
-  if (error || !data) return {};
   const map: Record<string, string> = {};
-  for (const u of data.users) {
-    if (u.id && u.email) map[u.id] = u.email;
+  let page = 1;
+  while (true) {
+    const { data, error } = await admin.auth.admin.listUsers({ perPage: 1000, page });
+    if (error || !data) break;
+    for (const u of data.users) {
+      if (u.id && u.email) map[u.id] = u.email;
+    }
+    if (data.users.length < 1000) break; // reached last page
+    page++;
   }
   return map;
 }

@@ -456,13 +456,21 @@ Deno.serve(async (req) => {
   }
 
   // ── Vampire Bite siphon ───────────────────────────────────────────────────
+  // Build a reverse map: memberId → leagueId so we can scope lookups correctly.
+  const memberLeagueMap: Record<string, string> = {};
+  for (const m of typedMatchups) memberLeagueMap[m.member_id] = m.league_id;
+
   const vampireSiphon: Record<string, number> = {};
   for (const leagueId of leagueIds) {
+    // Only look at rosters that belong to this league
+    const leagueMemberIds = typedMatchups.filter(m => m.league_id === leagueId).map(m => m.member_id);
     for (const [targetId, biterId] of Object.entries(biteMap[leagueId] ?? {})) {
-      for (const playerScores of Object.values(fullScoreCache)) {
-        if (playerScores[targetId] != null) {
+      // Find the member within this league who owns the target player
+      for (const memberId of leagueMemberIds) {
+        const playerScores = fullScoreCache[memberId];
+        if (playerScores && playerScores[targetId] != null) {
           vampireSiphon[biterId] = (vampireSiphon[biterId] ?? 0) + playerScores[targetId].pts * 0.1;
-          // VB siphon also counts for Mirror Match
+          // VB siphon also counts toward Mirror Match bonus
           draftPowerBonusMap[biterId] = (draftPowerBonusMap[biterId] ?? 0) + playerScores[targetId].pts * 0.1;
           break;
         }

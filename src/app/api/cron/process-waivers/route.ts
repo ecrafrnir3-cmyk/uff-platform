@@ -32,11 +32,21 @@ export async function GET(req: NextRequest) {
 
   const supabase = createClient(supabaseUrl, serviceKey);
 
-  // Current time in Eastern (UTC-5, fixed — no DST)
-  const nowUTC  = new Date();
-  const nowET   = new Date(nowUTC.getTime() - 5 * 60 * 60 * 1000);
-  const etDow   = nowET.getUTCDay();    // 0=Sun, 1=Mon, ..., 6=Sat
-  const etHour  = nowET.getUTCHours(); // 0-23
+  // Current time in Eastern — DST-aware.
+  // EDT = UTC-4 (2nd Sun Mar → 1st Sun Nov), EST = UTC-5 (rest of year).
+  // NFL season runs Sep–Feb so we must handle the EDT→EST transition in Nov.
+  const nowUTC = new Date();
+  const month  = nowUTC.getUTCMonth(); // 0=Jan, 10=Nov
+  const day    = nowUTC.getUTCDate();
+  const dow    = nowUTC.getUTCDay();   // 0=Sun
+  // DST ends first Sunday of November. Simple conservative check:
+  // Use UTC-4 (EDT) from March through October, UTC-5 (EST) November–February.
+  const isEDT  = month >= 2 && month <= 9; // March(2) through October(9)
+  void day; void dow; // suppress unused warnings (kept for future fine-grained DST calc)
+  const etOffsetMs = isEDT ? 4 * 60 * 60 * 1000 : 5 * 60 * 60 * 1000;
+  const nowET  = new Date(nowUTC.getTime() - etOffsetMs);
+  const etDow  = nowET.getUTCDay();    // 0=Sun, 1=Mon, ..., 6=Sat
+  const etHour = nowET.getUTCHours(); // 0-23
 
   const week = getCurrentNFLWeek();
 

@@ -18,7 +18,7 @@ Read this at the start of every session. It is the authoritative source of truth
 
 ## Tech Stack
 
-- **Framework**: Next.js 15 App Router, TypeScript, Tailwind CSS v4
+- **Framework**: Next.js 16 App Router, TypeScript, Tailwind CSS v4
 - **Database**: Supabase PostgreSQL + RLS; service role key for admin ops
 - **Auth**: Supabase Auth (email/password)
 - **Bundler**: Turbopack (Vercel build) — stops at first TS error; errors cascade, fix one and the next surfaces
@@ -252,23 +252,34 @@ Muted text: #d4d4e8
 7. **`.returns<T[]>()`** — required on Supabase queries with complex joins that TypeScript can't infer.
 8. **Priority waiver Cancel** — in priority mode, Cancel directly calls `handleCancelBid()`, NOT `setBidForm()`. Don't regress this.
 9. **`faabEnabled` logic** — must be `faab_budget > 0 && waiver_type === "faab"`. Don't simplify to just `faab_budget > 0` or priority leagues will show FAAB UI.
+10. **Windows CMD no `&&`** — CMD does not support `&&` chaining. If a git commit fails with "index.lock" or "HEAD.lock" errors, run `del .git\index.lock` and/or `del .git\HEAD.lock`, then retry the three commands separately.
+11. **Dotall `/s` regex flag** — TypeScript target below ES2018 rejects `/pattern/s`. Use `.split(/PATTERN/)[0]` or `[\s\S]*` instead.
+12. **VB siphon must be league-scoped** — the `fullScoreCache` holds members from ALL leagues being scored simultaneously. The Vampire Bite inner loop must filter to `leagueMemberIds` only, not `Object.values(fullScoreCache)`.
+13. **DST in process-waivers** — use `isEDT = month >= 2 && month <= 9` (March–October = UTC-4), else UTC-5. NFL season spans the EDT→EST transition.
+14. **Oracle cache row order** — `uff_matchups` query for a matchup returns 2 rows in non-guaranteed order. Always check `rows[0].oracle_recap ?? rows[1]?.oracle_recap`.
+15. **`getAllUserEmails` pagination** — always paginate with `page++` until `data.users.length < 1000`. Single-page fetch silently truncates at 1000 users.
 
 ---
 
 ## Current Build Status
 
-All features through **#105 (Commissioner Pre-Draft Checklist)** are built locally. Ready to commit and push.
+All features through **#105 (Commissioner Pre-Draft Checklist)** are deployed. Session 18 added 4 bug fixes.
 
-**Latest Vercel deployment**: READY (pre-#101 push)  
-**Commit**: `fix: replace dotAll regex flag with split — ES2018 compat` (e4b936f)  
-**Pending commit**: `feat: Sentry, pick clock, email invites, on-the-clock notifications, pre-draft checklist (#101–#105)`
+**Latest Vercel deployment**: READY  
+**Last deployed commit**: `feat: Sentry, pick clock, email invites, on-the-clock notifications, pre-draft checklist (#101–#105)` — deployed and live  
+**Pending commit**: `fix: Vampire Bite scope, DST offset, Oracle cache, email pagination`
 
-### Nate must do before next session:
-1. `npm install` (adds @sentry/nextjs)
-2. Create Sentry account at sentry.io → new Next.js project → get DSN
-3. Add to Vercel env vars: `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN`
-4. Run Supabase migration: `ALTER TABLE uff_leagues ADD COLUMN IF NOT EXISTS pick_clock_seconds integer DEFAULT NULL;`
-5. `git add -A` → `git commit -m "feat: Sentry, pick clock, email invites, on-the-clock notifications, pre-draft checklist (#101–#105)"` → `git push`
+### Nate must do now:
+1. `git add -A`
+2. `git commit -m "fix: Vampire Bite cross-league scope, DST offset in waivers, Oracle cache order, getAllUserEmails pagination"`
+3. `git push`
+
+### Completed setup (don't redo):
+- Sentry account created, DSN set, org=`uff-platform`, project=`javascript-nextjs`
+- `.npmrc` with `legacy-peer-deps=true` (committed)
+- `turbopack: {}` in `next.config.ts` (committed)
+- `pick_clock_seconds` column added to `uff_leagues` via Supabase SQL editor
+- Vercel env vars: `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` all set
 
 ### Full Feature List (deployed + pending push):
 - Core league, member management, faction war
@@ -356,6 +367,11 @@ next.config.ts                    # Wrapped with withSentryConfig
 `ChecklistItem` component + `checks` object in `DraftRoom.tsx` `PreDraftLobby`.
 
 ### Next priorities (not yet built):
-- Push notifications (future)
-- Onboarding / invite flow polish
-- Mock draft mode (simulate draft without locking rosters)
+- **Rate limiting on AI routes** — per user, per minute — critical before any public launch
+- **Mock draft mode** — simulate draft without locking real rosters
+- **Push notifications** — mobile PWA (requires service worker + VAPID keys)
+- **Onboarding / invite flow polish**
+- **Admin dashboard** — cross-league health view for Nate
+- **App Store listing** — iOS/Android PWA submission
+- Consider migrating crons from GitHub Actions → Vercel Cron Jobs (more reliable, less drift)
+- Update `nfl-utils.ts` season start date every off-season (currently `2026-09-09`)
