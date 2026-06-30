@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { TOKEN_NAMES } from "@/lib/token-names";
 
-type BreakdownPlayer = { player_id: string; name: string; pos: string; team: string; points: number };
+type BreakdownPlayer = { player_id: string; name: string; pos: string; team: string; points: number; statLine?: string };
 type BreakdownData = {
   hasData: boolean;
   a: { team_name: string; players: BreakdownPlayer[] };
@@ -408,12 +408,15 @@ export default function MatchupView({
                               {bd.data.a.team_name}
                             </p>
                             {bd.data.a.players.map(p => (
-                              <div key={p.player_id} className="flex items-center gap-1.5 text-xs">
-                                <span className="shrink-0 w-6 rounded text-center font-bold text-xs leading-4"
+                              <div key={p.player_id} className="flex items-start gap-1.5 text-xs">
+                                <span className="shrink-0 w-6 rounded text-center font-bold text-xs leading-4 mt-0.5"
                                   style={{ background: "#1c1c2b", color: "#8888aa" }}>
                                   {p.pos}
                                 </span>
-                                <span className="flex-1 truncate" style={{ color: "#d4d4e8" }}>{p.name}</span>
+                                <div className="flex-1 min-w-0">
+                                  <span className="truncate block" style={{ color: "#d4d4e8" }}>{p.name}</span>
+                                  {p.statLine && <span className="text-xs" style={{ color: "#6b6b8a" }}>{p.statLine}</span>}
+                                </div>
                                 <span className="shrink-0 font-bold tabular-nums" style={{ color: p.points > 0 ? "#f4f4f8" : "#8888aa" }}>
                                   {p.points.toFixed(2)}
                                 </span>
@@ -426,12 +429,15 @@ export default function MatchupView({
                               {bd.data.b.team_name}
                             </p>
                             {bd.data.b.players.map(p => (
-                              <div key={p.player_id} className="flex items-center gap-1.5 text-xs">
-                                <span className="shrink-0 w-6 rounded text-center font-bold text-xs leading-4"
+                              <div key={p.player_id} className="flex items-start gap-1.5 text-xs">
+                                <span className="shrink-0 w-6 rounded text-center font-bold text-xs leading-4 mt-0.5"
                                   style={{ background: "#1c1c2b", color: "#8888aa" }}>
                                   {p.pos}
                                 </span>
-                                <span className="flex-1 truncate" style={{ color: "#d4d4e8" }}>{p.name}</span>
+                                <div className="flex-1 min-w-0">
+                                  <span className="truncate block" style={{ color: "#d4d4e8" }}>{p.name}</span>
+                                  {p.statLine && <span className="text-xs" style={{ color: "#6b6b8a" }}>{p.statLine}</span>}
+                                </div>
                                 <span className="shrink-0 font-bold tabular-nums" style={{ color: p.points > 0 ? "#f4f4f8" : "#8888aa" }}>
                                   {p.points.toFixed(2)}
                                 </span>

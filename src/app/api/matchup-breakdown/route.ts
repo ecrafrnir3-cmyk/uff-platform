@@ -134,6 +134,38 @@ export async function POST(req: NextRequest) {
       }
     } catch { /* stats unavailable */ }
 
+        function formatStatLine(stats: Record<string, number>, pos: string): string {
+      const p: string[] = [];
+      const n = (k: string) => Math.round(stats[k] ?? 0);
+      if (pos === "QB") {
+        if (n("pass_yd")) p.push(`${n("pass_yd")} pass yds`);
+        if (n("pass_td")) p.push(`${n("pass_td")} TD`);
+        if (n("pass_int")) p.push(`${n("pass_int")} INT`);
+        if (n("rush_yd")) p.push(`${n("rush_yd")} rush yds`);
+        if (n("rush_td")) p.push(`${n("rush_td")} rush TD`);
+      } else if (pos === "RB") {
+        if (n("rush_yd")) p.push(`${n("rush_yd")} rush yds`);
+        if (n("rush_td")) p.push(`${n("rush_td")} rush TD`);
+        if (n("rec")) p.push(`${n("rec")} rec`);
+        if (n("rec_yd")) p.push(`${n("rec_yd")} rec yds`);
+        if (n("rec_td")) p.push(`${n("rec_td")} rec TD`);
+      } else if (pos === "WR" || pos === "TE") {
+        if (n("rec")) p.push(`${n("rec")} rec`);
+        if (n("rec_yd")) p.push(`${n("rec_yd")} yds`);
+        if (n("rec_td")) p.push(`${n("rec_td")} TD`);
+      } else if (pos === "K") {
+        if (stats.fgm != null || stats.fga != null) p.push(`${n("fgm")}/${n("fga")} FG`);
+        if (n("xpm")) p.push(`${n("xpm")} XP`);
+      } else if (pos === "DEF" || pos === "DST") {
+        if (n("sack")) p.push(`${n("sack")} sck`);
+        if (n("int")) p.push(`${n("int")} INT`);
+        if (n("fum_rec")) p.push(`${n("fum_rec")} FR`);
+        if (n("def_td")) p.push(`${n("def_td")} TD`);
+        const pa = stats.pts_allow; if (pa != null) p.push(`${n("pts_allow")} PA`);
+      }
+      return p.join(" · ");
+    }
+
     function buildBreakdown(
       startingIds: Set<string>,
       nameMap: Record<string, { name: string; pos: string; team: string }>
@@ -145,12 +177,14 @@ export async function POST(req: NextRequest) {
           const points = Object.keys(scoringSettings).length > 0
             ? computeScore(stats, scoringSettings)
             : 0;
+          const pos = info?.pos ?? "?";
           return {
             player_id: pid,
             name: info?.name ?? "Unknown",
-            pos: info?.pos ?? "?",
+            pos,
             team: info?.team ?? "FA",
             points,
+            statLine: formatStatLine(stats, pos),
           };
         })
         .sort((a, b) => b.points - a.points);

@@ -346,6 +346,7 @@ src/
     TrendingPlayers.tsx               # Trending adds/drops widget
   lib/
     notifications.ts                  # createNotification() — non-blocking, admin client
+    rate-limit.ts                     # checkRateLimit(key, maxPerMin) — in-memory per-instance
 ```
 
 ### Known gotcha added:
@@ -380,8 +381,14 @@ next.config.ts                    # Wrapped with withSentryConfig
 - Reconnect safety: `prevRoundRef` initializes to currentRound on reconnect (no spurious buffer); initializes to 0 when not_started so round 1 triggers correctly
 - Buffer is client-side only — if a user reloads mid-buffer, they miss it; that's acceptable
 
+### Features #109–#113 (Session 21)
+- **#109**: **Rate limiting** — in-memory per-user per-minute limits on all 10 AI routes (chat: 10/min, draft-advisor: 8/min, others: 5/min). `src/lib/rate-limit.ts` — returns 429 when exceeded.
+- **#110**: **Stat line breakdown** on player cards — `formatStatLine()` helper shows "247 pass yds · 2 TD" etc. per position. Applied to DragDropLineup starters + bench cards, and matchup breakdown (route + MatchupView). Only shows when actual game stats exist (seasonPts > 0).
+- **#111**: **Week navigator** on roster page — `?week=N` URL param; prev/next arrows in header; past weeks show read-only locked lineup with historical stats; current week badge.
+- **#112**: **Optimal lineup calculator** — post-week section below the lineup (visible when locked + seasonPts available). Computes best possible assignment by actual pts, shows "Optimal: X.X pts vs Y.Y pts actual, Z.Z pts left on bench."
+- Sentry DSN fix deployed. All features above deployed.
+
 ### Next priorities (not yet built):
-- **Rate limiting on AI routes** — per user, per minute — critical before any public launch
 - **Mock draft mode** — simulate draft without locking real rosters
 - **Push notifications** — mobile PWA (requires service worker + VAPID keys)
 - **Onboarding / invite flow polish**

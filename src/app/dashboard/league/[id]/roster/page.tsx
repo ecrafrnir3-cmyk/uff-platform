@@ -276,10 +276,10 @@ export default async function RosterPage({
   searchParams,
 }: {
   params:       Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; dropped?: string; ir?: string; lineup?: string; restored?: string; trade?: string; block?: string }>;
+  searchParams: Promise<{ error?: string; dropped?: string; ir?: string; lineup?: string; restored?: string; trade?: string; block?: string; week?: string }>;
 }) {
   const { id: leagueId } = await params;
-  const { error, dropped, ir, lineup: lineupSaved, restored, trade: tradeMsg, block: blockMsg } = await searchParams;
+  const { error, dropped, ir, lineup: lineupSaved, restored, trade: tradeMsg, block: blockMsg, week: weekParam } = await searchParams;
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -300,7 +300,9 @@ export default async function RosterPage({
     .maybeSingle();
   if (!me) redirect("/dashboard?error=" + encodeURIComponent("You're not a member of that league."));
 
-  const week = getCurrentNFLWeek();
+  const currentWeek = getCurrentNFLWeek();
+  const viewWeek = weekParam ? Math.max(1, Math.min(parseInt(weekParam) || currentWeek, currentWeek)) : currentWeek;
+  const week = viewWeek; // alias for all existing references
 
   const [
     { data: roster },
@@ -466,6 +468,7 @@ export default async function RosterPage({
   ]);
   let seasonPts: Record<string, number> | undefined;
   let projectedPts: Record<string, number> | undefined;
+  let rawStats: Record<string, Record<string, number>> | undefined;
   const scoringSettings = (league as unknown as { scoring_settings: Record<string, number> }).scoring_settings ?? {};
   if (Object.keys(scoringSettings).length > 0) {
     try {
@@ -476,6 +479,7 @@ export default async function RosterPage({
 
       if (sleeperRes.ok) {
         const allStats: Record<string, Record<string, number>> = await sleeperRes.json();
+        rawStats = allStats;
         const ptsMap: Record<string, number> = {};
         let hasAnyPts = false;
         for (const r of (roster ?? [])) {
@@ -640,8 +644,45 @@ export default async function RosterPage({
           </div>
         </div>
 
-        {/* ── Weekly Power Token ── */}
-        {weeklyToken && (
+        {/* ── Week Navigator ── */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {viewWeek > 1 && (
+              <Link
+                href={`/dashboard/league/${leagueId}/roster?week=${viewWeek - 1}`}
+                className="rounded-md px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-80"
+                style={{ background: "#1c1c2b", color: "#f4f4f8", border: "1px solid #2a2a40" }}
+              >
+                ← Wk {viewWeek - 1}
+              </Link>
+            )}
+            <span className="text-sm font-bold" style={{ color: "#FFD700" }}>
+              Week {viewWeek}
+              {viewWeek === currentWeek && <span className="ml-1.5 text-xs font-normal" style={{ color: "#8888aa" }}>(current)</span>}
+            </span>
+            {viewWeek < currentWeek && (
+              <Link
+                href={`/dashboard/league/${leagueId}/roster?week=${viewWeek + 1}`}
+                className="rounded-md px-3 py-1.5 text-xs font-semibold transition-opacity hover:opacity-80"
+                style={{ background: "#1c1c2b", color: "#f4f4f8", border: "1px solid #2a2a40" }}
+              >
+                Wk {viewWeek + 1} →
+              </Link>
+            )}
+          </div>
+          {viewWeek !== currentWeek && (
+            <Link
+              href={`/dashboard/league/${leagueId}/roster`}
+              className="text-xs underline"
+              style={{ color: "#0057FF" }}
+            >
+              Current week
+            </Link>
+          )}
+        </div>
+
+        {/* ── Weekly Power Token (current week only) ── */}
+        {weeklyToken && viewWeek === currentWeek && (
           <>
             <WeeklyTokenCard
               tokenId={weeklyToken.token_id}
@@ -663,8 +704,8 @@ export default async function RosterPage({
           </>
         )}
 
-        {/* ── Start/Sit AI Advisor ── */}
-        {activeRosterForLineup.length > 0 && !me.eliminated_at && (
+        {/* ── Start/Sit AI Advisor (current week only) ── */}
+        {activeRosterForLineup.length > 0 && !me.eliminated_at && viewWeek === currentWeek && (
           <StartSitAdvisor leagueId={leagueId} />
         )}
 
@@ -676,15 +717,17 @@ export default async function RosterPage({
             slots={expandedSlots}
             activeRoster={activeRosterForLineup}
             currentLineup={currentLineup}
-            locked={isLineupLocked(week)}
+            locked={viewWeek < currentWeek || isLineupLocked(week)}
             lockTime={getWeekLockTime(week).toISOString()}
             gameTimes={Object.keys(gameTimes).length > 0 ? gameTimes : undefined}
             seasonPts={seasonPts}
-            projectedPts={projectedPts}
+            projectedPts={viewWeek === currentWeek ? projectedPts : undefined}
             playerPowers={Object.keys(playerPowers).length > 0 ? playerPowers : undefined}
-            irSlotsAvailable={irSlotsTotal - irSlotsUsed}
-            quickFeetAvailable={quickFeetAvailable}
+            irSlotsAvailable={viewWeek === currentWeek ? irSlotsTotal - irSlotsUsed : 0}
+            quickFeetAvailable={viewWeek === currentWeek && quickFeetAvailable}
             cantCutPlayerIds={[...cantCutSet]}
+            rawStats={rawStats}
+            readOnly={viewWeek < currentWeek}
           />
         )}
 

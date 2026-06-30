@@ -54,6 +54,38 @@ const POS_COLOR: Record<string, string> = {
 const HERO_COLOR    = "#0057FF";
 const VILLAIN_COLOR = "#CC0000";
 
+function formatStatLine(stats: Record<string, number>, pos: string): string {
+  const p: string[] = [];
+  const n = (k: string) => Math.round(stats[k] ?? 0);
+  if (pos === "QB") {
+    if (n("pass_yd")) p.push(`${n("pass_yd")} pass yds`);
+    if (n("pass_td")) p.push(`${n("pass_td")} TD`);
+    if (n("pass_int")) p.push(`${n("pass_int")} INT`);
+    if (n("rush_yd")) p.push(`${n("rush_yd")} rush yds`);
+    if (n("rush_td")) p.push(`${n("rush_td")} rush TD`);
+  } else if (pos === "RB") {
+    if (n("rush_yd")) p.push(`${n("rush_yd")} rush yds`);
+    if (n("rush_td")) p.push(`${n("rush_td")} rush TD`);
+    if (n("rec")) p.push(`${n("rec")} rec`);
+    if (n("rec_yd")) p.push(`${n("rec_yd")} rec yds`);
+    if (n("rec_td")) p.push(`${n("rec_td")} rec TD`);
+  } else if (pos === "WR" || pos === "TE") {
+    if (n("rec")) p.push(`${n("rec")} rec`);
+    if (n("rec_yd")) p.push(`${n("rec_yd")} yds`);
+    if (n("rec_td")) p.push(`${n("rec_td")} TD`);
+  } else if (pos === "K") {
+    if (stats.fgm != null || stats.fga != null) p.push(`${n("fgm")}/${n("fga")} FG`);
+    if (n("xpm")) p.push(`${n("xpm")} XP`);
+  } else if (pos === "DEF" || pos === "DST") {
+    if (n("sack")) p.push(`${n("sack")} sck`);
+    if (n("int")) p.push(`${n("int")} INT`);
+    if (n("fum_rec")) p.push(`${n("fum_rec")} FR`);
+    if (n("def_td")) p.push(`${n("def_td")} TD`);
+    if (stats.pts_allow != null) p.push(`${n("pts_allow")} PA`);
+  }
+  return p.join(" · ");
+}
+
 function slotBase(slot: string): string {
   return slot.replace(/_\d+$/, "");
 }
@@ -122,6 +154,8 @@ export default function DragDropLineup({
   irSlotsAvailable = 0,
   quickFeetAvailable = false,
   cantCutPlayerIds = [],
+  rawStats,
+  readOnly = false,
 }: {
   leagueId: string;
   week: number;
@@ -137,6 +171,8 @@ export default function DragDropLineup({
   irSlotsAvailable?: number;
   quickFeetAvailable?: boolean;
   cantCutPlayerIds?: string[];
+  rawStats?: Record<string, Record<string, number>>;
+  readOnly?: boolean;
 }) {
   const cantCutSet = new Set(cantCutPlayerIds);
   const [assignments, setAssignments] = useState<Record<string, string>>(currentLineup);
@@ -573,6 +609,11 @@ export default function DragDropLineup({
                         </span>
                       )}
                     </p>
+                    {(() => {
+                      const sl = rawStats?.[player.player_id] ? formatStatLine(rawStats[player.player_id]!, player.position) : "";
+                      if (!sl || !(seasonPts?.[player.player_id] ?? 0 > 0)) return null;
+                      return <p className="text-xs truncate" style={{ color: "#6b6b8a" }}>{sl}</p>;
+                    })()}
                   </div>
                   {(() => {
                     const actual = seasonPts?.[player.player_id];
@@ -757,6 +798,11 @@ export default function DragDropLineup({
                         </span>
                       )}
                     </p>
+                    {(() => {
+                      const sl = rawStats?.[p.player_id] ? formatStatLine(rawStats[p.player_id]!, p.position) : "";
+                      if (!sl || !(seasonPts?.[p.player_id] ?? 0 > 0)) return null;
+                      return <p className="text-xs" style={{ color: "#6b6b8a" }}>{sl}</p>;
+                    })()}
                   </div>
                   {(() => {
                     const actual = seasonPts?.[p.player_id];
@@ -816,8 +862,50 @@ export default function DragDropLineup({
         )}
       </div>
 
+      {/* ── OPTIMAL LINEUP (post-week analysis) ──────────────────────────────── */}
+      {locked && seasonPts && (() => {
+        // Compute optimal lineup using actual season pts
+        const sortedByActual = [...activeRoster].sort((a, b) =>
+          (seasonPts[b.player_id] ?? 0) - (seasonPts[a.player_id] ?? 0)
+        );
+        const optAssign: Record<string, string> = {};
+        const used = new Set<string>();
+        const SLOT_ELIGIBLE_OPT: Record<string, string[]> = {
+          QB: ["QB"], RB: ["RB"], WR: ["WR"], TE: ["TE"],
+          FLEX: ["RB", "WR", "TE"], K: ["K"], DEF: ["DEF", "DST"], DST: ["DEF", "DST"],
+        };
+        for (const slot of slots) {
+          const eligible = SLOT_ELIGIBLE_OPT[slotBase(slot)] ?? [];
+          const pick = sortedByActual.find(p => eligible.includes(p.position) && !used.has(p.player_id));
+          if (pick) { optAssign[slot] = pick.player_id; used.add(pick.player_id); }
+        }
+        const optTotal = Object.values(optAssign).reduce((s, pid) => s + (seasonPts[pid] ?? 0), 0);
+        const actualTotal = Object.values(assignments).reduce((s, pid) => pid ? s + (seasonPts[pid] ?? 0) : s, 0);
+        const diff = optTotal - actualTotal;
+        if (optTotal <= 0) return null;
+        return (
+          <div
+            className="px-4 py-3 flex flex-wrap items-center gap-3 text-xs"
+            style={{ background: "#0a0a18", borderTop: "1px solid #2a2a40" }}
+          >
+            <span className="font-bold uppercase tracking-wider" style={{ color: "#8888aa" }}>Optimal Lineup</span>
+            <span className="font-black tabular-nums" style={{ color: "#3DDC84" }}>{optTotal.toFixed(1)} pts</span>
+            <span style={{ color: "#8888aa" }}>vs</span>
+            <span className="font-black tabular-nums" style={{ color: "#FFD700" }}>{actualTotal.toFixed(1)} pts actual</span>
+            {diff > 0.5 && (
+              <span style={{ color: "#ff8a8a" }}>
+                ({diff.toFixed(1)} pts left on bench)
+              </span>
+            )}
+            {diff <= 0.5 && (
+              <span style={{ color: "#3DDC84" }}>✓ Perfect lineup</span>
+            )}
+          </div>
+        );
+      })()}
+
       {/* ── SAVE BAR ──────────────────────────────────────────────────────────── */}
-      {!locked && (
+      {!locked && !readOnly && (
         <div
           className="flex items-center justify-between px-4 py-3 gap-3 flex-wrap"
           style={{ background: "#15151f", borderTop: "1px solid #2a2a40" }}
