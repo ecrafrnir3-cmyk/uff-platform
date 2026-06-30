@@ -366,6 +366,15 @@ next.config.ts                    # Wrapped with withSentryConfig
 `leagueInviteHtml` + `onTheClockHtml` templates in `lib/email.ts`.
 `ChecklistItem` component + `checks` object in `DraftRoom.tsx` `PreDraftLobby`.
 
+### New feature: Round Buffer Timer (#106)
+- 30-second buffer fires at the start of every draft round (including round 1 when draft transitions from not_started → in_progress)
+- During buffer: pick buttons disabled, pick clock paused, buffer countdown ring shown
+- **Draft Heist**: HeistModal now auto-triggers during the buffer (not on the user's turn) — swap pick slots BEFORE the round begins
+- **Telepathy**: auto-reveals the first picker's power at buffer start (inline in buffer banner, no button needed)
+- State: `roundBufferActive`, `roundBufferTimeLeft`, `bufferTelepathyReveal`, `prevRoundRef` in DraftRoom.tsx
+- Reconnect safety: `prevRoundRef` initializes to currentRound on reconnect (no spurious buffer); initializes to 0 when not_started so round 1 triggers correctly
+- Buffer is client-side only — if a user reloads mid-buffer, they miss it; that's acceptable
+
 ### Next priorities (not yet built):
 - **Rate limiting on AI routes** — per user, per minute — critical before any public launch
 - **Mock draft mode** — simulate draft without locking real rosters

@@ -791,6 +791,15 @@ export default function DraftRoom({
   // Pick clock
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const needsAutopickRef = useRef(false);
+  // Round buffer
+  const [roundBufferActive, setRoundBufferActive] = useState(false);
+  const [roundBufferTimeLeft, setRoundBufferTimeLeft] = useState(30);
+  const [bufferTelepathyReveal, setBufferTelepathyReveal] = useState<{
+    powerName: string | null;
+    cloaked: boolean;
+    teamName: string;
+  } | null>(null);
+  const prevRoundRef = useRef<number>(-1); // -1 = uninitialized
 
   // ---- Pre-return derived state (must be here so effects can use them) ------
   const totalPicksEarly = league.max_teams * league.draft_rounds;
@@ -868,13 +877,66 @@ export default function DraftRoom({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentRound, heistOriginalOrder, heistUsedRound, isDraftComplete]);
 
-  // Show Draft Heist modal on our turn
+  // ---- Round buffer: detect new round and trigger 30s window ----------------
   useEffect(() => {
-    if (isMyTurn && myPowerThisRound?.draft_powers?.name === "Draft Heist" && heistUsedRound !== currentRound && !showHeistModal) {
+    if (isDraftComplete) return;
+    if (prevRoundRef.current === -1) {
+      // First run — if draft is already in progress, initialize to currentRound
+      // so we don't fire a buffer for a round already underway (reconnect case).
+      // If not started yet, set to 0 so round 1 triggers the buffer when draft starts.
+      prevRoundRef.current = draftStatus === "not_started" ? 0 : currentRound;
+      return;
+    }
+    if (currentRound > prevRoundRef.current) {
+      prevRoundRef.current = currentRound;
+      setRoundBufferActive(true);
+      setRoundBufferTimeLeft(30);
+      setBufferTelepathyReveal(null);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentRound, draftStatus, isDraftComplete]);
+
+  // ---- Round buffer: countdown --------------------------------------------
+  useEffect(() => {
+    if (!roundBufferActive) return;
+    const id = window.setInterval(() => {
+      setRoundBufferTimeLeft((prev) => {
+        if (prev <= 1) {
+          setRoundBufferActive(false);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [roundBufferActive]);
+
+  // ---- Telepathy: auto-reveal first picker's power at buffer start ---------
+  useEffect(() => {
+    if (!roundBufferActive) return;
+    if (myPowerThisRound?.draft_powers?.name !== "Telepathy") return;
+    if (bufferTelepathyReveal) return;
+    const firstPickNo = (currentRound - 1) * league.max_teams + 1;
+    const firstSlot = snakeDraftSlot(firstPickNo, league.max_teams);
+    const firstMemberId = activeDraftOrder[firstSlot - 1];
+    if (!firstMemberId || firstMemberId === myMemberId) {
+      setBufferTelepathyReveal({ powerName: null, cloaked: false, teamName: "you pick first" });
+      return;
+    }
+    const teamName = members.find((m) => m.id === firstMemberId)?.team_name ?? "First picker";
+    revealNextPower({ leagueId, nextMemberId: firstMemberId, currentRound }).then((reveal) => {
+      setBufferTelepathyReveal({ ...reveal, teamName });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roundBufferActive, myPowerThisRound?.draft_powers?.name, bufferTelepathyReveal]);
+
+  // Show Draft Heist modal at round buffer start (replaces old isMyTurn trigger)
+  useEffect(() => {
+    if (roundBufferActive && myPowerThisRound?.draft_powers?.name === "Draft Heist" && heistUsedRound !== currentRound && !showHeistModal) {
       setShowHeistModal(true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMyTurn, myPowerThisRound?.draft_powers?.name, currentRound]);
+  }, [roundBufferActive, myPowerThisRound?.draft_powers?.name, currentRound]);
 
   useEffect(() => {
     const fetchPlayers = async () => {
@@ -917,7 +979,7 @@ export default function DraftRoom({
   // ---- Pick clock countdown -----------------------------------------------
   useEffect(() => {
     const secs = league.pick_clock_seconds;
-    if (!secs || !isMyTurn || isDraftComplete) {
+    if (!secs || !isMyTurn || isDraftComplete || roundBufferActive) {
       setTimeLeft(null);
       needsAutopickRef.current = false;
       return;
@@ -936,7 +998,7 @@ export default function DraftRoom({
     }, 1000);
     return () => window.clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMyTurn, isDraftComplete]);
+  }, [isMyTurn, isDraftComplete, roundBufferActive]);
 
   // Fire autopick when timeLeft hits 0
   useEffect(() => {
@@ -1342,8 +1404,84 @@ export default function DraftRoom({
           </p>
         </header>
 
-        {/* Turn banner */}
-        {!isDraftComplete && (
+        {/* Round buffer banner — shown at the start of each round */}
+        {!isDraftComplete && roundBufferActive && (
+          <div
+            className="rounded-lg border px-5 py-4 flex flex-col gap-3"
+            style={{ borderColor: "#FFD700", background: "rgba(255,215,0,0.06)" }}
+          >
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] mb-1" style={{ color: "#FFD700" }}>
+                  Round {currentRound} Begins
+                </p>
+                <p className="text-sm font-semibold" style={{ color: "#f4f4f8" }}>
+                  Pre-round buffer — activate powers before picks start
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: "#8888aa" }}>
+                  Draft Heist &amp; Telepathy can be used now · Picks begin when timer expires
+                </p>
+              </div>
+              <div
+                className="flex items-center justify-center rounded-full font-bold tabular-nums shrink-0"
+                style={{
+                  width: 56, height: 56,
+                  background: roundBufferTimeLeft <= 5 ? "rgba(204,0,0,0.18)" : "rgba(255,215,0,0.10)",
+                  border: `2px solid ${roundBufferTimeLeft <= 5 ? "#CC0000" : "#FFD700"}`,
+                  color: roundBufferTimeLeft <= 5 ? "#CC0000" : "#FFD700",
+                  fontSize: 20,
+                }}
+              >
+                {roundBufferTimeLeft}
+              </div>
+            </div>
+
+            {/* Telepathy reveal */}
+            {bufferTelepathyReveal && (
+              <div className="rounded-md border px-3 py-2.5" style={{ borderColor: "#0057FF", background: "#0a0e1a" }}>
+                <p className="text-xs uppercase tracking-wide mb-1" style={{ color: "#0057FF" }}>
+                  🧠 Telepathy — First Picker This Round
+                </p>
+                {bufferTelepathyReveal.cloaked ? (
+                  <p className="text-sm font-semibold" style={{ color: "#f4f4f8" }}>
+                    {bufferTelepathyReveal.teamName} — power is <span style={{ color: "#8888aa" }}>Cloaked</span>
+                  </p>
+                ) : bufferTelepathyReveal.powerName ? (
+                  <p className="text-sm font-semibold" style={{ color: "#f4f4f8" }}>
+                    {bufferTelepathyReveal.teamName} has{" "}
+                    <span style={{ color: "#FFD700" }}>{bufferTelepathyReveal.powerName}</span>
+                  </p>
+                ) : (
+                  <p className="text-sm" style={{ color: "#f4f4f8" }}>
+                    {bufferTelepathyReveal.teamName} — no power this round
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* My power reminder during buffer */}
+            {myPowerThisRound?.draft_powers && (
+              <div className="rounded-md border px-3 py-2" style={{ borderColor: "#2a2a40", background: "#0d0d1a" }}>
+                <p className="text-xs uppercase tracking-wide mb-0.5" style={{ color: "#8888aa" }}>Your power this round</p>
+                <p className="text-sm font-semibold" style={{ color: "#f4f4f8" }}>
+                  {myPowerThisRound.draft_powers.name}
+                  {myPowerThisRound.draft_powers.tied_position &&
+                    myPowerThisRound.draft_powers.tied_position !== "ANY" && (
+                      <span className="ml-2 rounded px-1.5 py-0.5 text-xs font-normal" style={{ background: "#1c1c2b", color: "#f4f4f8" }}>
+                        {myPowerThisRound.draft_powers.tied_position} only
+                      </span>
+                    )}
+                </p>
+                <p className="mt-0.5 text-xs" style={{ color: "#d4d4e8" }}>
+                  {myPowerThisRound.draft_powers.description}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Turn banner — shown only when buffer is not active */}
+        {!isDraftComplete && !roundBufferActive && (
           <div
             className="rounded-lg border px-5 py-4"
             style={{
@@ -1355,7 +1493,7 @@ export default function DraftRoom({
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-4 flex-wrap">
                   <p className="font-semibold" style={{ color: "#FFD700" }}>
-                    {timeLeft === 0 ? "Time's up — autopicking…" : "It’s your turn — pick now!"}
+                    {timeLeft === 0 ? "Time’s up — autopicking…" : "It’s your turn — pick now!"}
                   </p>
                   {timeLeft !== null && timeLeft > 0 && (
                     <div
@@ -1390,7 +1528,7 @@ export default function DraftRoom({
                     <p className="mt-0.5 text-xs text-white">
                       {myPowerThisRound.draft_powers.description}
                     </p>
-                    {myPowerThisRound.draft_powers.name === "Hero's Shield" && (
+                    {myPowerThisRound.draft_powers.name === "Hero’s Shield" && (
                       <p className="mt-1.5 text-xs font-semibold" style={{ color: "#0057FF" }}>
                         🛡 Your pick slot is shielded against Draft Heist this round.
                       </p>
@@ -1547,7 +1685,7 @@ export default function DraftRoom({
                         </p>
                       </div>
                     </div>
-                    {isMyTurn && (
+                    {isMyTurn && !roundBufferActive && (
                       <button
                         onClick={() => handlePick(p.id, p.position ?? "")}
                         disabled={submitting}
