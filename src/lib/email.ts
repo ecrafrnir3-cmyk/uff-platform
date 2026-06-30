@@ -244,3 +244,61 @@ export function announcementHtml({
     <p style="${mutedStyle};margin-top:32px;">Ultimate Fantasy Football · Commissioner announcement.</p>
   </div>`;
 }
+
+export function onTheClockHtml({
+  teamName,
+  round,
+  pickNo,
+  totalPicks,
+  leagueId,
+}: {
+  teamName: string;
+  round: number;
+  pickNo: number;
+  totalPicks: number;
+  leagueId: string;
+}) {
+  return `<div style="${baseStyle}">
+    <p style="${goldStyle}; font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 4px;">Ultimate Fantasy Football</p>
+    <h1 style="font-size: 24px; font-weight: 700; color: #FFD700; margin: 0 0 8px;">You're on the clock! ⏰</h1>
+    <p style="margin: 0 0 16px; color: #f4f4f8;">It's <strong>${teamName}</strong>'s turn to pick.</p>
+    <div style="border: 1px solid #2a2a40; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+      <p style="margin: 0 0 4px;"><span style="${goldStyle}">Round ${round}</span> &mdash; Pick <strong style="color: #f4f4f8;">${pickNo}</strong> of ${totalPicks}</p>
+    </div>
+    <a href="https://uff-platform.vercel.app/dashboard/league/${leagueId}/draft"
+       style="display: inline-block; background: #FFD700; color: #0d0d1a; font-weight: 700; padding: 12px 24px; border-radius: 8px; text-decoration: none;">
+      Make Your Pick →
+    </a>
+    <p style="${mutedStyle}; margin-top: 24px;">Your clock is running — don't miss your turn.</p>
+  </div>`;
+}
+
+export function leagueInviteHtml({
+  leagueName,
+  commissionerName,
+  joinCode,
+}: {
+  leagueName: string;
+  commissionerName: string;
+  joinCode: string;
+}) {
+  return `<div style="${baseStyle}">
+    <p style="${goldStyle}; font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 4px;">Ultimate Fantasy Football</p>
+    <h1 style="font-size: 24px; font-weight: 700; color: #0057FF; margin: 0 0 8px;">You've been invited!</h1>
+    <p style="margin: 0 0 16px; color: #f4f4f8;">
+      <strong>${commissionerName}</strong> has invited you to join <strong style="${goldStyle}">${leagueName}</strong> on Ultimate Fantasy Football.
+    </p>
+    <div style="border: 1px solid #FFD700; border-radius: 8px; padding: 16px; margin-bottom: 20px; text-align: center;">
+      <p style="color: #a0a0b8; font-size: 13px; margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.1em;">Your Join Code</p>
+      <p style="font-size: 28px; font-weight: 800; color: #FFD700; letter-spacing: 0.15em; margin: 0;">${joinCode}</p>
+    </div>
+    <a href="https://uff-platform.vercel.app/join?code=${joinCode}"
+       style="display: inline-block; background: #0057FF; color: #f4f4f8; font-weight: 700; padding: 12px 24px; border-radius: 8px; text-decoration: none;">
+      Join the League →
+    </a>
+    <p style="${mutedStyle}; margin-top: 24px;">
+      Already have an account? Sign in first, then enter the join code. Don't have one? Create a free account at
+      <a href="https://uff-platform.vercel.app" style="${linkStyle}">uff-platform.vercel.app</a>.
+    </p>
+  </div>`;
+}

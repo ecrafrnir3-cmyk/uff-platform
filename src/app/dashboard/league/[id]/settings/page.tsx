@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { saveScoringSettings, generateSchedule, extendSchedule, saveLeagueSettings, seedPlayoffs, forceFinalize, syncPlayers, processWaivers, resetWaiverPriority, addToCantCutList, removeFromCantCutList } from "./actions";
+import { saveScoringSettings, generateSchedule, extendSchedule, saveLeagueSettings, seedPlayoffs, forceFinalize, syncPlayers, processWaivers, resetWaiverPriority, addToCantCutList, removeFromCantCutList, sendLeagueInvites } from "./actions";
 import CantCutManager from "./CantCutManager";
 import DraftOrderManager from "./DraftOrderManager";
 import WaiverPriorityManager from "./WaiverPriorityManager";
@@ -95,10 +95,10 @@ export default async function SettingsPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; saved?: string; preset?: string; claims?: string; approved?: string; vetoed?: string }>;
+  searchParams: Promise<{ error?: string; saved?: string; preset?: string; claims?: string; approved?: string; vetoed?: string; invited?: string }>;
 }) {
   const { id: leagueId } = await params;
-  const { error, saved, preset, claims, approved, vetoed } = await searchParams;
+  const { error, saved, preset, claims, approved, vetoed, invited } = await searchParams;
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -106,7 +106,7 @@ export default async function SettingsPage({
 
   const { data: league } = await supabase
     .from("uff_leagues")
-    .select("id, name, commissioner_id, scoring_settings, draft_status, draft_order, season, season_weeks, playoff_teams, playoff_start_week, championship_week, median_scoring, trade_deadline_week, faab_budget, commissioner_review, max_adds_per_week, max_adds_per_season, waiver_auto, waiver_day, waiver_hour, waiver_type")
+    .select("id, name, commissioner_id, join_code, scoring_settings, draft_status, draft_order, season, season_weeks, playoff_teams, playoff_start_week, championship_week, median_scoring, trade_deadline_week, faab_budget, commissioner_review, max_adds_per_week, max_adds_per_season, waiver_auto, waiver_day, waiver_hour, waiver_type, pick_clock_seconds")
     .eq("id", leagueId)
     .maybeSingle();
 
@@ -211,9 +211,14 @@ export default async function SettingsPage({
             {decodeURIComponent(error)}
           </p>
         )}
-        {saved && !claims && (
+        {saved && !claims && !invited && (
           <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#3DDC84", color: "#3DDC84", background: "#0e1a12" }}>
             Saved successfully.
+          </p>
+        )}
+        {invited && (
+          <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#3DDC84", color: "#3DDC84", background: "#0e1a12" }}>
+            Sent <strong>{invited}</strong> invite{invited === "1" ? "" : "s"} successfully.
           </p>
         )}
         {saved && claims !== undefined && (
@@ -236,6 +241,39 @@ export default async function SettingsPage({
             Previewing <strong>{validPreset}</strong> preset — hit &ldquo;Save Scoring Settings&rdquo; below to apply it.
           </p>
         )}
+
+        {/* Invite members */}
+        <section className="flex flex-col gap-4 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Invite Members</h2>
+              <p className="text-sm mt-1" style={{ color: "#8888aa" }}>
+                Send email invites with the join code. They can sign up and join directly from the email.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 rounded border px-3 py-1.5 shrink-0" style={{ borderColor: "#FFD700", background: "rgba(255,215,0,0.06)" }}>
+              <span className="text-xs uppercase tracking-wide" style={{ color: "#8888aa" }}>Join code</span>
+              <span className="font-mono font-bold text-sm" style={{ color: "#FFD700" }}>{league.join_code as string}</span>
+            </div>
+          </div>
+          <form action={sendLeagueInvites} className="flex flex-col gap-3">
+            <input type="hidden" name="leagueId" value={leagueId} />
+            <textarea
+              name="invite_emails"
+              rows={3}
+              placeholder={"friend1@example.com\nfriend2@example.com\n(one per line, or comma-separated)"}
+              className="w-full rounded-md border px-3 py-2 text-sm resize-none"
+              style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}
+            />
+            <button
+              type="submit"
+              className="self-start rounded-md px-4 py-2 text-sm font-semibold"
+              style={{ background: "#0057FF", color: "#f4f4f8" }}
+            >
+              Send Invites
+            </button>
+          </form>
+        </section>
 
         {/* Schedule generator / extender */}
         <section className="flex flex-col gap-3 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>
@@ -472,6 +510,28 @@ export default async function SettingsPage({
               />
             </div>
 
+            {/* Draft pick clock */}
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <label className="text-sm font-medium text-white">Draft Pick Clock</label>
+                <span className="text-xs" style={{ color: "#6b6b8a" }}>Time per pick. When the clock expires, the manager's queue (or best available by ADP) auto-picks for them.</span>
+              </div>
+              <select
+                name="pick_clock_seconds"
+                defaultValue={String(league.pick_clock_seconds ?? "")}
+                className="rounded-md px-3 py-2 text-sm font-medium"
+                style={{ background: "#1c1c2b", color: "#fff", border: "1px solid #2a2a40" }}
+              >
+                <option value="">No clock (unlimited)</option>
+                <option value="30">30 seconds</option>
+                <option value="60">1 minute</option>
+                <option value="90">90 seconds</option>
+                <option value="120">2 minutes</option>
+                <option value="180">3 minutes</option>
+                <option value="300">5 minutes</option>
+              </select>
+            </div>
+
             <button
               type="submit"
               className="self-start rounded-md px-4 py-2 text-sm font-semibold"
@@ -625,6 +685,7 @@ export default async function SettingsPage({
               <input type="hidden" name="commissioner_review" value={league.commissioner_review ? "1" : "0"} />
               <input type="hidden" name="max_adds_per_week"   value={String(league.max_adds_per_week ?? 0)} />
               <input type="hidden" name="max_adds_per_season" value={String(league.max_adds_per_season ?? 0)} />
+              <input type="hidden" name="pick_clock_seconds"  value={String(league.pick_clock_seconds ?? "")} />
 
               {/* Waiver system type */}
               <div className="flex items-center justify-between gap-4">

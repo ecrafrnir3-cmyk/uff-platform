@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { sendEmail, leagueInviteHtml } from "@/lib/email";
 
 export async function saveScoringSettings(formData: FormData) {
   const supabase = await createClient();
@@ -136,6 +137,8 @@ export async function saveLeagueSettings(formData: FormData) {
   const waiverHour          = parseInt((formData.get("waiver_hour") as string) ?? "3", 10);
   const waiverTypeRaw       = formData.get("waiver_type") as string;
   const waiverType          = waiverTypeRaw === "priority" ? "priority" : "faab";
+  const pickClockRaw        = formData.get("pick_clock_seconds") as string;
+  const pickClockSeconds    = pickClockRaw && parseInt(pickClockRaw, 10) > 0 ? parseInt(pickClockRaw, 10) : null;
 
   const { error } = await supabase
     .from("uff_leagues")
@@ -153,6 +156,7 @@ export async function saveLeagueSettings(formData: FormData) {
       waiver_day:           isNaN(waiverDay)  ? 3 : Math.min(6, Math.max(0, waiverDay)),
       waiver_hour:          isNaN(waiverHour) ? 3 : Math.min(23, Math.max(0, waiverHour)),
       waiver_type:          waiverType,
+      pick_clock_seconds:   pickClockSeconds,
     })
     .eq("id", leagueId)
     .eq("commissioner_id", user.id);
@@ -405,4 +409,66 @@ export async function syncPlayers(formData: FormData) {
   }
 
   redirect(`/dashboard/league/${leagueId}/settings?saved=1`);
+}
+
+export async function sendLeagueInvites(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const leagueId = formData.get("leagueId") as string;
+  const rawEmails = formData.get("invite_emails") as string;
+
+  const emails = (rawEmails ?? "")
+    .split(/[\n,]+/)
+    .map((e) => e.trim().toLowerCase())
+    .filter((e) => e.includes("@"));
+
+  if (emails.length === 0) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("No valid email addresses found.")}`);
+  }
+  if (emails.length > 20) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("Maximum 20 invites at a time.")}`);
+  }
+
+  const { data: league } = await supabase
+    .from("uff_leagues")
+    .select("name, join_code, commissioner_id")
+    .eq("id", leagueId)
+    .maybeSingle();
+
+  if (!league || league.commissioner_id !== user.id) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("Not authorized.")}`);
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("display_name, username")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const commissionerName =
+    (profile as { display_name?: string | null; username?: string } | null)?.display_name ||
+    (profile as { display_name?: string | null; username?: string } | null)?.username ||
+    "The Commissioner";
+
+  let sentCount = 0;
+  for (const email of emails) {
+    try {
+      await sendEmail({
+        to: email,
+        subject: `You've been invited to ${league.name as string} on UFF!`,
+        html: leagueInviteHtml({
+          leagueName: league.name as string,
+          commissionerName,
+          joinCode: league.join_code as string,
+        }),
+      });
+      sentCount++;
+    } catch (err) {
+      console.error(`[invites] Failed to send to ${email}:`, err);
+    }
+  }
+
+  redirect(`/dashboard/league/${leagueId}/settings?saved=1&invited=${sentCount}`);
 }

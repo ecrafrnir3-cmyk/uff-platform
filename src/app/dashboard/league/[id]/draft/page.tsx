@@ -46,7 +46,7 @@ export default async function DraftPage({
 
   const { data: league } = await supabase
     .from("uff_leagues")
-    .select("id, name, season, draft_status, draft_order, max_teams, draft_rounds, commissioner_id")
+    .select("id, name, season, draft_status, draft_order, max_teams, draft_rounds, commissioner_id, pick_clock_seconds")
     .eq("id", leagueId)
     .maybeSingle();
 
@@ -93,6 +93,7 @@ export default async function DraftPage({
         draft_order: (league.draft_order as string[]) ?? [],
         max_teams: league.max_teams,
         draft_rounds: league.draft_rounds,
+        pick_clock_seconds: (league.pick_clock_seconds as number | null) ?? null,
       }}
       members={members ?? []}
       myMemberId={me.id}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import TrendingPlayers from "@/components/TrendingPlayers";
@@ -74,6 +74,7 @@ interface League {
   draft_order: string[];
   max_teams: number;
   draft_rounds: number;
+  pick_clock_seconds?: number | null;
 }
 
 interface PowerRow {
@@ -540,6 +541,24 @@ function DraftBoardGrid({
 }
 
 // ---- Pre-draft lobby ---------------------------------------------------------
+function ChecklistItem({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold"
+        style={{
+          background: ok ? "rgba(61,220,132,0.15)" : "rgba(204,0,0,0.15)",
+          color: ok ? "#3DDC84" : "#CC0000",
+          border: `1px solid ${ok ? "#3DDC84" : "#CC0000"}`,
+        }}
+      >
+        {ok ? "✓" : "✗"}
+      </span>
+      <span className="text-sm" style={{ color: ok ? "#f4f4f8" : "#8888aa" }}>{label}</span>
+    </div>
+  );
+}
+
 function PreDraftLobby({
   league,
   members,
@@ -553,6 +572,16 @@ function PreDraftLobby({
 }) {
   const allFactionsSet = members.every((m) => m.faction !== null);
   const unassigned = members.filter((m) => m.faction === null).length;
+
+  // ── Commissioner checklist ────────────────────────────────────────────────
+  const checks = {
+    enoughMembers:  members.length >= 2,
+    leagueFull:     members.length >= league.max_teams,
+    factionsSet:    allFactionsSet,
+    draftOrderSet:  league.draft_order.length === members.length,
+    roundsSet:      (league.draft_rounds ?? 0) > 0,
+  };
+  const allChecksPassed = Object.values(checks).every(Boolean);
 
   return (
     <div className="min-h-screen px-4 py-8 sm:px-8" style={{ background: "#0d0d1a", color: "#f4f4f8" }}>
@@ -646,33 +675,47 @@ function PreDraftLobby({
 
         {isCommissioner ? (
           <div
-            className="flex flex-col gap-3 rounded-lg border p-5"
-            style={{ borderColor: allFactionsSet ? "#FFD700" : "#2a2a40" }}
+            className="flex flex-col gap-4 rounded-lg border p-5"
+            style={{ borderColor: allChecksPassed ? "#FFD700" : "#2a2a40" }}
           >
             <h2 className="font-semibold" style={{ color: "#FFD700" }}>
               Commissioner Controls
             </h2>
-            {allFactionsSet ? (
-              <>
-                <p className="text-sm text-white">
-                  All managers have factions. Ready to start the draft.
-                </p>
-                <form action={startDraft}>
-                  <input type="hidden" name="leagueId" value={league.id} />
-                  <button
-                    type="submit"
-                    className="rounded-md px-5 py-2.5 text-sm font-bold"
-                    style={{ background: "#FFD700", color: "#0d0d1a" }}
-                  >
-                    Start Draft
-                  </button>
-                </form>
-              </>
+
+            {/* Pre-draft checklist */}
+            <div className="flex flex-col gap-2 rounded-md border px-4 py-3" style={{ borderColor: "#2a2a40", background: "#15151f" }}>
+              <p className="text-xs uppercase tracking-wide mb-1" style={{ color: "#8888aa" }}>Pre-Draft Checklist</p>
+              <ChecklistItem ok={checks.enoughMembers}  label={`At least 2 managers have joined (${members.length}/${league.max_teams})`} />
+              <ChecklistItem ok={checks.leagueFull}     label={`League is full (${members.length}/${league.max_teams} managers)`} />
+              <ChecklistItem ok={checks.factionsSet}    label={allFactionsSet ? "All managers have factions assigned" : `${unassigned} manager${unassigned !== 1 ? "s" : ""} missing faction`} />
+              <ChecklistItem ok={checks.draftOrderSet}  label={checks.draftOrderSet ? "Draft order is set" : "Draft order not yet configured — set it in Settings"} />
+              <ChecklistItem ok={checks.roundsSet}      label={`Draft rounds configured (${league.draft_rounds ?? 0} rounds)`} />
+            </div>
+
+            {allChecksPassed ? (
+              <form action={startDraft}>
+                <input type="hidden" name="leagueId" value={league.id} />
+                <button
+                  type="submit"
+                  className="rounded-md px-5 py-2.5 text-sm font-bold"
+                  style={{ background: "#FFD700", color: "#0d0d1a" }}
+                >
+                  Start Draft
+                </button>
+              </form>
             ) : (
-              <p className="text-sm text-white">
-                {unassigned} manager{unassigned !== 1 ? "s" : ""} still need
-                {unassigned === 1 ? "s" : ""} a faction assigned before the draft can start.
-              </p>
+              <div>
+                <button
+                  disabled
+                  className="rounded-md px-5 py-2.5 text-sm font-bold opacity-40 cursor-not-allowed"
+                  style={{ background: "#FFD700", color: "#0d0d1a" }}
+                >
+                  Start Draft
+                </button>
+                <p className="mt-2 text-xs" style={{ color: "#8888aa" }}>
+                  Complete the checklist above before starting the draft.
+                </p>
+              </div>
             )}
           </div>
         ) : (
@@ -745,6 +788,9 @@ export default function DraftRoom({
   // Watchlist
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set(initialWatchlist));
   const [watchlistPlayers, setWatchlistPlayers] = useState<Player[]>([]);
+  // Pick clock
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const needsAutopickRef = useRef(false);
 
   // ---- Pre-return derived state (must be here so effects can use them) ------
   const totalPicksEarly = league.max_teams * league.draft_rounds;
@@ -867,6 +913,39 @@ export default function DraftRoom({
       .in("id", ids)
       .then(({ data }) => { if (data) setWatchlistPlayers(data as Player[]); });
   }, [watchlistIds]);
+
+  // ---- Pick clock countdown -----------------------------------------------
+  useEffect(() => {
+    const secs = league.pick_clock_seconds;
+    if (!secs || !isMyTurn || isDraftComplete) {
+      setTimeLeft(null);
+      needsAutopickRef.current = false;
+      return;
+    }
+    setTimeLeft(secs);
+    needsAutopickRef.current = false;
+    const id = window.setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev === null) return null;
+        if (prev <= 1) {
+          needsAutopickRef.current = true;
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMyTurn, isDraftComplete]);
+
+  // Fire autopick when timeLeft hits 0
+  useEffect(() => {
+    if (timeLeft === 0 && needsAutopickRef.current && isMyTurn && !submitting && !isDraftComplete) {
+      needsAutopickRef.current = false;
+      handleAutodraft();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeLeft]);
 
   // ---- Early return: pre-draft lobby -----------------------------------------
   if (draftStatus === "not_started") {
@@ -1274,9 +1353,25 @@ export default function DraftRoom({
           >
             {isMyTurn ? (
               <div className="flex flex-col gap-2">
-                <p className="font-semibold" style={{ color: "#FFD700" }}>
-                  It&rsquo;s your turn -- pick now!
-                </p>
+                <div className="flex items-center gap-4 flex-wrap">
+                  <p className="font-semibold" style={{ color: "#FFD700" }}>
+                    {timeLeft === 0 ? "Time's up — autopicking…" : "It’s your turn — pick now!"}
+                  </p>
+                  {timeLeft !== null && timeLeft > 0 && (
+                    <div
+                      className="flex items-center justify-center rounded-full font-bold tabular-nums"
+                      style={{
+                        width: 52, height: 52, flexShrink: 0,
+                        background: timeLeft <= 10 ? "rgba(204,0,0,0.18)" : "rgba(255,215,0,0.10)",
+                        border: `2px solid ${timeLeft <= 10 ? "#CC0000" : "#FFD700"}`,
+                        color: timeLeft <= 10 ? "#CC0000" : "#FFD700",
+                        fontSize: timeLeft >= 100 ? 14 : 18,
+                      }}
+                    >
+                      {timeLeft}
+                    </div>
+                  )}
+                </div>
                 {myPowerThisRound?.draft_powers && (
                   <div className="rounded-md border px-3 py-2" style={{ borderColor: "#2a2a40", background: "#0d0d1a" }}>
                     <p className="text-xs uppercase tracking-wide text-white mb-0.5">Your power this round</p>

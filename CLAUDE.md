@@ -257,32 +257,105 @@ Muted text: #d4d4e8
 
 ## Current Build Status
 
-All features through **Waiver Priority System** are deployed and live.
+All features through **#105 (Commissioner Pre-Draft Checklist)** are built locally. Ready to commit and push.
 
-**Latest Vercel deployment**: READY  
-**Commit**: `feat: waiver priority system — priority_waivers RPC, Claim UI, settings toggle + reset`
+**Latest Vercel deployment**: READY (pre-#101 push)  
+**Commit**: `fix: replace dotAll regex flag with split — ES2018 compat` (e4b936f)  
+**Pending commit**: `feat: Sentry, pick clock, email invites, on-the-clock notifications, pre-draft checklist (#101–#105)`
 
-### Full Feature List (deployed):
+### Nate must do before next session:
+1. `npm install` (adds @sentry/nextjs)
+2. Create Sentry account at sentry.io → new Next.js project → get DSN
+3. Add to Vercel env vars: `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN`
+4. Run Supabase migration: `ALTER TABLE uff_leagues ADD COLUMN IF NOT EXISTS pick_clock_seconds integer DEFAULT NULL;`
+5. `git add -A` → `git commit -m "feat: Sentry, pick clock, email invites, on-the-clock notifications, pre-draft checklist (#101–#105)"` → `git push`
+
+### Full Feature List (deployed + pending push):
 - Core league, member management, faction war
-- Real-time draft room with 16 named draft powers
+- Real-time draft room with 16 named draft powers + AI Draft Advisor
+- **Draft pick clock with autopick** — configurable timer (30s–5min), countdown ring, auto-selects best queued/available player on expiry
+- **Commissioner pre-draft checklist** — blocks "Start Draft" until: ≥2 members joined, league full, all factions set, draft order configured, rounds set
+- **Email league invites** — commissioner pastes emails in Settings → sends branded invite with join code + join link
+- **"You're on the clock" notifications** — after each pick, next manager gets in-app notification + email with round/pick info
+- **Sentry error monitoring** — production-only, session replay enabled, wraps next.config.ts
+- Injury status badges on all player cards (roster, draft room, free agents)
+- Draft order manager (randomize, drag-to-reorder, lock after draft starts)
+- Pre-draft watchlist (save target players before draft)
 - Live NFL scoring via Sleeper + 18 UFF tokens + faction bonus
 - FAAB + priority waiver systems (both fully built)
-- Matchups with Oracle AI preview/recap + commissioner score override
+- Matchups with Oracle AI preview/recap + commissioner score override + score breakdown
 - Drag-and-drop lineup, IR slots, Can't Cut List, eliminated team lock
-- Trade Center: propose/accept/reject/veto + commissioner review + email notifications
+- Start/Sit AI Advisor on roster page
+- Trade Center: propose/accept/reject/veto + commissioner review + email notifications + AI analysis on proposal
+- Commissioner Veto Analyzer (AI fairness verdict)
+- Trade History page (completed/vetoed/rejected/cancelled trades)
+- Trade Inbox with nav badge
 - Standings + Faction War + Power Rankings (AI)
+- Full season schedule page + head-to-head history page
 - 4-team and 8-team playoff brackets with winner advancement
-- Managers page with achievement badges
+- Managers page with achievement badges (streaks, blowouts, undefeated, top scorer)
 - Transactions feed, Record Book, Trade Block
+- Global Player Search (/players) with ownership + injury status
+- In-App Notification Center (/notifications) — bell icon in nav with unread badge
+- Commissioner Broadcast — announcements → email + in-app notification to all members
+- League Assistant Chat (/chat) — AI with full league context (standings, matchups, transactions, full rulebook)
+- Player news/trending feed (Sleeper trending API)
 - Weekly newsletter cron (AI-generated + emailed via Resend)
-- Waiver award emails
+- Waiver award emails + in-app notifications
 - Mobile PWA (installable)
 - Recent Activity widget on league hub
-- Shared libs: `token-names.ts`, `get-record.ts`
+- Shared libs: `token-names.ts`, `get-record.ts`, `notifications.ts`
 
-### Pending fix (needs manual git push):
-- `standings/page.tsx`: `median_win: boolean | null` (matches nullable DB column) — Edit tool wrote the fix but bash git can't see it through stale mount; run `git add src/app/dashboard/league/\[id\]/standings/page.tsx && git commit -m "fix: median_win boolean | null" && git push` from your terminal.
+### New key file locations (added #77–#100):
+```
+src/
+  app/
+    api/
+      chat/route.ts                   # League Assistant Chat — SSE stream, full rulebook context
+      player-search/route.ts          # Global player search with ownership
+      start-sit/route.ts              # Start/Sit AI Advisor
+      matchup-breakdown/route.ts      # Per-player score breakdown
+      trade-veto-analysis/route.ts    # Commissioner veto AI
+      trending/route.ts               # Sleeper trending players (add/drop)
+    dashboard/league/[id]/
+      announcements/                  # Commissioner bulletin board + broadcast
+      chat/                           # League Assistant Chat UI
+      h2h/page.tsx                    # Head-to-head history
+      notifications/                  # Notification center + MarkReadButton + actions
+      players/                        # Global player search UI
+      schedule/page.tsx               # Full season schedule
+      trades/page.tsx                 # Trade history page
+      settings/
+        DraftOrderManager.tsx         # Draft order drag-to-reorder
+        VetoAnalyzer.tsx              # AI veto analysis (commissioner only)
+        WaiverPriorityManager.tsx     # Manual priority drag-to-reorder
+      roster/StartSitAdvisor.tsx      # Start/Sit AI UI
+      draft/watchlist-actions.ts      # Pre-draft watchlist server actions
+  components/
+    TrendingPlayers.tsx               # Trending adds/drops widget
+  lib/
+    notifications.ts                  # createNotification() — non-blocking, admin client
+```
+
+### Known gotcha added:
+10. **Windows CMD no `&&`** — CMD does not support `&&` chaining. If a git commit fails with "index.lock" or "HEAD.lock" errors, run `del .git\index.lock` and/or `del .git\HEAD.lock`, then retry the three commands separately: `git add -A`, `git commit -m "..."`, `git push`.
+11. **Dotall `/s` regex flag** — TypeScript target below ES2018 rejects `/pattern/s`. Use `.split(/PATTERN/)[0]` instead or `[\s\S]*` in place of `.*` with `s` flag.
+
+### New key files added (#101–#105):
+```
+sentry.client.config.ts           # Sentry client-side init (project root)
+sentry.server.config.ts           # Sentry server-side init (project root)
+sentry.edge.config.ts             # Sentry edge runtime init (project root)
+src/instrumentation.ts            # Next.js instrumentation hook for Sentry
+next.config.ts                    # Wrapped with withSentryConfig
+```
+`pick_clock_seconds` column added to `uff_leagues` table.
+`join_code` added to settings page league select.
+`sendLeagueInvites` server action in `settings/actions.ts`.
+`leagueInviteHtml` + `onTheClockHtml` templates in `lib/email.ts`.
+`ChecklistItem` component + `checks` object in `DraftRoom.tsx` `PreDraftLobby`.
 
 ### Next priorities (not yet built):
 - Push notifications (future)
-- Achievement/streak badge system expansion
+- Onboarding / invite flow polish
+- Mock draft mode (simulate draft without locking rosters)
