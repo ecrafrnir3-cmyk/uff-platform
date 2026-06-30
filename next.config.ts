@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
+  // Explicitly enable Turbopack (Next 16 default) to silence Sentry's webpack conflict warning
+  turbopack: {},
   async headers() {
     return [
       {
