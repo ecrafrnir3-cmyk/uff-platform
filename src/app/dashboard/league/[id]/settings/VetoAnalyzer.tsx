@@ -73,7 +73,7 @@ export default function VetoAnalyzer({ leagueId, tradeId }: VetoAnalyzerProps) {
     >
       <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "#FFD700" }}>🔮 Oracle Analysis</p>
       <p className="text-xs leading-relaxed" style={{ color: "#d4d4e8" }}>
-        {state.analysis?.replace(/VERDICT:.*$/s, "").trim()}
+        {(state.analysis?.split(/VERDICT:/)[0] ?? "").trim()}
       </p>
       {state.verdict && (
         <p className="text-xs font-bold mt-0.5" style={{ color: verdictColor }}>
