@@ -100,7 +100,7 @@ export default function GuidePage() {
         </p>
         {/* Quick nav */}
         <div className="mt-6 flex flex-wrap justify-center gap-2">
-          {["#factions", "#draft-powers", "#tokens", "#chips"].map((href) => (
+          {["#factions", "#draft-powers", "#buffer", "#tokens", "#chips"].map((href) => (
             <a key={href} href={href}
               className="rounded-full border px-4 py-1.5 text-xs font-semibold hover:opacity-80"
               style={{ borderColor: "#2a2a40", color: "#f4f4f8" }}>
@@ -183,13 +183,33 @@ export default function GuidePage() {
         <section id="draft-powers">
           <SectionHeader label="Draft day — 16 powers" title="Draft Powers" />
 
-          <p className="text-sm mb-10" style={{ color: "#f4f4f8" }}>
-            Before each of your picks, a draft power assigned to that round activates.
+          <p className="text-sm mb-6" style={{ color: "#f4f4f8" }}>
+            Every manager is dealt a draft power for each round — assigned randomly before the draft starts.
             Powers fall into four categories: <strong style={{color:"#FFD700"}}>Draft Mechanics</strong> that change the board,{" "}
             <strong style={{color:"#3DDC84"}}>Tied-to-Pick</strong> bonuses locked to the player you draft,{" "}
             <strong style={{color:"#CC0000"}}>Self-Cost</strong> powers that carry a penalty, and a{" "}
             <strong style={{color:"#a78bfa"}}>Season Effect</strong> that pays out every week.
           </p>
+
+          {/* Pre-Round Buffer callout */}
+          <div id="buffer" className="rounded-2xl border p-5 mb-10 flex flex-col gap-2"
+            style={{ borderColor: "#FFD70055", background: "rgba(255,215,0,0.05)" }}>
+            <div className="flex items-center gap-2">
+              <span className="text-xl">⏳</span>
+              <p className="font-bold text-sm" style={{ color: "#FFD700" }}>The Pre-Round Buffer</p>
+            </div>
+            <p className="text-sm leading-relaxed" style={{ color: "#f4f4f8" }}>
+              At the start of every round, a <strong style={{ color: "#FFD700" }}>30-second pre-round buffer</strong> fires before any picks can be made.
+              This window exists specifically for round-start powers:
+            </p>
+            <ul className="text-sm leading-relaxed pl-4 flex flex-col gap-1" style={{ color: "#f4f4f8", listStyleType: "disc" }}>
+              <li><strong>Draft Heist</strong> — your swap modal pops immediately at buffer start. You have 30 seconds to pick a target (or skip). Heist is resolved before pick 1 of the round.</li>
+              <li><strong>Telepathy</strong> — the first picker&apos;s power is auto-revealed inline the moment the buffer starts. No button needed — just read the reveal and plan.</li>
+            </ul>
+            <p className="text-xs mt-1" style={{ color: "#8888aa" }}>
+              ⚠️ Be on the draft page when a round starts. The buffer is client-side — if you reload mid-buffer, you miss it. Heist not used during the buffer is forfeited for that round.
+            </p>
+          </div>
 
           {/* Draft Mechanics */}
           <h3 className="text-base font-bold uppercase tracking-wide mb-4" style={{ color: "#FFD700" }}>
@@ -201,16 +221,16 @@ export default function GuidePage() {
               tip="💡 Great for grabbing a Vampire Bite early when the draft board is richest."
               accent="#FFD700" />
             <PowerCard name="Draft Heist" category="Draft Mechanic" icon="🥷"
-              description="Steal another manager's draft pick slot for this round (swap positions). They pick where you were; you pick where they were."
-              tip="💡 Jump in front of a manager about to grab your target. Or strand a rival in a dead zone."
+              description="At the start of the round (during the 30s pre-round buffer), swap pick slots with any manager who hasn't picked yet. They go where you were; you go where they were. Must be used during the buffer — skipping forfeits it for that round."
+              tip="💡 Jump in front of a manager about to grab your target, or strand a rival who's about to go #1 overall in a deep round."
               accent="#FF6B35" />
             <PowerCard name="Hero's Shield" category="Draft Mechanic" icon="🦸"
               description="Paired with Draft Heist: when any manager is dealt Heist, a random Hero manager also receives Shield for that round. If that Hero is the Heist target, the steal is auto-blocked."
               tip="💡 Hold it quietly — it only activates if you're the target, but that block can swing a whole round."
               accent="#0057FF" />
             <PowerCard name="Telepathy" category="Draft Mechanic" icon="🧠"
-              description="Instantly reveals the power held by the next manager to pick in the draft sequence. Know what's coming before they act."
-              tip="💡 Most useful when you suspect a Heist or Bite is coming in a high-value round."
+              description="At the start of the round (during the 30s pre-round buffer), the first manager to pick that round has their power automatically revealed to you — no button needed. Know what's coming before pick 1 drops."
+              tip="💡 Most powerful when you pick early and want to know if a Heist or Bite is targeting the same round. If your target has Cloak active, the reveal shows 'Power cloaked.'"
               accent="#0057FF" />
             <PowerCard name="Cloak" category="Draft Mechanic" icon="👤"
               description="Hides your power from the previous manager's Telepathy reveal. Anyone who checks your power sees only 'Power cloaked.'"

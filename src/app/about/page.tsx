@@ -75,8 +75,9 @@ export default function AboutPage() {
             <div className="text-3xl">⚡</div>
             <h3 className="text-base font-bold" style={{ color: "#FFD700" }}>Draft Powers</h3>
             <p className="text-sm leading-relaxed" style={{ color: "#f4f4f8" }}>
-              Before your pick in every round, a hidden power activates — Vampire Bites,
-              Foresight Coins, Draft Heists, and more. The draft board is never just the draft board.
+              Every round of the draft opens with a 30-second pre-round buffer where powers like
+              Draft Heist and Telepathy activate — steal pick slots, read opponents, and shape the
+              round before a single pick drops. Then your hidden power fires when you pick.
             </p>
           </div>
 
