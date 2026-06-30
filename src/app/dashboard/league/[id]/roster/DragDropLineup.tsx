@@ -116,6 +116,7 @@ export default function DragDropLineup({
   locked,
   lockTime,
   seasonPts,
+  projectedPts,
   gameTimes,
   playerPowers,
   irSlotsAvailable = 0,
@@ -130,6 +131,7 @@ export default function DragDropLineup({
   locked: boolean;
   lockTime: string;
   seasonPts?: Record<string, number>;
+  projectedPts?: Record<string, number>;
   gameTimes?: Record<string, string>;
   playerPowers?: Record<string, { emoji: string; name: string }>;
   irSlotsAvailable?: number;
@@ -260,23 +262,37 @@ export default function DragDropLineup({
 
   function autoFill() {
     if (locked) return;
-    setAssignments((prev) => {
-      const next = { ...prev };
-      const usedIds = new Set(Object.values(next).filter(Boolean));
-      for (const slot of slots) {
-        if (next[slot]) continue;
-        const base = slotBase(slot);
-        const eligiblePos = SLOT_ELIGIBLE[base] ?? [];
-        const candidate =
-          activeRoster.find((p) => eligiblePos.includes(p.position) && !usedIds.has(p.player_id) && !isPlayerLocked(p)) ??
-          activeRoster.find((p) => eligiblePos.includes(p.position) && !usedIds.has(p.player_id));
-        if (candidate) {
-          next[slot] = candidate.player_id;
-          usedIds.add(candidate.player_id);
-        }
-      }
-      return next;
+
+    const isBye = (p: RosterPlayer) => !!gameTimes && !!p.team && !gameTimes[p.team];
+    const isInjuredOut = (p: RosterPlayer) =>
+      p.injury_status === "Out" || p.injury_status === "Doubtful";
+
+    // Sort by projected pts desc, fall back to 0
+    const sorted = [...activeRoster].sort((a, b) => {
+      const pa = projectedPts?.[a.player_id] ?? 0;
+      const pb = projectedPts?.[b.player_id] ?? 0;
+      return pb - pa;
     });
+
+    const next: Record<string, string> = {};
+    const usedIds = new Set<string>();
+
+    for (const slot of slots) {
+      const base = slotBase(slot);
+      const eligiblePos = SLOT_ELIGIBLE[base] ?? [];
+      // Priority: healthy + active game + not locked → healthy + not locked → not locked → anything
+      const candidate =
+        sorted.find(p => eligiblePos.includes(p.position) && !usedIds.has(p.player_id) && !isPlayerLocked(p) && !isBye(p) && !isInjuredOut(p)) ??
+        sorted.find(p => eligiblePos.includes(p.position) && !usedIds.has(p.player_id) && !isPlayerLocked(p) && !isBye(p)) ??
+        sorted.find(p => eligiblePos.includes(p.position) && !usedIds.has(p.player_id) && !isPlayerLocked(p)) ??
+        sorted.find(p => eligiblePos.includes(p.position) && !usedIds.has(p.player_id));
+      if (candidate) {
+        next[slot] = candidate.player_id;
+        usedIds.add(candidate.player_id);
+      }
+    }
+
+    setAssignments(next);
     setSelected(null);
   }
 
@@ -349,14 +365,15 @@ export default function DragDropLineup({
           )}
         </div>
         <div className="flex items-center gap-2">
-          {!locked && emptySlots > 0 && (
+          {!locked && (
             <button
               type="button"
               onClick={autoFill}
               className="rounded-md px-3 py-1.5 text-xs font-bold transition-opacity hover:opacity-80"
-              style={{ background: "#1c1c2b", color: "#f4f4f8", border: "1px solid #2a2a40" }}
+              style={{ background: "#1c1c2b", color: "#FFD700", border: "1px solid rgba(255,215,0,0.3)" }}
+              title="Sets the highest-projected healthy player in each slot"
             >
-              Auto-Fill
+              ⚡ Start Best
             </button>
           )}
           <span className="text-xs" style={{ color: "#f4f4f8" }}>
@@ -488,14 +505,25 @@ export default function DragDropLineup({
                       )}
                     </p>
                   </div>
-                  {seasonPts?.[player.player_id] != null && (
-                    <div className="text-right flex-shrink-0 pr-1">
-                      <p className="text-sm font-bold tabular-nums" style={{ color: "#FFD700" }}>
-                        {seasonPts[player.player_id].toFixed(1)}
-                      </p>
-                      <p className="text-xs" style={{ color: "#f4f4f8" }}>pts</p>
-                    </div>
-                  )}
+                  {(() => {
+                    const actual = seasonPts?.[player.player_id];
+                    const proj   = projectedPts?.[player.player_id];
+                    const showActual = actual != null && actual > 0;
+                    const showProj   = !showActual && proj != null && proj > 0;
+                    if (showActual) return (
+                      <div className="text-right flex-shrink-0 pr-1">
+                        <p className="text-sm font-bold tabular-nums" style={{ color: "#FFD700" }}>{actual!.toFixed(1)}</p>
+                        <p className="text-xs" style={{ color: "#8888aa" }}>pts</p>
+                      </div>
+                    );
+                    if (showProj) return (
+                      <div className="text-right flex-shrink-0 pr-1">
+                        <p className="text-sm font-bold tabular-nums" style={{ color: "#3DDC84" }}>{proj!.toFixed(1)}</p>
+                        <p className="text-xs" style={{ color: "#3DDC84aa" }}>proj</p>
+                      </div>
+                    );
+                    return null;
+                  })()}
                   {playerLocked ? (
                     <span
                       className="flex-shrink-0 text-sm"
@@ -591,7 +619,7 @@ export default function DragDropLineup({
           <div className="flex flex-col">
             {benchPlayers.map((p, i) => {
               const posColor   = POS_COLOR[p.position] ?? "#f4f4f8";
-              const pts        = seasonPts?.[p.player_id] ?? null;
+
               const playerLocked = isPlayerLocked(p);
               const isSelected   = selected?.id === p.player_id;
               const isInvalidBench = invalidTarget === "bench:" + p.player_id;
@@ -661,11 +689,25 @@ export default function DragDropLineup({
                       )}
                     </p>
                   </div>
-                  {pts != null && (
-                    <p className="text-sm tabular-nums flex-shrink-0 pr-1" style={{ color: "#f4f4f8" }}>
-                      {pts.toFixed(1)}
-                    </p>
-                  )}
+                  {(() => {
+                    const actual = seasonPts?.[p.player_id];
+                    const proj   = projectedPts?.[p.player_id];
+                    const showActual = actual != null && actual > 0;
+                    const showProj   = !showActual && proj != null && proj > 0;
+                    if (showActual) return (
+                      <div className="text-right flex-shrink-0 pr-1">
+                        <p className="text-sm font-bold tabular-nums" style={{ color: "#f4f4f8" }}>{actual!.toFixed(1)}</p>
+                        <p className="text-xs" style={{ color: "#8888aa" }}>pts</p>
+                      </div>
+                    );
+                    if (showProj) return (
+                      <div className="text-right flex-shrink-0 pr-1">
+                        <p className="text-sm font-bold tabular-nums" style={{ color: "#3DDC84" }}>{proj!.toFixed(1)}</p>
+                        <p className="text-xs" style={{ color: "#3DDC84aa" }}>proj</p>
+                      </div>
+                    );
+                    return null;
+                  })()}
                   {playerLocked && (
                     <span
                       className="flex-shrink-0 text-xs"

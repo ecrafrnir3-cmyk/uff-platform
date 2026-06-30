@@ -459,19 +459,21 @@ export default async function RosterPage({
   const outgoingTrades = pendingTrades.filter(t => t.proposer_id === me.id && t.status === "pending");
   const reviewTrades   = pendingTrades.filter(t => t.status === "pending_review");
 
-  // ── Live weekly pts (current week, from Sleeper) ──────────────────────────
+  // ── Live weekly pts + projections (current week, from Sleeper) ───────────
   const FLAG_KEYS_SCORE = new Set([
     'pts_allow_0','pts_allow_1_6','pts_allow_7_13','pts_allow_14_20',
     'pts_allow_21_27','pts_allow_28_34','pts_allow_35p',
   ]);
   let seasonPts: Record<string, number> | undefined;
+  let projectedPts: Record<string, number> | undefined;
   const scoringSettings = (league as unknown as { scoring_settings: Record<string, number> }).scoring_settings ?? {};
   if (Object.keys(scoringSettings).length > 0) {
     try {
-      const sleeperRes = await fetch(
-        `https://api.sleeper.app/v1/stats/nfl/2026/${week}?season_type=regular`,
-        { next: { revalidate: 300 } }
-      );
+      const [sleeperRes, projRes] = await Promise.all([
+        fetch(`https://api.sleeper.app/v1/stats/nfl/2026/${week}?season_type=regular`, { next: { revalidate: 300 } }),
+        fetch(`https://api.sleeper.app/v1/projections/nfl/2026/${week}?season_type=regular`, { next: { revalidate: 3600 } }),
+      ]);
+
       if (sleeperRes.ok) {
         const allStats: Record<string, Record<string, number>> = await sleeperRes.json();
         const ptsMap: Record<string, number> = {};
@@ -489,6 +491,24 @@ export default async function RosterPage({
           if (rounded > 0) hasAnyPts = true;
         }
         if (hasAnyPts) seasonPts = ptsMap;
+      }
+
+      if (projRes.ok) {
+        const allProj: Record<string, Record<string, number>> = await projRes.json();
+        const projMap: Record<string, number> = {};
+        let hasAnyProj = false;
+        for (const r of (roster ?? [])) {
+          const proj = allProj[r.player_id] ?? {};
+          let score = 0;
+          for (const [key, mult] of Object.entries(scoringSettings)) {
+            const val = proj[key];
+            if (val == null || val === 0) continue;
+            score += FLAG_KEYS_SCORE.has(key) ? mult : val * (mult as number);
+          }
+          const rounded = Math.round(score * 100) / 100;
+          if (rounded > 0) { projMap[r.player_id] = rounded; hasAnyProj = true; }
+        }
+        if (hasAnyProj) projectedPts = projMap;
       }
     } catch { /* pre-season or API down — no pts shown */ }
   }
@@ -660,6 +680,7 @@ export default async function RosterPage({
             lockTime={getWeekLockTime(week).toISOString()}
             gameTimes={Object.keys(gameTimes).length > 0 ? gameTimes : undefined}
             seasonPts={seasonPts}
+            projectedPts={projectedPts}
             playerPowers={Object.keys(playerPowers).length > 0 ? playerPowers : undefined}
             irSlotsAvailable={irSlotsTotal - irSlotsUsed}
             quickFeetAvailable={quickFeetAvailable}
