@@ -611,11 +611,6 @@ export default async function RosterPage({
                 style={{ background: HERO_COLOR, color: "#f4f4f8" }}>
                 + Add Player
               </Link>
-              <a href="#ir-section"
-                className="rounded-md px-4 py-2 text-sm font-semibold"
-                style={{ background: "#1c1c2b", color: "#f4f4f8", border: "1px solid #2a2a40" }}>
-                Manage IR
-              </a>
               <Link href={`/dashboard/league/${leagueId}/trade`}
                 className="rounded-md px-4 py-2 text-sm font-semibold transition-opacity hover:opacity-80"
                 style={{ background: "#1c1c2b", color: "#f4f4f8", border: "1px solid #2a2a40" }}>
