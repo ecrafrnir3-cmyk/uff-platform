@@ -300,6 +300,32 @@ export default function DragDropLineup({
   const filledCount  = Object.values(assignments).filter(Boolean).length;
   const emptySlots   = slots.length - filledCount;
 
+  // ── Lineup totals ────────────────────────────────────────────────────────────
+  const starterActualTotal = slots.reduce((sum, slot) => {
+    const pid = assignments[slot]; if (!pid) return sum;
+    const actual = seasonPts?.[pid]; return sum + (actual != null && actual > 0 ? actual : 0);
+  }, 0);
+  const starterProjTotal = slots.reduce((sum, slot) => {
+    const pid = assignments[slot]; if (!pid) return sum;
+    return sum + (projectedPts?.[pid] ?? 0);
+  }, 0);
+  const showActualTotal = starterActualTotal > 0;
+  const showProjTotal   = !showActualTotal && starterProjTotal > 0;
+
+  // ── Injured / questionable starters ─────────────────────────────────────────
+  const injuredStarters = !locked ? slots.flatMap(slot => {
+    const pid = assignments[slot]; if (!pid) return [];
+    const p = activeRoster.find(r => r.player_id === pid); if (!p) return [];
+    if (p.injury_status === "Out" || p.injury_status === "Doubtful") return [p];
+    return [];
+  }) : [];
+  const questionableStarters = !locked ? slots.flatMap(slot => {
+    const pid = assignments[slot]; if (!pid) return [];
+    const p = activeRoster.find(r => r.player_id === pid); if (!p) return [];
+    if (p.injury_status === "Questionable") return [p];
+    return [];
+  }) : [];
+
   const lockDisplay = new Date(lockTime).toLocaleString("en-US", {
     weekday: "short", month: "short", day: "numeric",
     hour: "numeric", minute: "2-digit", timeZoneName: "short",
@@ -354,6 +380,23 @@ export default function DragDropLineup({
               &#128274; Locked
             </span>
           )}
+          {/* Lineup score total */}
+          {showActualTotal && (
+            <span
+              className="rounded-full px-2.5 py-0.5 text-xs font-black tabular-nums"
+              style={{ background: "rgba(255,215,0,0.12)", color: "#FFD700", border: "1px solid rgba(255,215,0,0.25)" }}
+            >
+              {starterActualTotal.toFixed(1)} pts
+            </span>
+          )}
+          {showProjTotal && (
+            <span
+              className="rounded-full px-2.5 py-0.5 text-xs font-black tabular-nums"
+              style={{ background: "rgba(61,220,132,0.1)", color: "#3DDC84", border: "1px solid rgba(61,220,132,0.25)" }}
+            >
+              {starterProjTotal.toFixed(1)} proj
+            </span>
+          )}
           {quickFeetAvailable && !locked && (
             <span
               className="rounded-full px-2 py-0.5 text-xs font-bold"
@@ -406,6 +449,32 @@ export default function DragDropLineup({
           style={{ background: "#1a0e16", color: "#ff8a8a", borderBottom: "1px solid rgba(204,0,0,0.2)" }}
         >
           Lineup locked for Week {week}. No changes allowed after {lockDisplay}.
+        </div>
+      )}
+
+      {/* ── Injury alerts for starters ──────────────────────────────────────── */}
+      {injuredStarters.length > 0 && (
+        <div
+          className="px-4 py-2 flex flex-col gap-1"
+          style={{ background: "rgba(204,0,0,0.08)", borderBottom: "1px solid rgba(204,0,0,0.2)" }}
+        >
+          {injuredStarters.map((p) => (
+            <p key={p.player_id} className="text-xs font-semibold" style={{ color: "#ff6b6b" }}>
+              ⚠ <strong>{p.full_name}</strong> ({p.position}) is <strong>{p.injury_status?.toUpperCase()}</strong> — move them to bench
+            </p>
+          ))}
+        </div>
+      )}
+      {questionableStarters.length > 0 && injuredStarters.length === 0 && (
+        <div
+          className="px-4 py-2 flex flex-col gap-1"
+          style={{ background: "rgba(255,215,0,0.05)", borderBottom: "1px solid rgba(255,215,0,0.15)" }}
+        >
+          {questionableStarters.map((p) => (
+            <p key={p.player_id} className="text-xs font-semibold" style={{ color: "#FFD700" }}>
+              ? <strong>{p.full_name}</strong> ({p.position}) is Questionable — check injury news before kickoff
+            </p>
+          ))}
         </div>
       )}
 

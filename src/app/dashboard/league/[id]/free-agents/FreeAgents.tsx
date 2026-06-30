@@ -85,6 +85,7 @@ export default function FreeAgents({
   cantCutPlayerIds = [],
   waiverType = "faab",
   myPriority = null,
+  ownershipMap = {},
 }: {
   leagueId: string;
   rosteredIds: string[];
@@ -102,6 +103,7 @@ export default function FreeAgents({
   cantCutPlayerIds?: string[];
   waiverType?: "faab" | "priority";
   myPriority?: number | null;
+  ownershipMap?: Record<string, number>;
 }) {
   const [search, setSearch] = useState("");
   const [posFilter, setPosFilter] = useState("ALL");
@@ -526,6 +528,9 @@ export default function FreeAgents({
                   </div>
                   <p className="text-xs text-white">
                     {p.position ?? "?"} &middot; {p.team ?? "FA"}
+                    {(ownershipMap[p.id] ?? 0) > 0 && (
+                      <span style={{ color: "#6b6b8a" }}> &middot; {ownershipMap[p.id]}% owned</span>
+                    )}
                   </p>
                 </div>
 

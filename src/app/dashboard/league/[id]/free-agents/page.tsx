@@ -166,6 +166,26 @@ export default async function FreeAgentsPage({
     seasonAddCount = rows.length;
   }
 
+  // % Ownership — count how many UFF leagues own each player
+  const { data: ownershipRows } = await supabase
+    .from("uff_roster_players")
+    .select("player_id, league_id")
+    .is("dropped_at", null);
+
+  const playerLeagueMap: Record<string, Set<string>> = {};
+  for (const row of ownershipRows ?? []) {
+    if (!playerLeagueMap[row.player_id]) playerLeagueMap[row.player_id] = new Set();
+    playerLeagueMap[row.player_id].add(row.league_id);
+  }
+  const totalLeagues = Math.max(
+    new Set((ownershipRows ?? []).map((r) => r.league_id)).size,
+    1
+  );
+  const ownershipMap: Record<string, number> = {};
+  for (const [pid, leagues] of Object.entries(playerLeagueMap)) {
+    ownershipMap[pid] = Math.round((leagues.size / totalLeagues) * 100);
+  }
+
   // Fetch player names for any pending bid player IDs (covers players outside the visible filter list)
   const bidPlayerNames: Record<string, string> = {};
   if (myBids.length > 0) {
@@ -284,6 +304,7 @@ export default async function FreeAgentsPage({
           cantCutPlayerIds={cantCutPlayerIds}
           waiverType={waiverType}
           myPriority={me.waiver_priority ?? null}
+          ownershipMap={ownershipMap}
         />
       </main>
     </div>

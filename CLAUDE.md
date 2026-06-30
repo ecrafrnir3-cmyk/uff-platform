@@ -263,7 +263,7 @@ Muted text: #d4d4e8
 
 ## Current Build Status
 
-All features through **#105 (Commissioner Pre-Draft Checklist)** are deployed. Session 18 added 4 bug fixes.
+All features through **#108 (Lineup Total, Injury Alerts, % Owned)** are built. Sessions 18–20 added bug fixes and features.
 
 **Latest Vercel deployment**: READY  
 **Last deployed commit**: `feat: Sentry, pick clock, email invites, on-the-clock notifications, pre-draft checklist (#101–#105)` — deployed and live  
@@ -365,6 +365,11 @@ next.config.ts                    # Wrapped with withSentryConfig
 `sendLeagueInvites` server action in `settings/actions.ts`.
 `leagueInviteHtml` + `onTheClockHtml` templates in `lib/email.ts`.
 `ChecklistItem` component + `checks` object in `DraftRoom.tsx` `PreDraftLobby`.
+
+### Features #107–#108 (Session 19–20)
+- **#107**: `⚡ Start Best` button — projection-aware auto-fill that resets entire lineup, skips bye/injured when alternatives exist; projected pts display (green) vs actual pts (gold) on every player card in DragDropLineup
+- **#108**: **Lineup score total** chip in lineup header (gold for actual, green for projected); **Injury alert banners** below hint bar (red for Out/Doubtful starters, yellow for Questionable); **% Owned** on free agents player cards — computed from UFF's own `uff_roster_players` table, shown as "X% owned" in muted text
+- Sentry DSN fix — `NEXT_PUBLIC_SENTRY_DSN` was truncated in Vercel; correct DSN restored
 
 ### New feature: Round Buffer Timer (#106)
 - 30-second buffer fires at the start of every draft round (including round 1 when draft transitions from not_started → in_progress)
