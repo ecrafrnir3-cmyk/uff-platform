@@ -465,6 +465,8 @@ Deno.serve(async (req) => {
     // Only look at rosters that belong to this league
     const leagueMemberIds = typedMatchups.filter(m => m.league_id === leagueId).map(m => m.member_id);
     for (const [targetId, biterId] of Object.entries(biteMap[leagueId] ?? {})) {
+      // Shadow Guard safety net — skip siphon if target player is protected
+      if (powerMap[leagueId]?.[targetId]?.power === 'shadow_guard') continue;
       // Find the member within this league who owns the target player
       for (const memberId of leagueMemberIds) {
         const playerScores = fullScoreCache[memberId];

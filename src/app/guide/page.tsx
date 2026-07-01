@@ -230,11 +230,11 @@ export default function GuidePage() {
               accent="#0057FF" />
             <PowerCard name="Telepathy" category="Draft Mechanic" icon="🧠"
               description="At the start of the round (during the 30s pre-round buffer), the first manager to pick that round has their power automatically revealed to you — no button needed. Know what's coming before pick 1 drops."
-              tip="💡 Most powerful when you pick early and want to know if a Heist or Bite is targeting the same round. If your target has Cloak active, the reveal shows 'Power cloaked.'"
+              tip="💡 Most powerful when you pick early and want to know if a Heist or Bite is targeting the same round. If your target has Shadow Guard, the reveal shows 'Shadow Guard active.'"
               accent="#0057FF" />
-            <PowerCard name="Cloak" category="Draft Mechanic" icon="👤"
-              description="Hides your power from the previous manager's Telepathy reveal. Anyone who checks your power sees only 'Power cloaked.'"
-              tip="💡 Stack in rounds where a Bite or Heist surprise causes maximum damage."
+            <PowerCard name="Shadow Guard" category="Pick Power · Any Position" icon="🛡️"
+              description="Your pick this round is permanently shielded from Vampire Bite — season-long. If anyone tries to bite your player, the bite fizzles and their use is wasted. Also blocks Telepathy from revealing your power this round."
+              tip="💡 Best used on elite skill players you expect to be Bite targets — a protected stud RB or WR negates a rival's best long-term weapon."
               accent="#f4f4f8" />
           </div>
 

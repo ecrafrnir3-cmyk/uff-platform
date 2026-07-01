@@ -59,7 +59,7 @@ EMAIL_FROM          # e.g. "UFF <noreply@yourdomain.com>"
 
 ### Draft
 - Full real-time draft room (`/draft/`) with Supabase Realtime
-- 16 named draft powers (Gunslinger, Vampire Bite, Draft Heist, Telepathy, Cloak, Foresight Coin, Hero's Shield, etc.)
+- 16 named draft powers (Gunslinger, Vampire Bite, Draft Heist, Telepathy, Shadow Guard, Foresight Coin, Hero's Shield, etc.)
 - Autodraft queue with drag-to-reorder
 - Commissioner starts draft via `startDraft` RPC
 - AI Draft Advisor (claude-haiku, streams pick suggestions)
@@ -255,6 +255,7 @@ Muted text: #d4d4e8
 10. **Windows CMD no `&&`** — CMD does not support `&&` chaining. If a git commit fails with "index.lock" or "HEAD.lock" errors, run `del .git\index.lock` and/or `del .git\HEAD.lock`, then retry the three commands separately.
 11. **Dotall `/s` regex flag** — TypeScript target below ES2018 rejects `/pattern/s`. Use `.split(/PATTERN/)[0]` or `[\s\S]*` instead.
 12. **VB siphon must be league-scoped** — the `fullScoreCache` holds members from ALL leagues being scored simultaneously. The Vampire Bite inner loop must filter to `leagueMemberIds` only, not `Object.values(fullScoreCache)`.
+16. **Shadow Guard blocks Vampire Bite at two layers** — (1) `assignVampireBite` in `actions.ts` rejects the bite immediately if `player_draft_powers` has `power = 'shadow_guard'` for that player; (2) `score-matchups` edge function also skips the siphon as a safety net. Both checks use the same `powerMap`. Shadow Guard is `power_id = 9` (formerly Cloak) with `category = 'tied_to_pick'`, `tied_position = 'ANY'` — it writes to `player_draft_powers` automatically on pick like other tied_to_pick powers. It also still blocks Telepathy via the existing `power_id = 9` check in `revealNextPower`.
 13. **DST in process-waivers** — use `isEDT = month >= 2 && month <= 9` (March–October = UTC-4), else UTC-5. NFL season spans the EDT→EST transition.
 14. **Oracle cache row order** — `uff_matchups` query for a matchup returns 2 rows in non-guaranteed order. Always check `rows[0].oracle_recap ?? rows[1]?.oracle_recap`.
 15. **`getAllUserEmails` pagination** — always paginate with `page++` until `data.users.length < 1000`. Single-page fetch silently truncates at 1000 users.
@@ -267,7 +268,9 @@ All features through **#113 (Season Titles)** are built and deployed. Sessions 1
 
 **Latest Vercel deployment**: READY  
 **Last deployed commit**: `feat: stat lines, week navigator, optimal lineup, rate limiting (#109-112)` — deployed and live  
-**Pending commit**: `feat: season titles — Super Hero/Nemesis/Side Kick/Henchman/Cast (#113)`
+**Pending commits**: 
+- `feat: season titles — faction-aware Super Hero/Super Villain/Nemesis/Side Kick/Henchman/Cast (#113)`
+- `feat: Shadow Guard replaces Cloak — blocks Vampire Bite + Telepathy (#114)`
 
 ### Completed setup (don't redo):
 - Sentry account created, DSN set, org=`uff-platform`, project=`javascript-nextjs`

@@ -1239,9 +1239,6 @@ export default function DraftRoom({
                 : "Telepathy activated — you're the last pick of this round, nothing to reveal.",
             });
             setTimeout(() => setPowerResult(null), 6000);
-          } else if (pr.result === "meta" && dp.name === "Cloak") {
-            setPowerResult({ type: "meta", message: "Cloak activated — your power is hidden from Telepathy this round." });
-            setTimeout(() => setPowerResult(null), 6000);
           } else if (pr.result === "meta" && (dp.name === "Draft Heist" || dp.name === "Hero's Shield")) {
             // Draft Heist is handled pre-pick via HeistModal; Hero's Shield is passive.
             // Both return "meta" from assignPowerToPick — suppress the auto-applied banner.
@@ -1444,7 +1441,7 @@ export default function DraftRoom({
                 </p>
                 {bufferTelepathyReveal.cloaked ? (
                   <p className="text-sm font-semibold" style={{ color: "#f4f4f8" }}>
-                    {bufferTelepathyReveal.teamName} — power is <span style={{ color: "#8888aa" }}>Cloaked</span>
+                    {bufferTelepathyReveal.teamName} — power is <span style={{ color: "#8888aa" }}>Shadow Guard</span>
                   </p>
                 ) : bufferTelepathyReveal.powerName ? (
                   <p className="text-sm font-semibold" style={{ color: "#f4f4f8" }}>
@@ -1600,7 +1597,7 @@ export default function DraftRoom({
             </p>
             {telepathyReveal.cloaked ? (
               <p className="font-semibold" style={{ color: "#f4f4f8" }}>
-                Power is cloaked — Cloak is active on the next manager.
+                Shadow Guard active — this manager&rsquo;s pick is shielded from Vampire Bite.
               </p>
             ) : telepathyReveal.powerName ? (
               <p className="font-semibold" style={{ color: "#f4f4f8" }}>

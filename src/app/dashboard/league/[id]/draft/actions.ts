@@ -21,7 +21,7 @@ const POWER_SLUG_MAP: Record<string, string> = {
   "Draft Heist": "draft_heist",
   "Hero's Shield": "hero_shield",
   "Telepathy": "telepathy",
-  "Cloak": "cloak",
+  "Shadow Guard": "shadow_guard",
 };
 
 export async function makeDraftPick(formData: FormData): Promise<{ error?: string }> {
@@ -239,6 +239,19 @@ export async function assignVampireBite(params: {
 
   if (!member) return { error: "Not a member of this league." };
 
+  // Shadow Guard check — reject bite if target player is protected
+  const { data: guardCheck } = await supabase
+    .from("player_draft_powers")
+    .select("player_id")
+    .eq("league_id", leagueId)
+    .eq("player_id", targetPlayerId)
+    .eq("power", "shadow_guard")
+    .maybeSingle();
+
+  if (guardCheck) {
+    return { error: "That player is protected by Shadow Guard — the bite fizzles. Choose a different target." };
+  }
+
   const { error } = await supabase.from("vampire_bites").insert({
     league_id: leagueId,
     biting_member_id: member.id,
@@ -259,7 +272,7 @@ export async function assignVampireBite(params: {
 
 // ── Draft Mechanic: Telepathy ─────────────────────────────────────────────────
 // Called after a Telepathy holder picks. Reveals the next manager's power for
-// this round (unless they have Cloak, which blocks the reveal).
+// this round (unless they have Shadow Guard, which blocks the reveal).
 export async function revealNextPower(params: {
   leagueId: string;
   nextMemberId: string;
@@ -271,7 +284,7 @@ export async function revealNextPower(params: {
 
   const { leagueId, nextMemberId, currentRound } = params;
 
-  // Check if next manager has Cloak (power_id = 9) for this round
+  // Check if next manager has Shadow Guard (power_id = 9) for this round — blocks Telepathy reveal
   const { data: cloakCheck } = await supabase
     .from("draft_power_assignments")
     .select("power_id")
