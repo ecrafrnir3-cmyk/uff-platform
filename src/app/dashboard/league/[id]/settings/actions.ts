@@ -411,6 +411,33 @@ export async function syncPlayers(formData: FormData) {
   redirect(`/dashboard/league/${leagueId}/settings?saved=1`);
 }
 
+export async function awardSeasonTitles(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const leagueId = formData.get("leagueId") as string;
+
+  // Commissioner check
+  const { data: league } = await supabase
+    .from("uff_leagues")
+    .select("commissioner_id")
+    .eq("id", leagueId)
+    .maybeSingle();
+  if (league?.commissioner_id !== user.id) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=` + encodeURIComponent("Only the commissioner can award season titles."));
+  }
+
+  const { error } = await supabase.rpc("award_season_titles", { p_league_id: leagueId });
+
+  if (error) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath(`/dashboard/league/${leagueId}/managers`);
+  redirect(`/dashboard/league/${leagueId}/settings?saved=1`);
+}
+
 export async function sendLeagueInvites(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();

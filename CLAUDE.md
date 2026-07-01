@@ -263,16 +263,11 @@ Muted text: #d4d4e8
 
 ## Current Build Status
 
-All features through **#108 (Lineup Total, Injury Alerts, % Owned)** are built. Sessions 18–20 added bug fixes and features.
+All features through **#113 (Season Titles)** are built and deployed. Sessions 18–23 added bug fixes and features.
 
 **Latest Vercel deployment**: READY  
-**Last deployed commit**: `feat: Sentry, pick clock, email invites, on-the-clock notifications, pre-draft checklist (#101–#105)` — deployed and live  
-**Pending commit**: `fix: Vampire Bite scope, DST offset, Oracle cache, email pagination`
-
-### Nate must do now:
-1. `git add -A`
-2. `git commit -m "fix: Vampire Bite cross-league scope, DST offset in waivers, Oracle cache order, getAllUserEmails pagination"`
-3. `git push`
+**Last deployed commit**: `feat: stat lines, week navigator, optimal lineup, rate limiting (#109-112)` — deployed and live  
+**Pending commit**: `feat: season titles — Super Hero/Nemesis/Side Kick/Henchman/Cast (#113)`
 
 ### Completed setup (don't redo):
 - Sentry account created, DSN set, org=`uff-platform`, project=`javascript-nextjs`
@@ -309,6 +304,7 @@ All features through **#108 (Lineup Total, Injury Alerts, % Owned)** are built. 
 - Global Player Search (/players) with ownership + injury status
 - In-App Notification Center (/notifications) — bell icon in nav with unread badge
 - Commissioner Broadcast — announcements → email + in-app notification to all members
+- **Season Titles** — commissioner awards end-of-season titles post-playoffs: Champion → "Super Hero", 2nd → "Nemesis", 3rd → "Side Kick", 4th → "Henchman", rest → "Cast". Awarded via Settings button → `award_season_titles` RPC → displayed as badges on Managers page
 - League Assistant Chat (/chat) — AI with full league context (standings, matchups, transactions, full rulebook)
 - Player news/trending feed (Sleeper trending API)
 - Weekly newsletter cron (AI-generated + emailed via Resend)
@@ -381,15 +377,24 @@ next.config.ts                    # Wrapped with withSentryConfig
 - Reconnect safety: `prevRoundRef` initializes to currentRound on reconnect (no spurious buffer); initializes to 0 when not_started so round 1 triggers correctly
 - Buffer is client-side only — if a user reloads mid-buffer, they miss it; that's acceptable
 
-### Features #109–#113 (Session 21)
-- **#109**: **Rate limiting** — in-memory per-user per-minute limits on all 10 AI routes (chat: 10/min, draft-advisor: 8/min, others: 5/min). `src/lib/rate-limit.ts` — returns 429 when exceeded.
-- **#110**: **Stat line breakdown** on player cards — `formatStatLine()` helper shows "247 pass yds · 2 TD" etc. per position. Applied to DragDropLineup starters + bench cards, and matchup breakdown (route + MatchupView). Only shows when actual game stats exist (seasonPts > 0).
-- **#111**: **Week navigator** on roster page — `?week=N` URL param; prev/next arrows in header; past weeks show read-only locked lineup with historical stats; current week badge.
-- **#112**: **Optimal lineup calculator** — post-week section below the lineup (visible when locked + seasonPts available). Computes best possible assignment by actual pts, shows "Optimal: X.X pts vs Y.Y pts actual, Z.Z pts left on bench."
-- Sentry DSN fix deployed. All features above deployed.
+### Features #109–#112 (Session 21–22) — deployed
+- **#109**: **Rate limiting** — in-memory per-user per-minute limits on all 10 AI routes (chat: 10/min, draft-advisor: 8/min, power-rankings: 3/min, others: 5/min). `src/lib/rate-limit.ts` — returns 429 when exceeded. All routes: chat, draft-advisor, matchup-preview, oracle, power-rankings, start-sit, token-advisor, trade-eval, trade-veto-analysis, waiver-intel.
+- **#110**: **Stat line breakdown** on player cards — `formatStatLine()` helper shows "247 pass yds · 2 TD" etc. per position. Applied to DragDropLineup starters + bench cards, and matchup breakdown (route + MatchupView). Only shows when actual game stats exist (seasonPts > 0 for that player).
+- **#111**: **Week navigator** on roster page — `?week=N` URL param; prev/next arrows in header; past weeks show read-only locked lineup with historical stats; current week badge. Weekly token card + Start/Sit advisor gated to current week only.
+- **#112**: **Optimal lineup calculator** — post-week section below the lineup (visible when locked + seasonPts available). Greedy algorithm sorts by actual pts, assigns best eligible player per slot. Shows "Optimal: X.X pts vs Y.Y pts actual, Z.Z pts left on bench" or "✓ Perfect lineup" when diff ≤ 0.5 pts.
+
+### Deep Dive Review — Session 22 findings (no bugs, clean build)
+- Latest deployment `dpl_4hKmTyid3sCHWpgSuXe4d16kSSLG` is READY, zero runtime errors
+- Sentry DSN errors from older deployment (dpl_HPcWHy6xrryELmGo8tBiFbU6ug6D = #107) — not in latest
+- `AuthApiError: Invalid Refresh Token` (2 occurrences, middleware) — benign, expected when sessions expire
+- Rate limiting: confirmed all 10 AI routes import and call `checkRateLimit`
+- Stat lines: operator precedence on `!(seasonPts?.[pid] ?? 0 > 0)` looks odd but evaluates correctly
+- Week navigator: past weeks use `readOnly=true` (hides save bar) + `locked=true` (hides edit controls) + `projectedPts=undefined`
+- % Owned: global cross-league ownership, `(ownershipMap[p.id] ?? 0) > 0` guard prevents showing "0% owned"
+- Optimal lineup: uses CURRENT roster (not historical) — minor inaccuracy if trades happened mid-week, acceptable
 
 ### Next priorities (not yet built):
-- **Mock draft mode** — simulate draft without locking real rosters
+- **Mock draft mode** — simulate draft without locking real rosters (explicitly requested next)
 - **Push notifications** — mobile PWA (requires service worker + VAPID keys)
 - **Onboarding / invite flow polish**
 - **Admin dashboard** — cross-league health view for Nate

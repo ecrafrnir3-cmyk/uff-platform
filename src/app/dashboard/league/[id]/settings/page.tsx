@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { saveScoringSettings, generateSchedule, extendSchedule, saveLeagueSettings, seedPlayoffs, forceFinalize, syncPlayers, processWaivers, resetWaiverPriority, addToCantCutList, removeFromCantCutList, sendLeagueInvites } from "./actions";
+import { saveScoringSettings, generateSchedule, extendSchedule, saveLeagueSettings, seedPlayoffs, forceFinalize, syncPlayers, processWaivers, resetWaiverPriority, addToCantCutList, removeFromCantCutList, sendLeagueInvites, awardSeasonTitles } from "./actions";
 import CantCutManager from "./CantCutManager";
 import DraftOrderManager from "./DraftOrderManager";
 import WaiverPriorityManager from "./WaiverPriorityManager";
@@ -632,6 +632,41 @@ export default async function SettingsPage({
                 style={{ background: "#FFD700", color: "#0d0d1a" }}
               >
                 Seed Playoffs &rarr;
+              </button>
+            </form>
+          </section>
+        )}
+
+        {/* Award Season Titles */}
+        {scheduleExists && (
+          <section className="flex flex-col gap-3 rounded-lg border p-5" style={{ borderColor: "#FFD70044" }}>
+            <h2 className="text-lg font-semibold" style={{ color: "#FFD700" }}>Award Season Titles</h2>
+            <p className="text-sm text-white">
+              Permanently awards end-of-season titles to all managers based on playoff finish.
+            </p>
+            <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3" style={{ color: "#d4d4e8" }}>
+              {[
+                { rank: "1st · Hero",      title: "Super Hero",    color: "#FFD700" },
+                { rank: "1st · Villain",   title: "Super Villain", color: "#CC0000" },
+                { rank: "2nd (always)",    title: "Nemesis",       color: "#ff6b35" },
+                { rank: "3rd/4th · Hero",  title: "Side Kick",     color: "#0057FF" },
+                { rank: "3rd/4th · Villain", title: "Henchman",   color: "#8855ff" },
+                { rank: "Everyone else",   title: "Cast",          color: "#6b6b8a" },
+              ].map(({ rank, title, color }) => (
+                <div key={rank} className="flex flex-col gap-0.5 rounded-md border px-2 py-1.5 text-center" style={{ borderColor: color + "44", background: color + "11" }}>
+                  <span className="font-bold text-[10px] uppercase tracking-wider" style={{ color: "#8888aa" }}>{rank}</span>
+                  <span className="font-semibold" style={{ color }}>{title}</span>
+                </div>
+              ))}
+            </div>
+            <form action={awardSeasonTitles}>
+              <input type="hidden" name="leagueId" value={leagueId} />
+              <button
+                type="submit"
+                className="rounded-md px-4 py-2 text-sm font-semibold"
+                style={{ background: "#FFD700", color: "#0d0d1a" }}
+              >
+                Award Titles &rarr;
               </button>
             </form>
           </section>

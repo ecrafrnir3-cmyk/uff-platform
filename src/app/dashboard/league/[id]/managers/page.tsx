@@ -26,11 +26,21 @@ function factionBadgeStyle(faction: string | null) {
   return { background: "rgba(107,107,138,0.12)", color: "#6b6b8a", border: "1px solid rgba(107,107,138,0.3)" };
 }
 
+const TITLE_STYLES: Record<string, { color: string; emoji: string }> = {
+  "Super Hero":    { color: "#FFD700", emoji: "🏆" },
+  "Super Villain": { color: "#CC0000", emoji: "👑" },
+  "Nemesis":       { color: "#ff6b35", emoji: "⚔️" },
+  "Side Kick":     { color: "#0057FF", emoji: "🦸" },
+  "Henchman":      { color: "#8855ff", emoji: "🦹" },
+  "Cast":          { color: "#6b6b8a", emoji: "🎭" },
+};
+
 interface MemberRow {
   id: string;
   team_name: string;
   faction: "hero" | "villain" | null;
   is_commissioner: boolean;
+  season_title: string | null;
   profiles: { display_name: string | null; username: string | null } | null;
 }
 
@@ -295,7 +305,7 @@ export default async function ManagersPage({
   // Fetch all members
   const { data: membersRaw } = await supabase
     .from("league_members")
-    .select("id, team_name, faction, is_commissioner, profiles(display_name, username)")
+    .select("id, team_name, faction, is_commissioner, season_title, profiles(display_name, username)")
     .eq("league_id", leagueId)
     .order("team_name");
 
@@ -476,14 +486,25 @@ export default async function ManagersPage({
                       </div>
                     </div>
 
-                    {/* Faction badge */}
-                    <div>
+                    {/* Faction badge + season title */}
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <span
                         className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full"
                         style={factionBadgeStyle(member.faction)}
                       >
                         {factionLabel(member.faction)}
                       </span>
+                      {member.season_title && (() => {
+                        const ts = TITLE_STYLES[member.season_title] ?? { color: "#6b6b8a", emoji: "🎭" };
+                        return (
+                          <span
+                            className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full"
+                            style={{ background: ts.color + "18", color: ts.color, border: `1px solid ${ts.color}44` }}
+                          >
+                            {ts.emoji} {member.season_title}
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     {/* Achievement badges */}
