@@ -304,7 +304,7 @@ All features through **#113 (Season Titles)** are built and deployed. Sessions 1
 - Global Player Search (/players) with ownership + injury status
 - In-App Notification Center (/notifications) — bell icon in nav with unread badge
 - Commissioner Broadcast — announcements → email + in-app notification to all members
-- **Season Titles** — commissioner awards end-of-season titles post-playoffs: Champion → "Super Hero", 2nd → "Nemesis", 3rd → "Side Kick", 4th → "Henchman", rest → "Cast". Awarded via Settings button → `award_season_titles` RPC → displayed as badges on Managers page
+- **Season Titles** — commissioner awards end-of-season titles post-playoffs via Settings button → `award_season_titles` RPC → badges on Managers page. Titles are faction-aware: Champion Hero → "Super Hero", Champion Villain → "Super Villain"; 2nd always → "Nemesis"; 3rd/4th Hero → "Side Kick", 3rd/4th Villain → "Henchman"; everyone else → "Cast"
 - League Assistant Chat (/chat) — AI with full league context (standings, matchups, transactions, full rulebook)
 - Player news/trending feed (Sleeper trending API)
 - Weekly newsletter cron (AI-generated + emailed via Resend)
@@ -382,6 +382,14 @@ next.config.ts                    # Wrapped with withSentryConfig
 - **#110**: **Stat line breakdown** on player cards — `formatStatLine()` helper shows "247 pass yds · 2 TD" etc. per position. Applied to DragDropLineup starters + bench cards, and matchup breakdown (route + MatchupView). Only shows when actual game stats exist (seasonPts > 0 for that player).
 - **#111**: **Week navigator** on roster page — `?week=N` URL param; prev/next arrows in header; past weeks show read-only locked lineup with historical stats; current week badge. Weekly token card + Start/Sit advisor gated to current week only.
 - **#112**: **Optimal lineup calculator** — post-week section below the lineup (visible when locked + seasonPts available). Greedy algorithm sorts by actual pts, assigns best eligible player per slot. Shows "Optimal: X.X pts vs Y.Y pts actual, Z.Z pts left on bench" or "✓ Perfect lineup" when diff ≤ 0.5 pts.
+
+### Deep Dive Review — Session 23 findings (no bugs, clean build)
+- Season Titles feature fully reviewed: DB column, RPC (faction-aware, commissioner guard via `auth.uid()`), server action, settings UI, managers badge display — all clean
+- RPC uses `SECURITY DEFINER` + internal `auth.uid()` commissioner check (defense in depth)
+- `award_season_titles` correctly handles 4-team and 8-team brackets; 3rd/4th ranked by total playoff PF, faction determines Side Kick vs Henchman
+- `MemberRow` interface updated with `season_title: string | null`; IIFE badge render null-safe with graceful fallback
+- Settings preview grid shows all 6 faction-aware titles clearly
+- No TypeScript issues; no regressions in managers page badge/standings logic
 
 ### Deep Dive Review — Session 22 findings (no bugs, clean build)
 - Latest deployment `dpl_4hKmTyid3sCHWpgSuXe4d16kSSLG` is READY, zero runtime errors
