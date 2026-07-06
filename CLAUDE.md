@@ -438,7 +438,7 @@ next.config.ts                    # Wrapped with withSentryConfig
 - Links: `/login?mode=signup` for all signup CTAs, `/guide` for Powers Guide, `/about` for About, `/login` for Sign In
 - Design: same palette + component patterns as `about/page.tsx`
 - `export const metadata` added with SEO title + description
-- Pending push: `feat: marketing landing page — hero, feature cards, faction war section, season titles teaser, CTA (#115)`
+- Pushed in Session 28 as part of 3-commit batch
 
 ### Session 27 — Mock Draft Power Logic Deep Dive + Bug Fixes
 
@@ -474,6 +474,15 @@ All launch-blocker domain tasks completed:
 - **EMAIL_FROM**: updated to `UFF <noreply@playuff.com>` in Vercel env vars
 - **Resend**: `playuff.com` domain verified — DKIM, SPF MX, SPF TXT all verified; DNS records added manually via Vercel DNS
 
+### Deep Dive Review — Session 30 findings (1 bug fixed)
+- **Bug fixed in `FreeAgents.tsx`**: `hasBid` and `existingBid` were gated on `faabEnabled && ...` — in priority waiver mode (`faabEnabled = false`), this meant player cards never showed "Claimed" state inline, inline Cancel never appeared, and the "Claim" button would show even on already-claimed players. Fixed: `(faabEnabled || isPriorityMode) && ...` for both variables.
+- `sync-players/index.ts` v4 — logic verified clean. `needSyntheticAdp` index math correct (`rows.length` before `rows.push` = future index). 250-cap on synthetic assignments correct.
+- `faab-actions.ts` — clean. `submitWaiverBid` / `cancelWaiverBid` both auth-guard properly via `supabase.auth.getUser()`.
+- `nfl-utils.ts` — returns week 1 pre-season (correct), won't exceed 18. `isLineupLocked` works correctly off-season.
+- `free-agents/page.tsx` — Sleeper projections fetch fails silently off-season; `hasProjections = false` correct fallback.
+- CLAUDE.md — removed stale "Pending push" note from Session 25, removed duplicate entries in Next priorities.
+- **New gotcha**: `hasBid` / `existingBid` in FreeAgents.tsx must check `(faabEnabled || isPriorityMode)`, not `faabEnabled` alone.
+
 ### Session 30 — Player Rankings + Waiver Wire (2026-07-06)
 - **sync-players v4**: Two-tier ADP ranking. FFC PPR ADP for ~179 name-matched players; Sleeper `search_rank` used as synthetic ADP (offset above max FFC pick) for up to 250 additional unmatched players → 400+ total ranked players. Response returns `adpMatched`, `adpSynthetic`, `adpTotalRanked`, updated `adpSource`.
 - **FreeAgents.tsx**: Query limit raised 150 → 300 to surface all ranked players.
@@ -482,14 +491,8 @@ All launch-blocker domain tasks completed:
 - **Pending action**: Nate needs to trigger sync-players once from Supabase dashboard (Edge Functions → sync-players → Test → Send Request) to populate v4 synthetic ADP in DB.
 
 ### Next priorities (not yet built):
-- **Player sync** — `sync-players` v4 deployed. Two-tier ranking: (1) FFC PPR ADP for ~179 matched players, (2) Sleeper `search_rank` synthetic ADP for up to 250 additional unmatched players → 400+ total ranked. Response now returns `adpMatched`, `adpSynthetic`, `adpTotalRanked`. Free-agents limit raised from 150 → 300. Sept 1 reminder scheduled. Run again ~Sept 1 before the Sept 9 draft season. **Needs one manual trigger from Supabase dashboard to populate v4 data.**
-- **In-season waiver wire priority** — already built! `free-agents/page.tsx` fetches Sleeper weekly projections (`/v1/projections/nfl/{year}/{week}`) and sorts free agents by projected points when in-season. Shows "Ranked by projected points · Week N" during the season, falls back to ADP off-season.
 - **Push notifications** — mobile PWA (requires service worker + VAPID keys)
 - **Admin dashboard** — cross-league health view for Nate
 - **App Store listing** — iOS/Android PWA/TWA submission
-- **Cron migration** — GitHub Actions → Vercel Cron Jobs
-- **Push notifications** — mobile PWA (requires service worker + VAPID keys)
-- **App Store listing** — iOS/Android PWA/TWA submission
-- **Admin dashboard** — cross-league health view for Nate
-- Consider migrating crons from GitHub Actions → Vercel Cron Jobs (more reliable, less drift)
+- **Cron migration** — GitHub Actions → Vercel Cron Jobs (more reliable, less drift)
 - Update `nfl-utils.ts` season start date every off-season (currently `2026-09-09`)

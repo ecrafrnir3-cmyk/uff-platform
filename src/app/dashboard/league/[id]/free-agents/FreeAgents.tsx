@@ -490,8 +490,8 @@ export default function FreeAgents({
           const sColor  = statusColor(p.status);
           const intel   = intelMap[p.id];
           const form    = bidForm[p.id];
-          const hasBid  = faabEnabled && pendingPlayerIds.has(p.id);
-          const existingBid = faabEnabled ? localBids.find(
+          const hasBid  = (faabEnabled || isPriorityMode) && pendingPlayerIds.has(p.id);
+          const existingBid = (faabEnabled || isPriorityMode) ? localBids.find(
             (b) => b.player_id === p.id && b.status === "pending"
           ) : undefined;
 
