@@ -1,193 +1,144 @@
-# 🚀 UFF Handoff Brief
+# 🚀 UFF War Room — Current State
 
-## ✅ Session update — 2026-06-22 (audit + Yahoo-quality redesign + headshots)
+*Last updated: 2026-07-06 (Session 24 deep dive)*
 
-**Shipped this session:**
+---
 
-Full platform audit, competitive benchmarking vs Yahoo/Sleeper/ESPN, and Yahoo-quality redesign deployed (commit `9f6b069`).
+## 🔢 Build Status
 
-**Changes shipped:**
-- **`DragDropLineup.tsx`** — full rewrite. Yahoo-style full-width slot rows: badge | photo | name+pos·team | pts | remove. `PlayerAvatar` client component with Sleeper CDN headshots + initials fallback. Auto-fill button. Green "✓ Lineup complete" save bar. Red lock banner.
-- **`PlayerPhoto.tsx`** — new `"use client"` component for server-side use; DEF/DST shows letter fallback.
-- **`roster/page.tsx`** — headshots in roster table, simplified from 13 → 4 columns (Player, Slot, 2024 Pts, Actions), `seasonPts` + `team` passed to DragDropLineup.
-- **`FreeAgents.tsx`** — bug fix: `Week {new Date().toLocaleDateString()}` → `Week {week}`. Headshots added inline.
-- **`free-agents/page.tsx`** — `week` prop wired through.
+**All features through #114 (Shadow Guard) are built, deployed, and verified clean.**
 
-**Key technical notes:**
-- Sleeper CDN headshots free at `sleepercdn.com/content/nfl/players/thumb/{player_id}.jpg` — confirmed `players.id` = Sleeper player ID (zero DB changes).
-- DEF/DST: Sleeper uses team abbreviations as player IDs — no individual headshot URL. Show letter fallback.
-- Server components can't use `onError` — extracted `PlayerPhoto.tsx` as `"use client"` component.
-- `npx tsc --noEmit` → zero errors after all changes.
+- **Live URL**: https://uff-platform.vercel.app
+- **GitHub**: github.com/ecrafrnir3-cmyk/uff-platform (`main`)
+- **Supabase**: `synfuvgdamhjboobjmls`
+- **Vercel project**: `prj_HbhjhScNXEPvZTIFePCvfiEBnzSu`
 
-**Critical next items:**
-1. **Lineup lock DB enforcement** — `isLineupLocked()` exists in `nfl-utils.ts` but not wired to block saves in `set_lineup` RPC; critical before Week 1
-2. **Suspense streaming on roster page** — N Sleeper calls still block render; wrap stats in `<Suspense>`
-3. **Settings presets bug** — Half PPR / Standard only update `rec` field, not full scoring config
-4. **ESPN per-player news** — decision pending
+---
 
-**NTFS write rule (CRITICAL — all future sessions):**
-Never use Edit/Write tools or bash heredocs. Always use a Python script file via bash.
+## ✅ What's Working (Don't Touch)
 
-*Last updated: 2026-06-22*
+### Core Flow
+- Auth: signup, login, password reset ✅
+- League creation, join, commissioner flow ✅
+- Faction assignment (hero/villain) ✅
+- Draft room: real-time, snake order, 16 named powers, pick clock, round buffer, autodraft queue ✅
+- Scoring engine: Sleeper → Edge Function → `uff_matchups` (18 tokens + 11 draft powers + faction bonus) ✅
+- Lineup: drag-and-drop, IR slots, Start Best auto-fill, optimal lineup calculator, week navigator ✅
+- Free agents: FAAB + priority waivers, acquisition limits, Waiver Intel AI ✅
+- Trades: propose/accept/reject/veto/commissioner review, Trade Inbox, AI evaluator, email notifications ✅
+- Standings: W/L/PF/PA, Faction War section, Power Rankings AI ✅
+- Playoffs: 4 or 8 team bracket, commissioner seeds, winner advancement ✅
+- Matchups: live scores, Oracle AI preview/recap, commissioner score override, score breakdown ✅
 
+### League Tools
+- Commissioner Broadcast (email + in-app notification to all members) ✅
+- Season Schedule page + head-to-head history ✅
+- Record Book, Transactions feed, Trade Block, Trade History ✅
+- Managers page with achievement badges ✅
+- **Season Titles** — faction-aware end-of-season awards via Settings → `award_season_titles` RPC ✅
+  - Champion Hero → Super Hero, Champion Villain → Super Villain, 2nd → Nemesis
+  - 3rd/4th: Hero → Side Kick, Villain → Henchman; everyone else → Cast
+- Global Player Search (`/players`) with ownership + injury status ✅
+- Notification Center (`/notifications`) with bell icon + unread badge ✅
+- League Assistant Chat (`/chat`) — AI with full rulebook context ✅
+- Player news/trending feed (Sleeper trending API) ✅
+- Weekly newsletter cron (AI-generated + emailed via Resend) ✅
 
+### Draft Powers (all 16)
+- **Shadow Guard** (formerly Cloak, power_id=9): blocks Vampire Bite *permanently* on picked player + blocks Telepathy reveal. Two-layer protection: `assignVampireBite` (immediate error) + `score-matchups` safety net. Category: `tied_to_pick/ANY` → writes to `player_draft_powers` automatically like other pick powers ✅
+- All other powers: Gunslinger, Berserker Rage, Reception Specialist, Iron Defense, Red Zone Menace, Goal Line Hammer, Seam Buster, Sniper, Power Negation, Time Stone, Vampire Bite, Foresight Coin, Draft Heist, Hero's Shield, Telepathy ✅
 
-## ✅ Session update — 2026-06-22 (trade tool shipped)
+### Infrastructure
+- Crons: score-matchups every 15min (Thu–Tue), finalize-week Wed 07:00 UTC, newsletter Wed 07:30 UTC, process-waivers hourly ✅
+- Sentry error monitoring (production-only, session replay) ✅
+- Rate limiting on all 10 AI routes ✅
+- Mobile PWA (installable, manifest with icons) ✅
+- Security headers in next.config.ts ✅
 
-**Shipped this session:**
+---
 
-Full trade tool built and deployed to production (commit `153112a`).
+## 🔴 Bugs / Known Gaps
 
-**Tasks completed (#91–#95):**
-- **DB layer** (`uff_trades` table + 3 RPCs): `propose_trade`, `respond_to_trade`, `cancel_trade` — all SECURITY DEFINER, with roster swap logic on accept.
-- **`trade-actions.ts`** — server actions for propose, respond, cancel; validate inputs, call RPCs, redirect with flash params.
-- **`/dashboard/league/[id]/trade/page.tsx`** — new proposal page: Step 1 pick trade partner (GET form), Step 2 select players to send/receive (POST form with checkboxes). Dark theme, gold accents.
-- **`roster/page.tsx`** — Trade Inbox added: fetches all pending trades for the user, shows incoming trades (Accept/Reject buttons) and outgoing trades (Cancel button). Trade flash messages added. Trade button now links to `/trade` instead of showing "Coming Soon".
-- **Git push**: `8afd94a..153112a  main -> main`
-- **Vercel deploy**: `vercel --prod` — Production: `https://uff-platform-g5tsterz9-ecrafrnir3-4467s-projects.vercel.app`
+**None confirmed as of Session 24 deep dive.** The following are open design gaps (not crashes):
 
-**Key technical notes:**
-- Supabase PostgREST join returns `players` as array type — must cast `as unknown as RosterPlayer[]` (not direct cast).
-- NTFS write rule enforced: all file changes via Python script; Edit tool truncation incident on roster/page.tsx resolved by extracting clean file from `git cat-file blob <hash>` and running a Python rebuild script.
+| Item | Detail | Priority |
+|---|---|---|
+| Root page has no marketing content | `/` redirects to `/login` for non-logged-in users — they get a login form with no context. `/about` exists but is orphaned. | 🔴 Launch-critical |
+| Email sending domain | `EMAIL_FROM` fallback is `onboarding@resend.dev` (Resend test domain). If `EMAIL_FROM` env var isn't set to a verified custom domain in Vercel, production emails may fail. | 🔴 Launch-critical |
+| Player data freshness | `players` table populated with 4,254 players. Needs `sync-players` run before 2026 season opens Sep 9 to get current rosters. | 🟡 Pre-season |
+| PWA icons | manifest.ts uses `/icon` (Next.js route). Need to verify actual `icon.png` file exists in `/app` at adequate resolution. | 🟡 App Store |
+| Shadow Guard toast is generic | When applied during draft, toast says "Shadow Guard applied to this pick!" — doesn't mention Telepathy block benefit. Minor polish. | 🟢 Low |
 
-**Critical next items:**
-1. **Lineup lock** — still no game-time cutoff enforcement; critical before Week 1
-2. **Player news** — ESPN per-player endpoint decision pending (free, untested)
-3. **Suspense streaming** on roster page — multiple Supabase calls block full render
+---
 
-**NTFS write rule (CRITICAL — all future sessions):**
-Never use Edit/Write tools or bash heredocs. Always use a Python script file via bash.
+## 🟡 Next Features (Not Yet Built)
 
-*Last updated: 2026-06-22*
+In priority order per CLAUDE.md + session notes:
 
+1. **Marketing landing page** — `/` needs content for non-logged-in visitors. Currently redirects straight to `/login`. Biggest UX gap before public launch.
+2. **Mock draft mode** — simulate draft without locking real rosters (explicitly requested as next feature)
+3. **Custom domain** — `uff-platform.vercel.app` is not a launch URL; need a real domain + DNS + Supabase Auth Site URL update
+4. **Push notifications** — mobile PWA (requires service worker + VAPID keys)
+5. **App Store listing** — iOS/Android PWA/TWA submission
+6. **Admin dashboard** — cross-league health view for Nate
+7. **Cron migration** — GitHub Actions → Vercel Cron Jobs (more reliable, less drift)
 
-## ✅ Session update — 2026-06-18 (audit fixes + deploy)
+---
 
-**Shipped this session:**
+## 🔑 Key Env Vars (Vercel)
 
-Full codebase audit fixes committed (`cdb18bb`) and deployed to production via `vercel --prod`.
-
-**Changes shipped:**
-- **`src/proxy.ts`** — created (Next.js 16: `middleware.ts` renamed to `proxy.ts`, function renamed `middleware` → `proxy`)
-- **`src/middleware.ts`** — deleted (deprecated in Next.js 16)
-- **`src/app/dashboard/league/[id]/roster/LineupManager.tsx`** — deleted (dead code, fully superseded by `DragDropLineup.tsx`)
-- **`src/lib/nfl-utils.ts`** — new shared util, exports `getCurrentNFLWeek()`; replaced 3 duplicate local copies
-- **`loading.tsx`** — added to free-agents, matchups, and standings pages (loading skeletons)
-- **`next.config.ts`** — security headers: X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy
-- **Cleanup** (`6e30eda`): removed temp batch files; restored 3 Edit-tool-corrupted files from git HEAD
-
-**Git log:**
 ```
-6e30eda chore: remove temp deploy batch files
-8dd0762 Fix: password reset redirect, DraftRoom polling guard, MatchupView Realtime guard
-cdb18bb chore: audit fixes - proxy rename, dead code, shared util, security headers, loading skeletons
-```
-
-**Vercel:** all commits live at `https://uff-platform.vercel.app`
-
-**Critical next items (from audit):**
-1. **Lineup lock deadline** — no game-time cutoff enforcement yet; critical before Week 1
-2. **Trade tool** — currently 'Coming Soon' button; highest-priority missing feature
-3. **Suspense streaming on roster page** — N Sleeper API calls block full render; wrap in Suspense for instant shell
-
-**NTFS write rule (CRITICAL — all future sessions):**
-Never use Edit/Write tools or bash heredocs. Always use a Python script file via bash.
-
-*Last updated: 2026-06-18*
-
-## Session update -- 2026-06-16 (evening: NTFS corruption cleanup)
-
-**Shipped this session:**
-
-All NTFS-truncated files reconstructed and deployed. Build is green.
-
-**Root cause:** The Write/Edit file tools and bash heredocs truncate files on the Windows NTFS mount. Every file written since the lineup management session was silently corrupted in git. Fix: always use Python `open(path, 'w').write(content)` via bash for file writes on this project.
-
-**Files reconstructed:**
-- `matchups/page.tsx` -- missing `)}` closing the `!hasSchedule` block; appended missing week selector + MatchupView + Finalize button JSX.
-- `free-agents/page.tsx` -- 36 null bytes stripped.
-- `actions.ts` -- 722 null bytes stripped.
-- `DraftRoom.tsx` -- 10 closing JSX lines deleted by a prior commit; reconstructed from `d41f371` base with valid changes from `84c605c` applied cleanly (supabase singleton, DEF position label).
-- `[id]/page.tsx` -- every version since `7f3e18b` was truncated at 11044b; fully rewritten from scratch tracing 4 commits of diffs.
-- `settings/page.tsx` -- truncated mid-input element; missing input attributes + all closing structure appended.
-
-**Bug fixes on top:**
-- `DraftRoom.tsx:90` -- `data as Pick[]` -> `data as unknown as Pick[]` (TS strict cast).
-- `matchups/page.tsx:128` -- missing `)}` after `!hasSchedule` div.
-
-**NTFS write rule (CRITICAL for all future sessions):**
-Never use the Edit/Write tools or bash `cat >` heredocs to write files in this project. Always use:
-```bash
-python3 -c "open('path', 'w').write('''...content...''')"
-```
-or a Python script via bash.
-
-*Last updated: 2026-06-16 (evening)*
-
-
-## ✅ Session update — 2026-06-16 (lineup management + nav bar)
-
-**Shipped this session:**
-
-**Critical bug fixes (6 from prior audit):**
-- `add_player` RPC: was inserting NULL league_id -- fixed to pass `p_league_id` explicitly.
-- UNIQUE constraint blocked re-adding dropped players -- replaced with partial index `WHERE dropped_at IS NULL`.
-- FreeAgents.tsx blank on load -- removed broken `setPosFilter(prev => prev)` no-op useEffect.
-- `allRostered` query in free-agents/page.tsx -- PostgREST join filter was unreliable, switched to direct `.eq("league_id", leagueId)` on the `uff_roster_players` table.
-- Projected pts not showing in matchups -- added `projected` field to interface, query, MatchupView.tsx, and Realtime handler.
-- RLS: `uff_roster_players` had an ALL policy; split into proper SELECT-only policies.
-
-**Lineup management system (full stack):**
-- DB migration: `uff_lineups` table (member_id, week, slot, player_id) + `lineup_slots` JSONB on `uff_leagues` (default: QB×1, RB×2, WR×2, TE×1, FLEX×1, K×1, DEF×1 = 9 starters).
-- `set_lineup` SECURITY DEFINER RPC: validates player on active roster, validates position eligibility (FLEX accepts RB/WR/TE), atomically replaces the week's lineup.
-- `score-matchups` Edge Function v5: scores only starters when lineup is set; falls back to all active players if no lineup submitted yet.
-- `lineup-actions.ts` server action: calls the RPC and redirects with success/error flash.
-- `LineupManager.tsx` client component: slot dropdowns with position filtering (auto-updates assignment state), bench display, Save Lineup button.
-- `roster/page.tsx` updated: queries `lineup_slots` + `uff_lineups` for current week, expands slots, renders LineupManager above roster, shows S/B (starter/bench) badge per player row.
-
-**Shared league nav bar:**
-- `LeagueNav.tsx`: sticky nav with UFF wordmark + tabs (League, Roster, Matchups, Standings, Free Agents, Settings), active tab highlighted gold with bottom border, uses `usePathname`.
-- `layout.tsx` for `/dashboard/league/[id]/`: verifies membership once for all child routes, renders nav above every page.
-
-**Git log (local, awaiting `git push` from Nate):**
-```
-72faa99 fix: lineup-actions import path
-f2bc5fa feat: shared league layout with sticky nav bar
-1f97071 feat: lineup management - set starters vs bench per week
-811cd05 fix: critical waiver wire bugs + projected pts display
-11f2a42 fix: critical waiver wire bugs + audit fixes
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY
+ANTHROPIC_API_KEY           ← NEVER log or return in responses
+CRON_SECRET
+RESEND_API_KEY
+EMAIL_FROM                  ← Must be verified domain for production
+NEXT_PUBLIC_SENTRY_DSN
+SENTRY_ORG                  ← uff-platform
+SENTRY_PROJECT              ← javascript-nextjs
+SENTRY_AUTH_TOKEN
 ```
 
-**IMPORTANT -- Nate needs to `git push` from CMD to send these to GitHub.**
+---
 
-*Last updated: 2026-06-16*
+## 📁 Key File Map
 
-This is the "start here" doc for any new Cowork session on Ultimate Fantasy Football. Pin it alongside the master prompt in the project instructions.
+```
+src/app/
+  page.tsx                          # Root: redirects → /dashboard or /login
+  about/page.tsx                    # Marketing page (not the root — orphaned)
+  guide/page.tsx                    # Full powers + tokens guide (public)
+  dashboard/league/[id]/
+    layout.tsx                      # Auth gate + trade badge + notif count
+    LeagueNav.tsx                   # Full nav (16 pages + bell)
+    settings/
+      actions.ts                    # All commissioner actions incl. awardSeasonTitles
+      page.tsx                      # Commissioner tools UI
+    managers/page.tsx               # Achievement badges + season title badges
+    draft/
+      DraftRoom.tsx                 # Real-time draft room (Shadow Guard UI)
+      actions.ts                    # Draft actions (assignVampireBite → Shadow Guard check)
+    matchups/MatchupView.tsx        # Realtime scoring client
+    free-agents/FreeAgents.tsx      # FAAB + priority waivers
+src/lib/
+  nfl-utils.ts                      # Season start 2026-09-09 (update each off-season)
+  email.ts                          # Resend templates (FROM fallback = onboarding@resend.dev)
+  rate-limit.ts                     # In-memory per-user rate limiter
+supabase/functions/
+  score-matchups/index.ts           # Scoring engine (~640 lines, shadow_guard at line 469)
+.github/workflows/                  # 4 cron workflows
+```
 
-## ✅ Session update — 2026-06-12 (evening, work computer)
+---
 
-**Shipped this session:**
-- **My Team / roster page** (`/dashboard/league/[id]/roster`) — built and deployed live. 3-column layout:
-  - Left: "Your Powers" — draft power assignments per round with status badges (Active/Fizzled/Negated/Restored/Pending).
-  - Center: Faction Roster Bonus calc + full roster list (sorted QB/RB/WR/TE/K/DEF, faction-match highlighting).
-  - Right: "League Activity" (recent draft picks feed) + "NFL News" (ESPN free RSS headlines, no-auth).
-  - Added "My Team" nav link from the league page.
-  - Deployed via `vercel deploy --prod` — confirmed live ("✓ Ready in 44s").
-- **Player news research** (Nate's ask: "pull individual player news in real time like the major apps") — researched free vs. paid real-time player/injury news APIs. See findings below. **No code built yet — holding for go-ahead.**
+## 🚫 Permanent Security Rules
 
-**Player news API research findings:**
-- **Best free lead**: ESPN's undocumented per-player news endpoint — `site.api.espn.com/apis/fantasy/v2/games/ffl/news/players?limit=50&playerId={ESPN_ID}` (also `site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/{id}/news`). Same ESPN API family already powering the working NFL News RSS panel — zero cost, fits bootstrap rule. Source: community-documented gist (gist.github.com/nntrn/ee26cb2a0716de0947a0a4e9a157bc1c). **Caveat**: undocumented/unsupported, could change without notice. Couldn't live-test from the sandbox (network allowlist blocks `site.api.espn.com`, unlike `www.espn.com`) — needs testing from a deployed route or local dev.
-- **Paid options checked, no public pricing found for any**:
-  - SportsDataIO — free trial returns scrambled/demo data only; real pricing requires sales contact.
-  - RotoWire — real-time injury/news feed exists (GTD→OUT transitions, ~250 notes/day NFL season), but pricing is sales-negotiated, not public.
-  - Also identified but not deep-dived: Tank01 (RapidAPI), BALLDONTLIE, MySportsFeeds, Goalserve, Fantasy Nerds.
-- **Recommendation**: try the free ESPN per-player endpoint first (build a small test on a deployed route since sandbox can't reach it). Only explore paid options if it proves unreliable.
-- **Next step**: Nate to decide — build/test the free ESPN per-player endpoint, or hold. Not started.
+- `ANTHROPIC_API_KEY` — NEVER log, return in responses, or put in client-side code
+- `SUPABASE_SERVICE_ROLE_KEY` — server-only (`createAdminClient()`)
+- All AI routes use `process.env.ANTHROPIC_API_KEY` server-side only
 
-## 📒 Journal
+---
 
-Day-by-day work log now lives in `docs/journal.md` — check there for what happened in past sessions.
-
-## 🎯 Product Vision & Launch Goal
-
-**The bar:** ship a fully functional, bug-free fantasy platform that feels as polished as Yahoo Fantasy — the major-plat
+*Companion doc: `CLAUDE.md` is the authoritative session-to-session memory. This war room is the launch-readiness snapshot.*

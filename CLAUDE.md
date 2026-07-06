@@ -255,22 +255,20 @@ Muted text: #d4d4e8
 10. **Windows CMD no `&&`** — CMD does not support `&&` chaining. If a git commit fails with "index.lock" or "HEAD.lock" errors, run `del .git\index.lock` and/or `del .git\HEAD.lock`, then retry the three commands separately.
 11. **Dotall `/s` regex flag** — TypeScript target below ES2018 rejects `/pattern/s`. Use `.split(/PATTERN/)[0]` or `[\s\S]*` instead.
 12. **VB siphon must be league-scoped** — the `fullScoreCache` holds members from ALL leagues being scored simultaneously. The Vampire Bite inner loop must filter to `leagueMemberIds` only, not `Object.values(fullScoreCache)`.
-16. **Shadow Guard blocks Vampire Bite at two layers** — (1) `assignVampireBite` in `actions.ts` rejects the bite immediately if `player_draft_powers` has `power = 'shadow_guard'` for that player; (2) `score-matchups` edge function also skips the siphon as a safety net. Both checks use the same `powerMap`. Shadow Guard is `power_id = 9` (formerly Cloak) with `category = 'tied_to_pick'`, `tied_position = 'ANY'` — it writes to `player_draft_powers` automatically on pick like other tied_to_pick powers. It also still blocks Telepathy via the existing `power_id = 9` check in `revealNextPower`.
 13. **DST in process-waivers** — use `isEDT = month >= 2 && month <= 9` (March–October = UTC-4), else UTC-5. NFL season spans the EDT→EST transition.
 14. **Oracle cache row order** — `uff_matchups` query for a matchup returns 2 rows in non-guaranteed order. Always check `rows[0].oracle_recap ?? rows[1]?.oracle_recap`.
 15. **`getAllUserEmails` pagination** — always paginate with `page++` until `data.users.length < 1000`. Single-page fetch silently truncates at 1000 users.
+16. **Shadow Guard blocks Vampire Bite at two layers** — (1) `assignVampireBite` in `actions.ts` rejects the bite immediately if `player_draft_powers` has `power = 'shadow_guard'` for that player; (2) `score-matchups` edge function also skips the siphon as a safety net. Both checks use the same `powerMap`. Shadow Guard is `power_id = 9` (formerly Cloak) with `category = 'tied_to_pick'`, `tied_position = 'ANY'` — it writes to `player_draft_powers` automatically on pick like other tied_to_pick powers. It also still blocks Telepathy via the existing `power_id = 9` check in `revealNextPower`.
 
 ---
 
 ## Current Build Status
 
-All features through **#113 (Season Titles)** are built and deployed. Sessions 18–23 added bug fixes and features.
+All features through **#114 (Shadow Guard)** are built and deployed. Sessions 18–24 added bug fixes and features.
 
 **Latest Vercel deployment**: READY  
-**Last deployed commit**: `feat: stat lines, week navigator, optimal lineup, rate limiting (#109-112)` — deployed and live  
-**Pending commits**: 
-- `feat: season titles — faction-aware Super Hero/Super Villain/Nemesis/Side Kick/Henchman/Cast (#113)`
-- `feat: Shadow Guard replaces Cloak — blocks Vampire Bite + Telepathy (#114)`
+**Last deployed commit**: `feat: season titles — faction-aware Super Hero/Super Villain/Nemesis/Side Kick/Henchman/Cast (#113)` + Shadow Guard (#114) — all deployed and live  
+**Pending commits**: none
 
 ### Completed setup (don't redo):
 - Sentry account created, DSN set, org=`uff-platform`, project=`javascript-nextjs`
@@ -404,11 +402,23 @@ next.config.ts                    # Wrapped with withSentryConfig
 - % Owned: global cross-league ownership, `(ownershipMap[p.id] ?? 0) > 0` guard prevents showing "0% owned"
 - Optimal lineup: uses CURRENT roster (not historical) — minor inaccuracy if trades happened mid-week, acceptable
 
+### Deep Dive Review — Session 24 findings (no bugs, clean build)
+- All Shadow Guard code verified: `assignVampireBite` guard in `actions.ts`, safety net at line 469 in `score-matchups/index.ts`, UI text in `DraftRoom.tsx`, `guide/page.tsx` updated with Shadow Guard PowerCard
+- All Season Titles verified: `awardSeasonTitles` in `settings/actions.ts`, `TITLE_STYLES` + `season_title: string | null` in `managers/page.tsx`, RPC exists in Supabase
+- Cron schedules correct: score-matchups Thu–Tue every 15min, finalize-week Wed 07:00 UTC, newsletter Wed 07:30 UTC
+- `nfl-utils.ts` season start confirmed `2026-09-09` ✅
+- `email.ts` fallback is `onboarding@resend.dev` — `EMAIL_FROM` env var must be set to a verified custom domain in Vercel before production email (invites, trades, newsletter) will deliver reliably
+- **Root page gap**: `src/app/page.tsx` redirects non-logged-in visitors straight to `/login` — no marketing landing page. `/about` exists but is orphaned. This is the biggest UX gap before public launch.
+- War room (`docs/handoff-brief.md`) fully rewritten with current state
+
 ### Next priorities (not yet built):
-- **Mock draft mode** — simulate draft without locking real rosters (explicitly requested next)
+- **Marketing landing page** — `/` needs content for new visitors (currently just redirects to `/login`). Critical before sharing with anyone. ← **MOST CRITICAL FOR LAUNCH**
+- **Mock draft mode** — simulate draft without locking real rosters (explicitly requested)
+- **Custom domain** — `uff-platform.vercel.app` is not a launch URL; need real domain + Supabase Auth Site URL update
+- **Email domain verification** — Resend `EMAIL_FROM` must point to verified custom domain for production delivery
+- **Player sync** — run `sync-players` before 2026 season opens Sep 9 to refresh current rosters
 - **Push notifications** — mobile PWA (requires service worker + VAPID keys)
-- **Onboarding / invite flow polish**
+- **App Store listing** — iOS/Android PWA/TWA submission
 - **Admin dashboard** — cross-league health view for Nate
-- **App Store listing** — iOS/Android PWA submission
 - Consider migrating crons from GitHub Actions → Vercel Cron Jobs (more reliable, less drift)
 - Update `nfl-utils.ts` season start date every off-season (currently `2026-09-09`)
