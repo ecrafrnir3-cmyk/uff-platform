@@ -1,12 +1,12 @@
 # 🚀 UFF War Room — Current State
 
-*Last updated: 2026-07-06 (Session 25 — marketing landing page)*
+*Last updated: 2026-07-06 (Session 26 — mock draft mode)*
 
 ---
 
 ## 🔢 Build Status
 
-**All features through #115 (Marketing Landing Page) are built, deployed, and verified clean.**
+**All features through #116 (Mock Draft Mode) are built. #115 and #116 are pending push.**
 
 - **Live URL**: https://uff-platform.vercel.app
 - **GitHub**: github.com/ecrafrnir3-cmyk/uff-platform (`main`)
@@ -19,6 +19,7 @@
 
 ### Core Flow
 - **Marketing landing page** (`/`) — hero + 4 feature cards (Draft Powers, Faction War, 18 Tokens, Oracle AI) + features strip + Season Titles teaser + CTA. Server component: logged-in users redirect to `/dashboard`, visitors see the landing page. Links to `/login`, `/about`, `/guide`. ✅
+- **Mock draft mode** (`/mock-draft`) — fully client-side simulation, zero DB writes. CPU picks every 800ms with positional need logic. All 16 draft powers simulated including Vampire Bite modal, Draft Heist modal, Foresight Coin modal. Draft board grid, My Roster tab, Power Log. Accessible from league hub header + nav bar. ✅
 - Auth: signup, login, password reset ✅
 - League creation, join, commissioner flow ✅
 - Faction assignment (hero/villain) ✅
@@ -76,8 +77,7 @@
 
 In priority order per CLAUDE.md + session notes:
 
-1. **Mock draft mode** — simulate draft without locking real rosters (explicitly requested as next feature)
-3. **Custom domain** — `uff-platform.vercel.app` is not a launch URL; need a real domain + DNS + Supabase Auth Site URL update
+1. **Custom domain** — `uff-platform.vercel.app` is not a launch URL; need a real domain + DNS + Supabase Auth Site URL update
 4. **Push notifications** — mobile PWA (requires service worker + VAPID keys)
 5. **App Store listing** — iOS/Android PWA/TWA submission
 6. **Admin dashboard** — cross-league health view for Nate
@@ -108,6 +108,10 @@ SENTRY_AUTH_TOKEN
 ```
 src/app/
   page.tsx                          # Root: landing page (visitors) → redirects /dashboard (logged-in)
+  dashboard/league/[id]/
+    mock-draft/
+      page.tsx                      # Server component: loads league + all power assignments + players
+      MockDraftRoom.tsx             # Client component: full simulation (~650 lines)
   about/page.tsx                    # Deep-dive "About" page (linked from landing nav + footer)
   guide/page.tsx                    # Full powers + tokens guide (public)
   dashboard/league/[id]/

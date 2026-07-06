@@ -20,6 +20,7 @@ const BASE_NAV = [
   { label: "Schedule",        href: "/schedule" },
   { label: "Bulletin Board",  href: "/announcements" },
   { label: "Chat",             href: "/chat" },
+  { label: "Mock Draft",       href: "/mock-draft" },
 ];
 
 const COMMISSIONER_NAV = [

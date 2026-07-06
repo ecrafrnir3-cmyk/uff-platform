@@ -264,11 +264,13 @@ Muted text: #d4d4e8
 
 ## Current Build Status
 
-All features through **#115 (Marketing Landing Page)** are built and deployed. Sessions 18–25 added bug fixes and features.
+All features through **#116 (Mock Draft Mode)** are built. Sessions 18–26 added bug fixes and features.
 
 **Latest Vercel deployment**: READY  
-**Last deployed commit**: Shadow Guard (#114) — live. Marketing landing page (#115) — written, pending push.  
-**Pending commits**: `feat: marketing landing page — hero, feature cards, faction war section, season titles teaser, CTA (#115)`
+**Last deployed commit**: Shadow Guard (#114) — live. Marketing landing page (#115) + Mock Draft (#116) — written, pending push.  
+**Pending commits**:
+1. `feat: marketing landing page — hero, feature cards, faction war section, season titles teaser, CTA (#115)`
+2. `feat: mock draft mode — client-side simulation with CPU powers, Vampire Bite/Heist/Foresight modals, draft board, roster panel (#116)`
 
 ### Completed setup (don't redo):
 - Sentry account created, DSN set, org=`uff-platform`, project=`javascript-nextjs`
@@ -279,6 +281,7 @@ All features through **#115 (Marketing Landing Page)** are built and deployed. S
 
 ### Full Feature List (deployed + pending push):
 - **Marketing landing page** — `/` shows hero + 4 feature cards + faction war section + Season Titles teaser + CTA for visitors; redirects logged-in users to `/dashboard`
+- **Mock draft mode** — `/mock-draft` (accessible from league hub + nav). Client-side-only simulation, zero DB writes. CPU picks every 800ms using positional need algorithm. All 16 powers simulated: tied_to_pick (auto), Draft Heist (CPU steals earlier slot if back-half), Vampire Bite (CPU targets user's best player; user gets modal to bite CPU player), Hero's Shield (blocks Heist), Telepathy (reveals next picker's power), Foresight Coin (user chooses between current/future round powers), Shadow Guard (permanently marks player as bite-immune), Power Negation (removes power from highest-ADP powered pick). UI: player list with position filter + search, draft board grid (collapsible), My Roster tab with composition, Power Log tab. Reset button reruns from scratch.
 - Core league, member management, faction war
 - Real-time draft room with 16 named draft powers + AI Draft Advisor
 - **Draft pick clock with autopick** — configurable timer (30s–5min), countdown ring, auto-selects best queued/available player on expiry
@@ -412,6 +415,22 @@ next.config.ts                    # Wrapped with withSentryConfig
 - **Root page gap identified**: `src/app/page.tsx` redirected non-logged-in visitors straight to `/login` — fixed in session 25.
 - War room (`docs/handoff-brief.md`) fully rewritten with current state
 
+### Session 26 — #116 Mock Draft Mode
+- **`src/app/dashboard/league/[id]/mock-draft/page.tsx`** — Server Component: loads league + all members' power assignments + top N players by ADP. No auth changes needed — standard `createClient()` auth check.
+- **`src/app/dashboard/league/[id]/mock-draft/MockDraftRoom.tsx`** — Full client-side simulation (~650 lines).
+  - All state in React, zero DB writes
+  - CPU picks via 800ms useEffect: `getBestAvailableByNeed()` with positional targets (QB:2, RB:5, WR:5, TE:2, K:1, DEF:1) + `POS_PRIORITY_TIERS` by round progress
+  - Power categories: `tied_to_pick` → auto-apply; `draft_mechanic` (Heist, Foresight, Hero's Shield, Telepathy) → decision logic; action powers (Vampire Bite, Power Negation) → post-pick effects
+  - CPU power decisions: Heist steals if back-half of round + target not shielded; Vampire Bite targets user's best unguarded player; Power Negation strips highest-ADP powered pick; Shadow Guard marks player immune permanently
+  - User modals: VampireBiteModal (search+select drafted opponent player), HeistModal (pick a target who picks before you), ForesightModal (keep current round power or swap to future round)
+  - Telepathy: reveals next picker's power name (if not Shadow Guard protected) as an event log entry
+  - Draft board: collapsible snake grid with pick numbers, player names, position colors, power/guard/bite indicators
+  - Three tabs: Players (filter by position + search), My Roster (picks with composition bar), Power Log (all power events in color-coded feed)
+  - Reset button resets all state to run another mock
+- **`src/app/dashboard/league/[id]/LeagueNav.tsx`** — Added `{ label: "Mock Draft", href: "/mock-draft" }` to `BASE_NAV`
+- **`src/app/dashboard/league/[id]/page.tsx`** — Added "🎮 Mock Draft" button to quick-links header (always visible regardless of draft status)
+- Note: if `draft_power_assignments` is empty (powers not yet assigned), mock draft runs without any power effects — a "No powers assigned yet" banner appears
+
 ### Session 25 — #115 Marketing Landing Page
 - **`src/app/page.tsx`** rewritten as full marketing landing page (Server Component)
 - Auth check preserved: logged-in users still redirect to `/dashboard`
@@ -423,7 +442,6 @@ next.config.ts                    # Wrapped with withSentryConfig
 
 ### Next priorities (not yet built):
 - **Custom domain** — `uff-platform.vercel.app` is not a launch URL; need real domain + Supabase Auth Site URL update
-- **Mock draft mode** — simulate draft without locking real rosters (explicitly requested)
 - **Email domain verification** — Resend `EMAIL_FROM` must point to verified custom domain for production delivery
 - **Player sync** — run `sync-players` before 2026 season opens Sep 9 to refresh current rosters
 - **Push notifications** — mobile PWA (requires service worker + VAPID keys)
