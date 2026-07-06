@@ -1,12 +1,12 @@
 # 🚀 UFF War Room — Current State
 
-*Last updated: 2026-07-06 (Session 24 deep dive)*
+*Last updated: 2026-07-06 (Session 25 — marketing landing page)*
 
 ---
 
 ## 🔢 Build Status
 
-**All features through #114 (Shadow Guard) are built, deployed, and verified clean.**
+**All features through #115 (Marketing Landing Page) are built, deployed, and verified clean.**
 
 - **Live URL**: https://uff-platform.vercel.app
 - **GitHub**: github.com/ecrafrnir3-cmyk/uff-platform (`main`)
@@ -18,6 +18,7 @@
 ## ✅ What's Working (Don't Touch)
 
 ### Core Flow
+- **Marketing landing page** (`/`) — hero + 4 feature cards (Draft Powers, Faction War, 18 Tokens, Oracle AI) + features strip + Season Titles teaser + CTA. Server component: logged-in users redirect to `/dashboard`, visitors see the landing page. Links to `/login`, `/about`, `/guide`. ✅
 - Auth: signup, login, password reset ✅
 - League creation, join, commissioner flow ✅
 - Faction assignment (hero/villain) ✅
@@ -63,7 +64,7 @@
 
 | Item | Detail | Priority |
 |---|---|---|
-| Root page has no marketing content | `/` redirects to `/login` for non-logged-in users — they get a login form with no context. `/about` exists but is orphaned. | 🔴 Launch-critical |
+| Root page marketing content | ✅ Built in session 25. `/` now shows full landing page for visitors; logged-in users redirect to `/dashboard`. | ✅ Done |
 | Email sending domain | `EMAIL_FROM` fallback is `onboarding@resend.dev` (Resend test domain). If `EMAIL_FROM` env var isn't set to a verified custom domain in Vercel, production emails may fail. | 🔴 Launch-critical |
 | Player data freshness | `players` table populated with 4,254 players. Needs `sync-players` run before 2026 season opens Sep 9 to get current rosters. | 🟡 Pre-season |
 | PWA icons | manifest.ts uses `/icon` (Next.js route). Need to verify actual `icon.png` file exists in `/app` at adequate resolution. | 🟡 App Store |
@@ -75,8 +76,7 @@
 
 In priority order per CLAUDE.md + session notes:
 
-1. **Marketing landing page** — `/` needs content for non-logged-in visitors. Currently redirects straight to `/login`. Biggest UX gap before public launch.
-2. **Mock draft mode** — simulate draft without locking real rosters (explicitly requested as next feature)
+1. **Mock draft mode** — simulate draft without locking real rosters (explicitly requested as next feature)
 3. **Custom domain** — `uff-platform.vercel.app` is not a launch URL; need a real domain + DNS + Supabase Auth Site URL update
 4. **Push notifications** — mobile PWA (requires service worker + VAPID keys)
 5. **App Store listing** — iOS/Android PWA/TWA submission
@@ -107,8 +107,8 @@ SENTRY_AUTH_TOKEN
 
 ```
 src/app/
-  page.tsx                          # Root: redirects → /dashboard or /login
-  about/page.tsx                    # Marketing page (not the root — orphaned)
+  page.tsx                          # Root: landing page (visitors) → redirects /dashboard (logged-in)
+  about/page.tsx                    # Deep-dive "About" page (linked from landing nav + footer)
   guide/page.tsx                    # Full powers + tokens guide (public)
   dashboard/league/[id]/
     layout.tsx                      # Auth gate + trade badge + notif count

@@ -264,11 +264,11 @@ Muted text: #d4d4e8
 
 ## Current Build Status
 
-All features through **#114 (Shadow Guard)** are built and deployed. Sessions 18–24 added bug fixes and features.
+All features through **#115 (Marketing Landing Page)** are built and deployed. Sessions 18–25 added bug fixes and features.
 
 **Latest Vercel deployment**: READY  
-**Last deployed commit**: `feat: season titles — faction-aware Super Hero/Super Villain/Nemesis/Side Kick/Henchman/Cast (#113)` + Shadow Guard (#114) — all deployed and live  
-**Pending commits**: none
+**Last deployed commit**: Shadow Guard (#114) — live. Marketing landing page (#115) — written, pending push.  
+**Pending commits**: `feat: marketing landing page — hero, feature cards, faction war section, season titles teaser, CTA (#115)`
 
 ### Completed setup (don't redo):
 - Sentry account created, DSN set, org=`uff-platform`, project=`javascript-nextjs`
@@ -278,6 +278,7 @@ All features through **#114 (Shadow Guard)** are built and deployed. Sessions 18
 - Vercel env vars: `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` all set
 
 ### Full Feature List (deployed + pending push):
+- **Marketing landing page** — `/` shows hero + 4 feature cards + faction war section + Season Titles teaser + CTA for visitors; redirects logged-in users to `/dashboard`
 - Core league, member management, faction war
 - Real-time draft room with 16 named draft powers + AI Draft Advisor
 - **Draft pick clock with autopick** — configurable timer (30s–5min), countdown ring, auto-selects best queued/available player on expiry
@@ -408,13 +409,21 @@ next.config.ts                    # Wrapped with withSentryConfig
 - Cron schedules correct: score-matchups Thu–Tue every 15min, finalize-week Wed 07:00 UTC, newsletter Wed 07:30 UTC
 - `nfl-utils.ts` season start confirmed `2026-09-09` ✅
 - `email.ts` fallback is `onboarding@resend.dev` — `EMAIL_FROM` env var must be set to a verified custom domain in Vercel before production email (invites, trades, newsletter) will deliver reliably
-- **Root page gap**: `src/app/page.tsx` redirects non-logged-in visitors straight to `/login` — no marketing landing page. `/about` exists but is orphaned. This is the biggest UX gap before public launch.
+- **Root page gap identified**: `src/app/page.tsx` redirected non-logged-in visitors straight to `/login` — fixed in session 25.
 - War room (`docs/handoff-brief.md`) fully rewritten with current state
 
+### Session 25 — #115 Marketing Landing Page
+- **`src/app/page.tsx`** rewritten as full marketing landing page (Server Component)
+- Auth check preserved: logged-in users still redirect to `/dashboard`
+- Sections: sticky nav (UFF wordmark, About, Powers & Guide, Sign In, Start Your League), hero with gradient headline + season badge, 4 feature cards (Draft Powers, Faction War, 18 Tokens, Oracle AI), platform feature strip (6 icons), Season Titles teaser (6 faction-aware title badges), final CTA, footer
+- Links: `/login?mode=signup` for all signup CTAs, `/guide` for Powers Guide, `/about` for About, `/login` for Sign In
+- Design: same palette + component patterns as `about/page.tsx`
+- `export const metadata` added with SEO title + description
+- Pending push: `feat: marketing landing page — hero, feature cards, faction war section, season titles teaser, CTA (#115)`
+
 ### Next priorities (not yet built):
-- **Marketing landing page** — `/` needs content for new visitors (currently just redirects to `/login`). Critical before sharing with anyone. ← **MOST CRITICAL FOR LAUNCH**
-- **Mock draft mode** — simulate draft without locking real rosters (explicitly requested)
 - **Custom domain** — `uff-platform.vercel.app` is not a launch URL; need real domain + Supabase Auth Site URL update
+- **Mock draft mode** — simulate draft without locking real rosters (explicitly requested)
 - **Email domain verification** — Resend `EMAIL_FROM` must point to verified custom domain for production delivery
 - **Player sync** — run `sync-players` before 2026 season opens Sep 9 to refresh current rosters
 - **Push notifications** — mobile PWA (requires service worker + VAPID keys)
