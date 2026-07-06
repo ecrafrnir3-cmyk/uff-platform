@@ -1,12 +1,12 @@
 # 🚀 UFF War Room — Current State
 
-*Last updated: 2026-07-06 (Session 26 — mock draft mode)*
+*Last updated: 2026-07-06 (Session 27 — mock draft power logic deep dive + 7 bug fixes)*
 
 ---
 
 ## 🔢 Build Status
 
-**All features through #116 (Mock Draft Mode) are built. #115 and #116 are pending push.**
+**All features through #117 (Mock Draft Bug Fixes) are built. #115, #116, and #117 are pending push.**
 
 - **Live URL**: https://uff-platform.vercel.app
 - **GitHub**: github.com/ecrafrnir3-cmyk/uff-platform (`main`)
@@ -19,7 +19,7 @@
 
 ### Core Flow
 - **Marketing landing page** (`/`) — hero + 4 feature cards (Draft Powers, Faction War, 18 Tokens, Oracle AI) + features strip + Season Titles teaser + CTA. Server component: logged-in users redirect to `/dashboard`, visitors see the landing page. Links to `/login`, `/about`, `/guide`. ✅
-- **Mock draft mode** (`/mock-draft`) — fully client-side simulation, zero DB writes. CPU picks every 800ms with positional need logic. All 16 draft powers simulated including Vampire Bite modal, Draft Heist modal, Foresight Coin modal. Draft board grid, My Roster tab, Power Log. Accessible from league hub header + nav bar. ✅
+- **Mock draft mode** (`/mock-draft`) — fully client-side simulation, zero DB writes. CPU picks every 800ms with positional need logic. All 16 draft powers simulated including Vampire Bite modal, Draft Heist modal, Foresight Coin modal. Draft board grid, My Roster tab, Power Log. Accessible from league hub header + nav bar. Power logic audited + 7 bugs fixed in Session 27. ✅
 - Auth: signup, login, password reset ✅
 - League creation, join, commissioner flow ✅
 - Faction assignment (hero/villain) ✅
@@ -61,7 +61,7 @@
 
 ## 🔴 Bugs / Known Gaps
 
-**None confirmed as of Session 24 deep dive.** The following are open design gaps (not crashes):
+**None as of Session 27 deep dive.** All mock draft power-logic bugs fixed. The following are open design gaps (not crashes):
 
 | Item | Detail | Priority |
 |---|---|---|
@@ -75,13 +75,19 @@
 
 ## 🟡 Next Features (Not Yet Built)
 
-In priority order per CLAUDE.md + session notes:
+### 🔴 Launch-blockers (do these first)
+1. **Custom domain** — `uff-platform.vercel.app` is not a launch URL; need a real domain + DNS + Supabase Auth Site URL update + Resend verified sender
+2. **Email domain verification** — `EMAIL_FROM` must point to verified domain for trades/invites/newsletter to deliver reliably. Currently falls back to `onboarding@resend.dev`
+3. **Player sync** — run `sync-players` Edge Function before 2026 season opens Sep 9 to refresh current rosters
 
-1. **Custom domain** — `uff-platform.vercel.app` is not a launch URL; need a real domain + DNS + Supabase Auth Site URL update
-4. **Push notifications** — mobile PWA (requires service worker + VAPID keys)
-5. **App Store listing** — iOS/Android PWA/TWA submission
-6. **Admin dashboard** — cross-league health view for Nate
-7. **Cron migration** — GitHub Actions → Vercel Cron Jobs (more reliable, less drift)
+### 🟡 Growth features (post-launch, high ROI)
+4. **Push notifications** — mobile PWA (requires service worker + VAPID keys) — massive engagement driver
+5. **Admin dashboard** — cross-league health view for Nate; essential once multiple leagues are live
+6. **App Store listing** — iOS/Android PWA/TWA submission for discoverability
+
+### 🟢 Infrastructure polish
+7. **Cron migration** — GitHub Actions → Vercel Cron Jobs (more reliable, less drift, one fewer external dependency)
+8. **nfl-utils.ts season date** — update `2026-09-09` each off-season
 
 ---
 

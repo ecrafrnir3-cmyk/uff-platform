@@ -420,8 +420,9 @@ next.config.ts                    # Wrapped with withSentryConfig
 - **`src/app/dashboard/league/[id]/mock-draft/MockDraftRoom.tsx`** — Full client-side simulation (~650 lines).
   - All state in React, zero DB writes
   - CPU picks via 800ms useEffect: `getBestAvailableByNeed()` with positional targets (QB:2, RB:5, WR:5, TE:2, K:1, DEF:1) + `POS_PRIORITY_TIERS` by round progress
-  - Power categories: `tied_to_pick` → auto-apply; `draft_mechanic` (Heist, Foresight, Hero's Shield, Telepathy) → decision logic; action powers (Vampire Bite, Power Negation) → post-pick effects
-  - CPU power decisions: Heist steals if back-half of round + target not shielded; Vampire Bite targets user's best unguarded player; Power Negation strips highest-ADP powered pick; Shadow Guard marks player immune permanently
+  - Power categories: `tied_to_pick` → auto-apply (Gunslinger, Berserker Rage, Power Negation, etc.); `draft_mechanic` (Heist, Foresight, Hero's Shield, Telepathy, Vampire Bite) → decision logic
+  - CPU power decisions: Heist steals if back-half of round + target not shielded; Vampire Bite targets user's best unguarded player; Shadow Guard marks player immune permanently
+  - Power Negation: `tied_to_pick` debuff — `applyPick()` auto-applies it (halves picked player's own weekly score). NOT an ability to remove other teams' powers.
   - User modals: VampireBiteModal (search+select drafted opponent player), HeistModal (pick a target who picks before you), ForesightModal (keep current round power or swap to future round)
   - Telepathy: reveals next picker's power name (if not Shadow Guard protected) as an event log entry
   - Draft board: collapsible snake grid with pick numbers, player names, position colors, power/guard/bite indicators
@@ -439,6 +440,30 @@ next.config.ts                    # Wrapped with withSentryConfig
 - Design: same palette + component patterns as `about/page.tsx`
 - `export const metadata` added with SEO title + description
 - Pending push: `feat: marketing landing page — hero, feature cards, faction war section, season titles teaser, CTA (#115)`
+
+### Session 27 — Mock Draft Power Logic Deep Dive + Bug Fixes
+
+Deep dive cross-referenced `MockDraftRoom.tsx` against `draft/actions.ts` and `score-matchups/index.ts`. Found and fixed 7 bugs:
+
+**Bug fixes applied to `MockDraftRoom.tsx`:**
+1. **Vampire Bite CPU condition unreachable** — `appliedPower === null` was mutually exclusive with `power.name === "Vampire Bite"` (both can never be true at once). Fixed: removed `appliedPower === null` check, simplified to `if (hasPowers && power && power.name === "Vampire Bite")`.
+2. **Power Negation wrong mechanic** — CPU had post-pick logic "removing power labels from other teams' picks" which is completely wrong. Real behavior from score-matchups: `case 'power_negation': return -(baseScore / 2)` — it's a `tied_to_pick` debuff halving the drafted player's own weekly score. `applyPick()` already handles it. Removed the entire wrong CPU block.
+3. **Foresight Coin no actual swap** — `handleForesightConfirm` only logged; `allPowersMap` is immutable (from props). Fixed: added `userPowerOverrides: Record<number, PowerInfo | null>` state + refactored `applyPick` to accept optional `powerOverride?: PowerInfo | null` parameter + `commitUserPick` accepts optional `powerOverride` param. Stale closure issue resolved by passing `futurePower` directly at call time rather than relying on React state update timing.
+4. **Telepathy missing same-round check** — real DraftRoom checks `Math.ceil(nextPickNo / maxTeams) === currentRound` before revealing. Fixed: added the same guard.
+5. **Unused `displayName` function** — defined but never called (TS lint warning). Removed.
+6. **Status banner used stale allPowersMap** — power badge in banner showed original assignment even after Foresight Coin swap. Fixed: uses `userPowerOverrides`-aware lookup.
+7. **ForesightModal received stale powers map** — showed original assignment in options. Fixed: passes merged `{ ...allPowersMap[myMemberId], ...userPowerOverrides }`. Updated `ForesightModal.powersMap` type to `Record<number, PowerInfo | null>`.
+
+**Architectural notes for future sessions:**
+- `applyPick(player, memberId, pickNo, round, powerOverride?)` — 5th param is optional; CPU calls omit it (uses allPowersMap lookup); user calls pass result of override-aware lookup
+- `commitUserPick(player, powerOverride?)` — 2nd param lets `handleForesightConfirm` bypass stale closure
+- `userPowerOverrides` cleared in Reset handler
+- `handleUserPickPlayer` uses override-aware lookup for modal decisions (Heist/Foresight checks)
+
+### Pending commits (user must push from terminal):
+1. `feat: marketing landing page — hero, feature cards, faction war section, season titles teaser, CTA (#115)`
+2. `feat: mock draft mode — client-side simulation with CPU powers, Vampire Bite/Heist/Foresight modals, draft board, roster panel (#116)`
+3. `fix: mock draft power logic — 7 bug fixes (Vampire Bite, Power Negation, Foresight Coin, Telepathy, stale closure, unused fn) (#117)`
 
 ### Next priorities (not yet built):
 - **Custom domain** — `uff-platform.vercel.app` is not a launch URL; need real domain + Supabase Auth Site URL update

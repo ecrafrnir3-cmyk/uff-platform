@@ -101,10 +101,6 @@ function getPosColor(pos: string | null): string {
   return POS_COLORS[pos ?? ""] ?? "#f4f4f8";
 }
 
-function displayName(member: Member): string {
-  return member.profiles?.display_name ?? member.profiles?.username ?? member.team_name;
-}
-
 function pickNoForSlot(round: number, col: number, maxTeams: number): number {
   const posInRound = round % 2 === 1 ? col : maxTeams - col + 1;
   return (round - 1) * maxTeams + posInRound;
@@ -389,7 +385,7 @@ function ForesightModal({
   onSelect,
 }: {
   currentRound: number;
-  powersMap: Record<number, PowerInfo>;
+  powersMap: Record<number, PowerInfo | null>;
   myMemberId: string;
   draftRounds: number;
   onSelect: (swapWithRound: number) => void;
@@ -483,6 +479,8 @@ export default function MockDraftRoom({
   const [showHeistModal, setShowHeistModal] = useState(false);
   const [showForesightModal, setShowForesightModal] = useState(false);
   const [pendingPickPlayer, setPendingPickPlayer] = useState<Player | null>(null);
+  // Foresight Coin swaps: overrides allPowersMap for the user's rounds
+  const [userPowerOverrides, setUserPowerOverrides] = useState<Record<number, PowerInfo | null>>({});
 
   // UI state
   const [posFilter, setPosFilter] = useState("ALL");
@@ -533,8 +531,12 @@ export default function MockDraftRoom({
 
   // ── Apply pick (shared by user + CPU) ─────────────────────────────────────
   const applyPick = useCallback(
-    (player: Player, memberId: string, pickNo: number, round: number) => {
-      const power = hasPowers ? allPowersMap[memberId]?.[round] : null;
+    (player: Player, memberId: string, pickNo: number, round: number, powerOverride?: PowerInfo | null) => {
+      // powerOverride: explicit value passed by user-pick paths (supports Foresight Coin swaps)
+      // undefined = look up from allPowersMap (CPU path)
+      const power = powerOverride !== undefined
+        ? powerOverride
+        : (hasPowers ? allPowersMap[memberId]?.[round] ?? null : null);
       let powerApplied: string | null = null;
 
       // Resolve tied_to_pick powers automatically
@@ -635,12 +637,13 @@ export default function MockDraftRoom({
 
       if (!chosen) return;
 
-      const { power: appliedPower } = applyPick(chosen, memberId, pickNo, round);
+      applyPick(chosen, memberId, pickNo, round);
 
       // ── Post-pick powers ───────────────────────────────────────────────────
 
-      // Vampire Bite: CPU targets highest-value pick on the user's team (not shadow guarded)
-      if (hasPowers && appliedPower === null && power && power.name === "Vampire Bite") {
+      // Vampire Bite (draft_mechanic): CPU targets highest-value pick on the user's team (not shadow guarded)
+      // Bug fix: was checking `appliedPower === null` which made the condition unreachable
+      if (hasPowers && power && power.name === "Vampire Bite") {
         const userPicks = currentPicks.filter((p) => p.memberId === myMemberId);
         const unguardedUserPicks = userPicks.filter((p) => !shadowGuarded.has(p.playerId));
         // Sort by ADP (lowest ADP = highest value)
@@ -658,22 +661,9 @@ export default function MockDraftRoom({
         }
       }
 
-      // Power Negation: removes the power from the highest-ADP pick on the board that has a power
-      if (hasPowers && power && power.name === "Power Negation") {
-        const poweredPicks = currentPicks.filter((p) => p.powerApplied !== null);
-        if (poweredPicks.length > 0) {
-          const target = poweredPicks.sort(
-            (a, b) => (playerMap[a.playerId]?.adp ?? 999) - (playerMap[b.playerId]?.adp ?? 999)
-          )[0];
-          setPicks((prev) =>
-            prev.map((p) => (p.playerId === target.playerId ? { ...p, powerApplied: null } : p))
-          );
-          addEvent(
-            `🚫 ${memberMap[memberId]?.team_name} used Power Negation on ${target.playerName}'s ${target.powerApplied}!`,
-            "#8855ff"
-          );
-        }
-      }
+      // Power Negation is a tied_to_pick debuff — score-matchups halves the drafted player's
+      // own weekly score (case 'power_negation': return -(baseScore / 2)). applyPick() applies
+      // it automatically via the tied_to_pick branch. No CPU post-pick action needed.
     },
     [
       allPowersMap,
@@ -712,7 +702,12 @@ export default function MockDraftRoom({
   const handleUserPickPlayer = useCallback(
     (player: Player) => {
       if (!isMyTurn || isDraftComplete) return;
-      const power = hasPowers ? allPowersMap[myMemberId]?.[currentRound] : null;
+      // Use override-aware lookup so Foresight Coin swaps reflect correctly in modal checks
+      const power = hasPowers
+        ? (currentRound in userPowerOverrides
+            ? userPowerOverrides[currentRound]
+            : allPowersMap[myMemberId]?.[currentRound]) ?? null
+        : null;
 
       // Draft Heist: show modal before the pick
       if (power && power.name === "Draft Heist") {
@@ -730,12 +725,21 @@ export default function MockDraftRoom({
 
       commitUserPick(player);
     },
-    [isMyTurn, isDraftComplete, hasPowers, allPowersMap, myMemberId, currentRound] // eslint-disable-line
+    [isMyTurn, isDraftComplete, hasPowers, allPowersMap, myMemberId, currentRound, userPowerOverrides] // eslint-disable-line
   );
 
   const commitUserPick = useCallback(
-    (player: Player) => {
-      const { power } = applyPick(player, myMemberId, currentPickNo, currentRound);
+    (player: Player, powerOverride?: PowerInfo | null) => {
+      // Resolve effective power: explicit override takes priority (Foresight Coin swap),
+      // then userPowerOverrides state, then allPowersMap default
+      const effectivePower = powerOverride !== undefined
+        ? powerOverride
+        : (hasPowers
+            ? (currentRound in userPowerOverrides
+                ? userPowerOverrides[currentRound]
+                : allPowersMap[myMemberId]?.[currentRound]) ?? null
+            : null);
+      const { power } = applyPick(player, myMemberId, currentPickNo, currentRound, effectivePower);
 
       // Vampire Bite: show modal after pick
       if (hasPowers && power && power.name === "Vampire Bite") {
@@ -743,10 +747,10 @@ export default function MockDraftRoom({
         return;
       }
 
-      // Telepathy: reveal next picker's power
+      // Telepathy: reveal next picker's power (same round only — real DraftRoom guards this)
       if (hasPowers && power && power.name === "Telepathy") {
         const nextPickNo2 = currentPickNo + 1;
-        if (nextPickNo2 <= totalPicks) {
+        if (nextPickNo2 <= totalPicks && Math.ceil(nextPickNo2 / league.max_teams) === currentRound) {
           const nextIdx = memberIdxForPickNo(nextPickNo2, league.max_teams);
           const nextMemberId = draftOrder[nextIdx];
           const nextPower = nextMemberId ? allPowersMap[nextMemberId]?.[currentRound] : null;
@@ -765,7 +769,7 @@ export default function MockDraftRoom({
       setShowHeistModal(false);
       setShowForesightModal(false);
     },
-    [applyPick, myMemberId, currentPickNo, currentRound, hasPowers, totalPicks, league.max_teams, draftOrder, allPowersMap, addEvent, memberMap] // eslint-disable-line
+    [applyPick, myMemberId, currentPickNo, currentRound, hasPowers, totalPicks, league.max_teams, draftOrder, allPowersMap, addEvent, memberMap, userPowerOverrides] // eslint-disable-line
   );
 
   // ── Heist modal confirm ────────────────────────────────────────────────────
@@ -787,17 +791,34 @@ export default function MockDraftRoom({
 
   // ── Foresight modal confirm ────────────────────────────────────────────────
   const handleForesightConfirm = (swapWithRound: number) => {
+    // Resolve current values before any state update
+    const currentPower = currentRound in userPowerOverrides
+      ? userPowerOverrides[currentRound]
+      : (allPowersMap[myMemberId]?.[currentRound] ?? null);
+    const futurePower = swapWithRound in userPowerOverrides
+      ? userPowerOverrides[swapWithRound]
+      : (allPowersMap[myMemberId]?.[swapWithRound] ?? null);
+
     if (swapWithRound !== currentRound) {
-      // Swap powers in the local map (no DB write needed)
-      // We just update the allPowersMap in-place — but it's derived from props, so
-      // we need a local override state. For simplicity, just log the choice.
+      // Persist the swap in override state for future rounds
+      setUserPowerOverrides((prev) => ({
+        ...prev,
+        [currentRound]: futurePower,
+        [swapWithRound]: currentPower,
+      }));
       addEvent(
-        `🪙 Foresight Coin: you swapped Round ${currentRound}'s power for Round ${swapWithRound}'s power.`,
+        `🪙 Foresight Coin: swapped Round ${currentRound}'s power for Round ${swapWithRound}'s power.`,
         "#FFD700"
       );
+      // Pass futurePower directly — setUserPowerOverrides is async so commitUserPick
+      // would see stale state if we relied on the closure alone
+      setShowForesightModal(false);
+      if (pendingPickPlayer) commitUserPick(pendingPickPlayer, futurePower);
+    } else {
+      addEvent(`🪙 Foresight Coin: kept Round ${currentRound}'s power.`, "#FFD700");
+      setShowForesightModal(false);
+      if (pendingPickPlayer) commitUserPick(pendingPickPlayer, currentPower);
     }
-    setShowForesightModal(false);
-    if (pendingPickPlayer) commitUserPick(pendingPickPlayer);
   };
 
   // ── Vampire bite confirm (user) ────────────────────────────────────────────
@@ -842,7 +863,7 @@ export default function MockDraftRoom({
       {showForesightModal && pendingPickPlayer && (
         <ForesightModal
           currentRound={currentRound}
-          powersMap={allPowersMap[myMemberId] ?? {}}
+          powersMap={{ ...allPowersMap[myMemberId], ...userPowerOverrides }}
           myMemberId={myMemberId}
           draftRounds={league.draft_rounds}
           onSelect={handleForesightConfirm}
@@ -878,7 +899,7 @@ export default function MockDraftRoom({
           </button>
           {isDraftComplete && (
             <button
-              onClick={() => { setPicks([]); setDraftOrder(league.draft_order); setShadowGuarded(new Set()); setVampireBites({}); setHeroShieldRounds({}); setPowerEvents([]); }}
+              onClick={() => { setPicks([]); setDraftOrder(league.draft_order); setShadowGuarded(new Set()); setVampireBites({}); setHeroShieldRounds({}); setPowerEvents([]); setUserPowerOverrides({}); }}
               className="rounded-md px-3 py-1.5 text-xs font-bold"
               style={{ background: "#FFD700", color: "#0d0d1a" }}>
               Reset
@@ -903,7 +924,11 @@ export default function MockDraftRoom({
             ? `🎯 Your pick — Round ${currentRound} · Pick ${currentPickNo}/${totalPicks}`
             : `Round ${currentRound} · Pick ${currentPickNo}/${totalPicks} — ${currentTeamName}`}
           {isMyTurn && (() => {
-            const myPower = hasPowers ? allPowersMap[myMemberId]?.[currentRound] : null;
+            const myPower = hasPowers
+              ? (currentRound in userPowerOverrides
+                  ? userPowerOverrides[currentRound]
+                  : allPowersMap[myMemberId]?.[currentRound]) ?? null
+              : null;
             if (!myPower) return null;
             return (
               <span className="ml-3 rounded-full border px-2 py-0.5 text-xs"
