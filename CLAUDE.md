@@ -474,6 +474,10 @@ All launch-blocker domain tasks completed:
 - **EMAIL_FROM**: updated to `UFF <noreply@playuff.com>` in Vercel env vars
 - **Resend**: `playuff.com` domain verified — DKIM, SPF MX, SPF TXT all verified; DNS records added manually via Vercel DNS
 
+### Session 30 — Mock Draft DEF/K fix (#121)
+- **Bug**: `mock-draft/page.tsx` loaded players ordered by ADP with `nullsFirst: false` + `limit(N)`. DEF teams (and sometimes K) have null ADP since FFC doesn't rank team defenses — they got cut off by the limit, making the DEF position tab empty in the player list.
+- **Fix**: Added a second query for `position IN ('DEF', 'K') AND team IS NOT NULL` and merged any not already in the ADP-ranked list. Deduplicated by ID before passing to `MockDraftRoom`. This is a permanent safeguard even after v4 ADP is populated.
+
 ### Deep Dive Review — Session 30 findings (1 bug fixed)
 - **Bug fixed in `FreeAgents.tsx`**: `hasBid` and `existingBid` were gated on `faabEnabled && ...` — in priority waiver mode (`faabEnabled = false`), this meant player cards never showed "Claimed" state inline, inline Cancel never appeared, and the "Claim" button would show even on already-claimed players. Fixed: `(faabEnabled || isPriorityMode) && ...` for both variables.
 - `sync-players/index.ts` v4 — logic verified clean. `needSyntheticAdp` index math correct (`rows.length` before `rows.push` = future index). 250-cap on synthetic assignments correct.
