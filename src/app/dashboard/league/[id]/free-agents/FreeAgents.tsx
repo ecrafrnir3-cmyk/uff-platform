@@ -142,7 +142,7 @@ export default function FreeAgents({
       if (hasSearch) q = q.ilike("full_name", `%${search.trim()}%`);
       if (hasPos) q = q.eq("position", posFilter);
 
-      const { data } = await q.order("adp", { ascending: true, nullsFirst: false }).limit(150);
+      const { data } = await q.order("adp", { ascending: true, nullsFirst: false }).limit(300);
       if (data) {
         const free = (data as Player[]).filter((p) => !rosteredSet.has(p.id));
         if (hasProjections) {

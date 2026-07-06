@@ -8,7 +8,8 @@ Read this at the start of every session. It is the authoritative source of truth
 
 **Ultimate Fantasy Football (UFF)** — a custom fantasy football platform built by Nate. Full-stack Next.js 15 app with deep custom mechanics layered on top of standard fantasy: draft powers, weekly tokens, faction war, Oracle AI recaps, FAAB waivers, priority waivers, commissioner tools.
 
-**Live URL**: https://uff-platform.vercel.app  
+**Live URL**: https://playuff.com (primary) — https://uff-platform.vercel.app also works  
+**Custom domain**: `playuff.com` — purchased via Vercel ($11.25/yr), DNS managed by Vercel, Resend verified ✅  
 **GitHub**: github.com/ecrafrnir3-cmyk/uff-platform (branch: `main`)  
 **Vercel project ID**: `prj_HbhjhScNXEPvZTIFePCvfiEBnzSu`  
 **Vercel team ID**: `team_7mJJqrw9cxuUtAYXgG2EWLBP`  
@@ -45,7 +46,7 @@ SUPABASE_SERVICE_ROLE_KEY
 ANTHROPIC_API_KEY
 CRON_SECRET
 RESEND_API_KEY
-EMAIL_FROM          # e.g. "UFF <noreply@yourdomain.com>"
+EMAIL_FROM          # Set to: "UFF <noreply@playuff.com>" — Resend domain verified ✅
 ```
 
 ---
@@ -193,7 +194,7 @@ src/
 supabase/
   functions/
     score-matchups/index.ts   # ~640 lines — 18 tokens + 11 draft powers + faction bonus
-    sync-players/index.ts     # Pulls from Sleeper players API
+    sync-players/index.ts     # Pulls from Sleeper + FFC ADP + Sleeper search_rank fallback (v4)
 .github/workflows/            # All cron triggers
 ```
 
@@ -264,13 +265,11 @@ Muted text: #d4d4e8
 
 ## Current Build Status
 
-All features through **#116 (Mock Draft Mode)** are built. Sessions 18–26 added bug fixes and features.
+All features through **#119 (Player Rankings + Waiver Wire)** are built and pushed. Sessions 18–30 completed.
 
-**Latest Vercel deployment**: READY  
-**Last deployed commit**: Shadow Guard (#114) — live. Marketing landing page (#115) + Mock Draft (#116) — written, pending push.  
-**Pending commits**:
-1. `feat: marketing landing page — hero, feature cards, faction war section, season titles teaser, CTA (#115)`
-2. `feat: mock draft mode — client-side simulation with CPU powers, Vampire Bite/Heist/Foresight modals, draft board, roster panel (#116)`
+**Latest Vercel deployment**: Live at playuff.com  
+**Last pushed commits**: #119 (sync-players v4 synthetic ADP + free-agents limit 300) — pushed 2026-07-06.  
+**Pending**: Run sync-players once from Supabase dashboard (Edge Functions → sync-players → Test) to populate v4 data in DB.
 
 ### Completed setup (don't redo):
 - Sentry account created, DSN set, org=`uff-platform`, project=`javascript-nextjs`
@@ -422,7 +421,7 @@ next.config.ts                    # Wrapped with withSentryConfig
   - CPU picks via 800ms useEffect: `getBestAvailableByNeed()` with positional targets (QB:2, RB:5, WR:5, TE:2, K:1, DEF:1) + `POS_PRIORITY_TIERS` by round progress
   - Power categories: `tied_to_pick` → auto-apply (Gunslinger, Berserker Rage, Power Negation, etc.); `draft_mechanic` (Heist, Foresight, Hero's Shield, Telepathy, Vampire Bite) → decision logic
   - CPU power decisions: Heist steals if back-half of round + target not shielded; Vampire Bite targets user's best unguarded player; Shadow Guard marks player immune permanently
-  - Power Negation: `tied_to_pick` debuff — `applyPick()` auto-applies it (halves picked player's own weekly score). NOT an ability to remove other teams' powers.
+  - Power Negation: `tied_to_pick` debuff — `applyPick()` auto-applies it (halves the drafted player's own weekly score per `case 'power_negation': return -(baseScore / 2)` in score-matchups). NOT an ability to remove other teams' powers. No CPU post-pick logic needed.
   - User modals: VampireBiteModal (search+select drafted opponent player), HeistModal (pick a target who picks before you), ForesightModal (keep current round power or swap to future round)
   - Telepathy: reveals next picker's power name (if not Shadow Guard protected) as an event log entry
   - Draft board: collapsible snake grid with pick numbers, player names, position colors, power/guard/bite indicators
@@ -460,15 +459,35 @@ Deep dive cross-referenced `MockDraftRoom.tsx` against `draft/actions.ts` and `s
 - `userPowerOverrides` cleared in Reset handler
 - `handleUserPickPlayer` uses override-aware lookup for modal decisions (Heist/Foresight checks)
 
-### Pending commits (user must push from terminal):
-1. `feat: marketing landing page — hero, feature cards, faction war section, season titles teaser, CTA (#115)`
-2. `feat: mock draft mode — client-side simulation with CPU powers, Vampire Bite/Heist/Foresight modals, draft board, roster panel (#116)`
-3. `fix: mock draft power logic — 7 bug fixes (Vampire Bite, Power Negation, Foresight Coin, Telepathy, stale closure, unused fn) (#117)`
+### Session 28 — Push verification (2026-07-06)
+All 3 pending commits pushed to `main` from Nate's terminal. Code verified clean via Read tool:
+- `MockDraftRoom.tsx` — all 7 Session 27 bug fixes confirmed in place
+- `src/app/page.tsx` — marketing landing page (#115) confirmed clean; auth redirect preserved
+- `mock-draft/page.tsx` — server component confirmed clean; auth gate, power + player loads correct
+No new bugs found. Vercel deployment triggered by push.
+
+### Session 29 — Domain Launch (2026-07-06)
+All launch-blocker domain tasks completed:
+- **playuff.com** purchased via Vercel ($11.25/yr), DNS managed by Vercel nameservers
+- **Vercel project**: `playuff.com` → Production, `www.playuff.com` → 308 redirect → `playuff.com`
+- **Supabase Auth Site URL**: updated to `https://playuff.com`; redirect URLs include `playuff.com/**` and `www.playuff.com/**`
+- **EMAIL_FROM**: updated to `UFF <noreply@playuff.com>` in Vercel env vars
+- **Resend**: `playuff.com` domain verified — DKIM, SPF MX, SPF TXT all verified; DNS records added manually via Vercel DNS
+
+### Session 30 — Player Rankings + Waiver Wire (2026-07-06)
+- **sync-players v4**: Two-tier ADP ranking. FFC PPR ADP for ~179 name-matched players; Sleeper `search_rank` used as synthetic ADP (offset above max FFC pick) for up to 250 additional unmatched players → 400+ total ranked players. Response returns `adpMatched`, `adpSynthetic`, `adpTotalRanked`, updated `adpSource`.
+- **FreeAgents.tsx**: Query limit raised 150 → 300 to surface all ranked players.
+- **Waiver wire in-season**: Already working — `free-agents/page.tsx` fetches Sleeper weekly projections and re-sorts by projected points when season is active. No code changes needed.
+- **Sept 1 reminder**: Scheduled task created (fires once 2026-09-01 09:00 EDT) reminding to re-run sync-players for fresh pre-season data.
+- **Pending action**: Nate needs to trigger sync-players once from Supabase dashboard (Edge Functions → sync-players → Test → Send Request) to populate v4 synthetic ADP in DB.
 
 ### Next priorities (not yet built):
-- **Custom domain** — `uff-platform.vercel.app` is not a launch URL; need real domain + Supabase Auth Site URL update
-- **Email domain verification** — Resend `EMAIL_FROM` must point to verified custom domain for production delivery
-- **Player sync** — run `sync-players` before 2026 season opens Sep 9 to refresh current rosters
+- **Player sync** — `sync-players` v4 deployed. Two-tier ranking: (1) FFC PPR ADP for ~179 matched players, (2) Sleeper `search_rank` synthetic ADP for up to 250 additional unmatched players → 400+ total ranked. Response now returns `adpMatched`, `adpSynthetic`, `adpTotalRanked`. Free-agents limit raised from 150 → 300. Sept 1 reminder scheduled. Run again ~Sept 1 before the Sept 9 draft season. **Needs one manual trigger from Supabase dashboard to populate v4 data.**
+- **In-season waiver wire priority** — already built! `free-agents/page.tsx` fetches Sleeper weekly projections (`/v1/projections/nfl/{year}/{week}`) and sorts free agents by projected points when in-season. Shows "Ranked by projected points · Week N" during the season, falls back to ADP off-season.
+- **Push notifications** — mobile PWA (requires service worker + VAPID keys)
+- **Admin dashboard** — cross-league health view for Nate
+- **App Store listing** — iOS/Android PWA/TWA submission
+- **Cron migration** — GitHub Actions → Vercel Cron Jobs
 - **Push notifications** — mobile PWA (requires service worker + VAPID keys)
 - **App Store listing** — iOS/Android PWA/TWA submission
 - **Admin dashboard** — cross-league health view for Nate
