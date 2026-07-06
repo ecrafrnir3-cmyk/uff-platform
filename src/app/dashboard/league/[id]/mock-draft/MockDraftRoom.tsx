@@ -473,6 +473,7 @@ export default function MockDraftRoom({
   const [vampireBites, setVampireBites] = useState<Record<string, string>>({}); // biterMemberId → targetPlayerId
   const [powerEvents, setPowerEvents] = useState<PowerEvent[]>([]);
   const eventIdRef = useRef(0);
+  const prevRoundRef = useRef<number>(0); // tracks last round seen for buffer trigger
 
   // Modal state
   const [showVampireModal, setShowVampireModal] = useState(false);
@@ -488,6 +489,9 @@ export default function MockDraftRoom({
   const [showBoard, setShowBoard] = useState(false);
   const [activeTab, setActiveTab] = useState<"players" | "roster" | "log">("players");
   const [cpuThinking, setCpuThinking] = useState(false);
+  // Round buffer state
+  const [bufferActive, setBufferActive] = useState(false);
+  const [bufferTimeLeft, setBufferTimeLeft] = useState(30);
 
   // ── Derived current pick state ─────────────────────────────────────────────
   const currentPickNo = picks.length + 1;
@@ -522,6 +526,14 @@ export default function MockDraftRoom({
     const matchSearch = !search.trim() || p.full_name.toLowerCase().includes(search.toLowerCase());
     return matchPos && matchSearch;
   });
+
+  // Quick lookup: power name → description (for inline badges)
+  const powerDescByName: Record<string, string> = {};
+  for (const row of allPowerRows) {
+    if (row.draft_powers && !powerDescByName[row.draft_powers.name]) {
+      powerDescByName[row.draft_powers.name] = row.draft_powers.description;
+    }
+  }
 
   // ── Power event logger ─────────────────────────────────────────────────────
   const addEvent = useCallback((text: string, color: string = "#FFD700") => {
@@ -684,7 +696,7 @@ export default function MockDraftRoom({
   const cpuTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (isDraftComplete || isMyTurn) return;
+    if (isDraftComplete || isMyTurn || bufferActive) return;
     if (showVampireModal || showHeistModal || showForesightModal) return;
 
     setCpuThinking(true);
@@ -696,7 +708,26 @@ export default function MockDraftRoom({
     return () => {
       if (cpuTimerRef.current) clearTimeout(cpuTimerRef.current);
     };
-  }, [currentPickNo, isMyTurn, isDraftComplete, showVampireModal, showHeistModal, showForesightModal]); // eslint-disable-line
+  }, [currentPickNo, isMyTurn, isDraftComplete, bufferActive, showVampireModal, showHeistModal, showForesightModal]); // eslint-disable-line
+
+  // ── Round buffer effects ───────────────────────────────────────────────────
+  // Fire a 30-second buffer whenever the round increments (including round 1 on mount)
+  useEffect(() => {
+    if (isDraftComplete) return;
+    if (currentRound !== prevRoundRef.current) {
+      prevRoundRef.current = currentRound;
+      setBufferActive(true);
+      setBufferTimeLeft(30);
+    }
+  }, [currentRound, isDraftComplete]);
+
+  // Countdown tick — decrements every second, closes buffer at 0
+  useEffect(() => {
+    if (!bufferActive) return;
+    if (bufferTimeLeft <= 0) { setBufferActive(false); return; }
+    const t = setTimeout(() => setBufferTimeLeft((n) => n - 1), 1000);
+    return () => clearTimeout(t);
+  }, [bufferActive, bufferTimeLeft]);
 
   // ── User pick handler ──────────────────────────────────────────────────────
   const handleUserPickPlayer = useCallback(
@@ -899,7 +930,7 @@ export default function MockDraftRoom({
           </button>
           {isDraftComplete && (
             <button
-              onClick={() => { setPicks([]); setDraftOrder(league.draft_order); setShadowGuarded(new Set()); setVampireBites({}); setHeroShieldRounds({}); setPowerEvents([]); setUserPowerOverrides({}); }}
+              onClick={() => { prevRoundRef.current = 0; setPicks([]); setDraftOrder(league.draft_order); setShadowGuarded(new Set()); setVampireBites({}); setHeroShieldRounds({}); setPowerEvents([]); setUserPowerOverrides({}); }}
               className="rounded-md px-3 py-1.5 text-xs font-bold"
               style={{ background: "#FFD700", color: "#0d0d1a" }}>
               Reset
@@ -908,8 +939,67 @@ export default function MockDraftRoom({
         </div>
       </div>
 
+      {/* ── Round buffer overlay ── */}
+      {!isDraftComplete && bufferActive && (
+        <div className="px-4 py-4 border-b" style={{ borderColor: "#FFD700", background: "rgba(255,215,0,0.06)" }}>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-bold" style={{ color: "#FFD700" }}>
+              🏈 Round {currentRound} of {league.draft_rounds} Starting…
+            </p>
+            {/* SVG countdown ring */}
+            <div className="relative flex items-center justify-center" style={{ width: 44, height: 44 }}>
+              <svg width="44" height="44" style={{ transform: "rotate(-90deg)" }}>
+                <circle cx="22" cy="22" r="18" fill="none" stroke="#2a2a40" strokeWidth="4" />
+                <circle cx="22" cy="22" r="18" fill="none" stroke="#FFD700" strokeWidth="4"
+                  strokeDasharray={`${(bufferTimeLeft / 30) * 113.1} 113.1`} />
+              </svg>
+              <span className="absolute text-xs font-bold" style={{ color: "#FFD700" }}>
+                {bufferTimeLeft}
+              </span>
+            </div>
+          </div>
+          {/* User's power card for this round */}
+          {(() => {
+            const myRoundPower = hasPowers
+              ? (currentRound in userPowerOverrides
+                  ? userPowerOverrides[currentRound]
+                  : allPowersMap[myMemberId]?.[currentRound]) ?? null
+              : null;
+            if (!myRoundPower) return (
+              <p className="text-xs" style={{ color: "#9999bb" }}>
+                {isMyTurn ? "🎯 You pick first this round — prepare your selection!" : "Draft begins shortly…"}
+              </p>
+            );
+            return (
+              <div className="rounded-lg border p-3" style={{ borderColor: "rgba(255,215,0,0.3)", background: "rgba(255,215,0,0.04)" }}>
+                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                  <span className="text-xs font-bold" style={{ color: "#FFD700" }}>
+                    ⚡ Your Round {currentRound} Power:
+                  </span>
+                  <span className="rounded-full border px-2 py-0.5 text-xs font-semibold"
+                    style={{ borderColor: "rgba(255,215,0,0.45)", color: "#FFD700" }}>
+                    {myRoundPower.name}
+                  </span>
+                </div>
+                <p className="text-xs leading-relaxed" style={{ color: "#d4d4e8" }}>{myRoundPower.description}</p>
+                {myRoundPower.category === "draft_mechanic" && (
+                  <p className="text-xs mt-2 italic" style={{ color: "#9999bb" }}>
+                    Active power — decide whether to use it on your turn.
+                  </p>
+                )}
+                {myRoundPower.category === "tied_to_pick" && (
+                  <p className="text-xs mt-2 italic" style={{ color: "#9999bb" }}>
+                    Auto-applies to your pick this round.
+                  </p>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
       {/* ── Status banner ── */}
-      {!isDraftComplete && (
+      {!isDraftComplete && !bufferActive && (
         <div
           className="px-4 py-3 text-center text-sm font-semibold border-b"
           style={{
@@ -1067,14 +1157,14 @@ export default function MockDraftRoom({
                 return (
                   <button
                     key={player.id}
-                    onClick={() => isMyTurn && handleUserPickPlayer(player)}
-                    disabled={!isMyTurn || isDraftComplete}
+                    onClick={() => isMyTurn && !bufferActive && handleUserPickPlayer(player)}
+                    disabled={!isMyTurn || isDraftComplete || bufferActive}
                     className="flex items-center justify-between rounded-lg border px-3 py-2.5 text-left transition"
                     style={{
                       borderColor: "#2a2a40",
                       background: "#0f0f1e",
-                      opacity: (!isMyTurn || isDraftComplete) ? 0.65 : 1,
-                      cursor: isMyTurn && !isDraftComplete ? "pointer" : "default",
+                      opacity: (!isMyTurn || isDraftComplete || bufferActive) ? 0.65 : 1,
+                      cursor: isMyTurn && !isDraftComplete && !bufferActive ? "pointer" : "default",
                     }}
                   >
                     <div className="flex items-center gap-3 min-w-0">
@@ -1096,7 +1186,7 @@ export default function MockDraftRoom({
                     <div className="flex items-center gap-2 shrink-0 ml-2">
                       {isGuarded && <span className="text-xs" title="Shadow Guard">🛡</span>}
                       {isBitten && <span className="text-xs" title="Vampire Bitten">🧛</span>}
-                      {isMyTurn && !isDraftComplete && (
+                      {isMyTurn && !isDraftComplete && !bufferActive && (
                         <span className="rounded-md px-2 py-1 text-xs font-bold"
                           style={{ background: "rgba(0,87,255,0.2)", color: "#6daaff" }}>
                           Draft
@@ -1150,8 +1240,16 @@ export default function MockDraftRoom({
                       <div className="flex items-center gap-1.5 shrink-0">
                         {pick.powerApplied && (
                           <span className="rounded-full border px-2 py-0.5 text-xs"
+                            title={powerDescByName[pick.powerApplied] ?? ""}
                             style={{ borderColor: "rgba(255,215,0,0.3)", color: "#FFD700" }}>
                             ⚡ {pick.powerApplied}
+                            {powerDescByName[pick.powerApplied] && (
+                              <span className="ml-1 font-normal italic" style={{ color: "#9999bb", fontSize: "9px" }}>
+                                — {powerDescByName[pick.powerApplied].length > 40
+                                  ? powerDescByName[pick.powerApplied].slice(0, 40) + "…"
+                                  : powerDescByName[pick.powerApplied]}
+                              </span>
+                            )}
                           </span>
                         )}
                         {isGuarded && <span title="Shadow Guard">🛡</span>}

@@ -494,7 +494,19 @@ All launch-blocker domain tasks completed:
 - **Sept 1 reminder**: Scheduled task created (fires once 2026-09-01 09:00 EDT) reminding to re-run sync-players for fresh pre-season data.
 - **Pending action**: Nate needs to trigger sync-players once from Supabase dashboard (Edge Functions → sync-players → Test → Send Request) to populate v4 synthetic ADP in DB.
 
+### Session 31 — Mock Draft Phase 1: Round Buffer + Power Descriptions (#122)
+Enhancements to `MockDraftRoom.tsx`:
+- **Round buffer timer**: `bufferActive` + `bufferTimeLeft` state + `prevRoundRef` (initialized to 0 so round 1 fires on mount). Two new useEffects: (1) fires when `currentRound !== prevRoundRef.current` → starts 30s buffer; (2) countdown tick, sets `bufferActive = false` at 0.
+- **Buffer UI**: Gold-bordered overlay replaces status banner during buffer. Shows "Round N of M Starting…" header + SVG countdown ring (stroke-dasharray animated) + user's power card for that round with full description and "auto-applies" vs "active power" hint text.
+- **Player list disabled during buffer**: `disabled`, `opacity`, `cursor`, and "Draft" button visibility all gated on `!bufferActive`.
+- **CPU blocked during buffer**: `bufferActive` added to early-return guard in CPU auto-pick effect + dependency array.
+- **Power descriptions inline**: `powerDescByName` lookup map (name → description from allPowerRows). Used in My Roster tab power badge as truncated italic suffix (40-char limit, tooltip shows full text). Status banner power badge retains concise format.
+- **Reset button**: `prevRoundRef.current = 0` added so round 1 buffer fires again on the next mock.
+- **Architectural note**: Buffer fires at round start including round 1 (by design). If user presses Reset mid-buffer, prevRoundRef resets to 0 → buffer effect re-fires naturally for round 1.
+- **Pending push**: Files changed: `MockDraftRoom.tsx` only (all logic is client-side).
+
 ### Next priorities (not yet built):
+- **Mock Draft Phase 2** — multi-user lobby with CPU fillers (matching Yahoo mock draft style)
 - **Push notifications** — mobile PWA (requires service worker + VAPID keys)
 - **Admin dashboard** — cross-league health view for Nate
 - **App Store listing** — iOS/Android PWA/TWA submission
