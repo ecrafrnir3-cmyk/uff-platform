@@ -503,7 +503,8 @@ Enhancements to `MockDraftRoom.tsx`:
 - **Power descriptions inline**: `powerDescByName` lookup map (name → description from allPowerRows). Used in My Roster tab power badge as truncated italic suffix (40-char limit, tooltip shows full text). Status banner power badge retains concise format.
 - **Reset button**: `prevRoundRef.current = 0` added so round 1 buffer fires again on the next mock.
 - **Architectural note**: Buffer fires at round start including round 1 (by design). If user presses Reset mid-buffer, prevRoundRef resets to 0 → buffer effect re-fires naturally for round 1.
-- **Pending push**: Files changed: `MockDraftRoom.tsx` only (all logic is client-side).
+- **Power randomization**: `shufflePowerAssignments()` helper shuffles `draft_powers` values across existing member/round slots (Fisher-Yates) so each mock run has a different power configuration. Driven by `activeRows` state (replaces direct `allPowerRows` use in `allPowersMap` derivation). Reset calls `setActiveRows(shufflePowerAssignments(allPowerRows))` for a fresh shuffle. Real power assignments are never mutated — the DB rows are just rearranged client-side.
+- **Pending push**: Files changed: `MockDraftRoom.tsx` + `mock-draft/page.tsx` + `FreeAgents.tsx` (page.tsx/FreeAgents were missed in the Phase 1 push).
 
 ### Next priorities (not yet built):
 - **Mock Draft Phase 2** — multi-user lobby with CPU fillers (matching Yahoo mock draft style)

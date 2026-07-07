@@ -101,6 +101,20 @@ function getPosColor(pos: string | null): string {
   return POS_COLORS[pos ?? ""] ?? "#f4f4f8";
 }
 
+// Shuffle the draft_powers values across existing member/round slots so each
+// mock draft run feels distinct. Keeps the same slot structure (who picks when)
+// but randomizes which power each team gets per round.
+function shufflePowerAssignments(rows: PowerAssignmentRow[]): PowerAssignmentRow[] {
+  if (!rows.length) return rows;
+  const powers = rows.map((r) => r.draft_powers);
+  // Fisher-Yates shuffle
+  for (let i = powers.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [powers[i], powers[j]] = [powers[j], powers[i]];
+  }
+  return rows.map((row, i) => ({ ...row, draft_powers: powers[i] }));
+}
+
 function pickNoForSlot(round: number, col: number, maxTeams: number): number {
   const posInRound = round % 2 === 1 ? col : maxTeams - col + 1;
   return (round - 1) * maxTeams + posInRound;
@@ -454,9 +468,14 @@ export default function MockDraftRoom({
   const memberMap = Object.fromEntries(members.map((m) => [m.id, m]));
   const playerMap = Object.fromEntries(players.map((p) => [p.id, p]));
 
+  // Shuffled power assignments — re-randomized on every Reset so each mock is unique
+  const [activeRows, setActiveRows] = useState<PowerAssignmentRow[]>(
+    () => shufflePowerAssignments(allPowerRows)
+  );
+
   // allPowersMap[memberId][round] = PowerInfo | null
   const allPowersMap: Record<string, Record<number, PowerInfo | null>> = {};
-  for (const row of allPowerRows) {
+  for (const row of activeRows) {
     if (!allPowersMap[row.member_id]) allPowersMap[row.member_id] = {};
     allPowersMap[row.member_id][row.round] = row.draft_powers;
   }
@@ -930,7 +949,7 @@ export default function MockDraftRoom({
           </button>
           {isDraftComplete && (
             <button
-              onClick={() => { prevRoundRef.current = 0; setPicks([]); setDraftOrder(league.draft_order); setShadowGuarded(new Set()); setVampireBites({}); setHeroShieldRounds({}); setPowerEvents([]); setUserPowerOverrides({}); }}
+              onClick={() => { prevRoundRef.current = 0; setActiveRows(shufflePowerAssignments(allPowerRows)); setPicks([]); setDraftOrder(league.draft_order); setShadowGuarded(new Set()); setVampireBites({}); setHeroShieldRounds({}); setPowerEvents([]); setUserPowerOverrides({}); }}
               className="rounded-md px-3 py-1.5 text-xs font-bold"
               style={{ background: "#FFD700", color: "#0d0d1a" }}>
               Reset
