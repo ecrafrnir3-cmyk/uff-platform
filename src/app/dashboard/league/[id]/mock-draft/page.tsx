@@ -65,12 +65,25 @@ export default async function MockDraftPage({
 
   // Load top players by ADP (enough to cover the full draft + extras)
   const limit = Math.max(300, league.max_teams * league.draft_rounds * 2);
-  const { data: players } = await supabase
+  const { data: rankedPlayers } = await supabase
     .from("players")
     .select("id, full_name, position, team, adp, injury_status")
     .not("position", "is", null)
     .order("adp", { ascending: true, nullsFirst: false })
     .limit(limit);
+
+  // DEF and K players often have null ADP (FFC doesn't rank them) and get cut by the
+  // limit above. Always include all active DEF/K players so position filters work.
+  const { data: specialPos } = await supabase
+    .from("players")
+    .select("id, full_name, position, team, adp, injury_status")
+    .in("position", ["DEF", "K"])
+    .not("team", "is", null); // active teams only
+
+  // Merge: start with ADP-ranked list, append any DEF/K not already present
+  const rankedIds = new Set((rankedPlayers ?? []).map((p) => p.id));
+  const extraPlayers = (specialPos ?? []).filter((p) => !rankedIds.has(p.id));
+  const players = [...(rankedPlayers ?? []), ...extraPlayers];
 
   return (
     <MockDraftRoom
@@ -84,7 +97,7 @@ export default async function MockDraftPage({
       members={members ?? []}
       myMemberId={me.id}
       allPowerRows={allPowerRows ?? []}
-      players={players ?? []}
+      players={players}
     />
   );
 }
