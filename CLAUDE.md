@@ -506,8 +506,15 @@ Enhancements to `MockDraftRoom.tsx`:
 - **Power randomization**: `shufflePowerAssignments()` helper shuffles `draft_powers` values across existing member/round slots (Fisher-Yates) so each mock run has a different power configuration. Driven by `activeRows` state (replaces direct `allPowerRows` use in `allPowersMap` derivation). Reset calls `setActiveRows(shufflePowerAssignments(allPowerRows))` for a fresh shuffle. Real power assignments are never mutated — the DB rows are just rearranged client-side.
 - **Pending push**: Files changed: `MockDraftRoom.tsx` + `mock-draft/page.tsx` + `FreeAgents.tsx` (page.tsx/FreeAgents were missed in the Phase 1 push).
 
+### Session 32 — Mock Draft Mode REMOVED (2026-07-07)
+Nate tried the solo-vs-bots Mock Draft Mode and didn't find it useful. Decision: kill it entirely rather than build Phase 2 (multi-user lobby). Reasoning: Season 1 is a small beta with hand-picked people Nate already knows — there's no pool of strangers to matchmake with, and the real draft room (already live, real-time, multi-user) can be reused with a disposable test league for any group rehearsal needed. Removed:
+- `src/app/dashboard/league/[id]/mock-draft/` (both `page.tsx` and `MockDraftRoom.tsx`) — deleted
+- `LeagueNav.tsx` — removed the "Mock Draft" nav item
+- `page.tsx` (league hub) — removed the "🎮 Mock Draft" button
+Also added `.gitattributes` (`* text=auto eol=lf`) after discovering this machine's Git checked out the whole repo with CRLF line endings, making every file show as modified. Fixed via `git config core.autocrlf true` + `git add -A` (renormalized cleanly, only the 4 real file changes stayed staged).
+**Do not rebuild Mock Draft Mode unless Nate explicitly asks — if he does, revisit as a true open multiplayer lobby (any UFF user, not scoped to one league), not the old solo-vs-bots version.**
+
 ### Next priorities (not yet built):
-- **Mock Draft Phase 2** — multi-user lobby with CPU fillers (matching Yahoo mock draft style)
 - **Push notifications** — mobile PWA (requires service worker + VAPID keys)
 - **Admin dashboard** — cross-league health view for Nate
 - **App Store listing** — iOS/Android PWA/TWA submission
