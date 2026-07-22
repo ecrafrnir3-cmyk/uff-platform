@@ -14,7 +14,13 @@ export async function GET(request: Request) {
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type");
-  const next = searchParams.get("next") ?? "/dashboard";
+  // Only allow same-origin relative paths: "next=@evil.com" or "next=//evil.com"
+  // would otherwise redirect the just-authenticated user to an attacker host
+  // (open-redirect, audit M1-security)
+  const rawNext = searchParams.get("next") ?? "/dashboard";
+  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") && !rawNext.includes("\\")
+    ? rawNext
+    : "/dashboard";
 
   const supabase = await createClient();
 

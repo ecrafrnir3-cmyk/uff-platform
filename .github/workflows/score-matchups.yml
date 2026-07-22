@@ -13,10 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger score-matchups cron route
+        # --fail-with-body: non-200 fails the step AND prints the response body,
+        # so a broken edge function shows up as a red run with the actual error
+        # (previously the body was discarded and failures stayed green)
         run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST             "${{ secrets.NEXT_PUBLIC_APP_URL }}/api/cron/score-matchups"             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"             -H "Content-Type: application/json")
-          echo "Response status: $STATUS"
-          if [ "$STATUS" != "200" ]; then
-            echo "Unexpected status $STATUS"
-            exit 1
-          fi
+          curl -sS --fail-with-body -X POST             "${{ secrets.NEXT_PUBLIC_APP_URL }}/api/cron/score-matchups"             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"             -H "Content-Type: application/json"

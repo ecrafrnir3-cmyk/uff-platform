@@ -318,6 +318,7 @@ export default async function ManagersPage({
     .eq("league_id", leagueId)
     .eq("season", league.season)
     .eq("is_complete", true)
+    .eq("is_playoff", false)
     .returns<MatchupRow[]>();
 
   const allMatchups = matchupRows ?? [];

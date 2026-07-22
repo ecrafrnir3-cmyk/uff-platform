@@ -33,7 +33,9 @@ function applyDraftPower(
     case 'gunslinger':           return (stats['pass_td'] ?? 0) * 1;
     case 'berserker_rage':       return (stats['rush_yd'] ?? 0) * 0.1;
     case 'reception_specialist': return (stats['rec']    ?? 0) * 0.5;
-    case 'iron_defense':         return baseScore < 0 ? -baseScore : 0;
+    // Iron Defense: negative D/ST scores floor at 0, positive scores double
+    // (per hero-villain-system.md + the player-facing guide)
+    case 'iron_defense':         return baseScore < 0 ? -baseScore : baseScore;
     case 'red_zone_menace':      return (stats['rec_td'] ?? 0) * 1;
     case 'goal_line_hammer':     return (stats['rush_td'] ?? 0) * 1;
     case 'seam_buster':          return (stats['rec_td'] ?? 0) * 1;
@@ -51,6 +53,10 @@ const MIRROR_MATCH_POWERS = new Set([
 
 // Flex-eligible positions for Mulligan replacement check
 const FLEX_POSITIONS = new Set(['RB','WR','TE']);
+
+// Time Stone only freezes players who are genuinely out of game action.
+// Questionable players play most weeks — they must NOT trigger a freeze.
+const TS_INJURED_STATUSES = new Set(['Out', 'Doubtful', 'IR', 'PUP', 'Sus', 'COV', 'NA', 'DNR']);
 
 // ── Time Stone types ──────────────────────────────────────────────────────────
 interface TsData {
@@ -87,7 +93,7 @@ interface PlayerScore {
   position:  string;
 }
 
-type MatchupRow = { id: string; league_id: string; matchup_id: number; member_id: string };
+type MatchupRow = { id: string; league_id: string; matchup_id: number; member_id: string; score_adjustment: number | null };
 
 Deno.serve(async (req) => {
   if (CRON_SECRET) {
@@ -118,11 +124,14 @@ Deno.serve(async (req) => {
   }
 
   const allStats: Record<string, Record<string, number>> = await statsRes.json();
-  const allProj:  Record<string, Record<string, number>> = projRes.ok ? await projRes.json() : {};
+  // A failed projections fetch must not silently zero everyone's projections —
+  // when projOk is false we skip projection writes and projection-driven tokens.
+  const projOk = projRes.ok;
+  const allProj:  Record<string, Record<string, number>> = projOk ? await projRes.json() : {};
 
   const { data: matchupRows, error: mErr } = await supabase
     .from('uff_matchups')
-    .select('id, league_id, matchup_id, member_id')
+    .select('id, league_id, matchup_id, member_id, score_adjustment')
     .eq('week', week)
     .eq('season', season)
     .eq('is_complete', false);
@@ -136,24 +145,20 @@ Deno.serve(async (req) => {
   const leagueIds = [...new Set(typedMatchups.map(m => m.league_id))];
   const memberIds = [...new Set(typedMatchups.map(m => m.member_id))];
 
-  const { data: leagues } = await supabase
+  const { data: leagues, error: lgErr } = await supabase
     .from('uff_leagues')
     .select('id, scoring_settings')
     .in('id', leagueIds);
+  if (lgErr) return new Response(JSON.stringify({ error: `leagues: ${lgErr.message}` }), { status: 500 });
 
   const settingsMap: Record<string, Record<string, number>> = {};
   for (const lg of (leagues ?? [])) settingsMap[lg.id] = lg.scoring_settings ?? {};
 
   // ── Parallel data fetch ───────────────────────────────────────────────────
+  // Every result is error-checked: writing scores computed from silently-empty
+  // maps overwrote real points with zeros (audit U7). Fail loudly instead.
   const [
-    { data: powerRows },
-    { data: biteRows },
-    { data: rosterRows },
-    { data: lineupRows },
-    { data: memberFactionRows },
-    { data: nflTeamRows },
-    { data: tokenRows },
-    { data: winHistoryRows },
+    powersQ, bitesQ, rostersQ, lineupsQ, factionsQ, nflTeamsQ, tokensQ, historyQ,
   ] = await Promise.all([
     supabase
       .from('player_draft_powers')
@@ -182,6 +187,26 @@ Deno.serve(async (req) => {
       .eq('is_complete', true),
   ]);
 
+  const queryErrors = [
+    ['player_draft_powers', powersQ.error], ['vampire_bites', bitesQ.error],
+    ['uff_roster_players', rostersQ.error], ['uff_lineups', lineupsQ.error],
+    ['league_members', factionsQ.error],    ['nfl_teams', nflTeamsQ.error],
+    ['weekly_token_assignments', tokensQ.error], ['win_history', historyQ.error],
+  ].filter(([, e]) => e != null);
+  if (queryErrors.length > 0) {
+    const msg = queryErrors.map(([name, e]) => `${name}: ${(e as { message: string }).message}`).join('; ');
+    return new Response(JSON.stringify({ error: `data fetch failed — aborting without writing: ${msg}` }), { status: 500 });
+  }
+
+  const powerRows         = powersQ.data;
+  const biteRows          = bitesQ.data;
+  const rosterRows        = rostersQ.data;
+  const lineupRows        = lineupsQ.data;
+  const memberFactionRows = factionsQ.data;
+  const nflTeamRows       = nflTeamsQ.data;
+  const tokenRows         = tokensQ.data;
+  const winHistoryRows    = historyQ.data;
+
   // ── Build core maps ───────────────────────────────────────────────────────
   const powerMap:     Record<string, Record<string, { power: string; restored: boolean }>> = {};
   const timeStoneMap: Record<string, Record<string, TsData>> = {};
@@ -203,7 +228,10 @@ Deno.serve(async (req) => {
   const tsPlayerIds = [...new Set(Object.values(timeStoneMap).flatMap(m => Object.keys(m)))];
   const injuryStatusMap: Record<string, string | null> = {};
   if (tsPlayerIds.length > 0) {
-    const { data: injuryData } = await supabase.from('players').select('id, injury_status').in('id', tsPlayerIds);
+    const { data: injuryData, error: injErr } = await supabase.from('players').select('id, injury_status').in('id', tsPlayerIds);
+    if (injErr) {
+      return new Response(JSON.stringify({ error: `players injury fetch failed — aborting without writing: ${injErr.message}` }), { status: 500 });
+    }
     for (const p of (injuryData ?? [])) injuryStatusMap[p.id] = p.injury_status ?? null;
   }
 
@@ -241,19 +269,20 @@ Deno.serve(async (req) => {
     if (t.abbr && t.faction) teamFactionMap[t.abbr] = t.faction;
   }
 
-  // Faction bonus: 0.5 per same-faction active player
-  const playerMemberMap: Record<string, string> = {};
-  for (const [memberId, pids] of Object.entries(rosterMap)) {
-    for (const pid of pids) playerMemberMap[pid] = memberId;
-  }
+  // Faction bonus: 0.5 per same-faction active player.
+  // Computed per member (rosterMap is member-keyed) — a player rostered in two
+  // leagues previously collided in a global player→member map and only one
+  // league's member got credit (audit C9).
   const factionBonusMap: Record<string, number> = {};
-  for (const [playerId, team] of Object.entries(playerTeamMap)) {
-    const tf = teamFactionMap[team];
-    if (!tf) continue;
-    const memberId = playerMemberMap[playerId];
-    if (!memberId) continue;
+  for (const [memberId, pids] of Object.entries(rosterMap)) {
     const mf = memberFactionMap[memberId];
-    if (mf && mf === tf) factionBonusMap[memberId] = (factionBonusMap[memberId] ?? 0) + 0.5;
+    if (!mf) continue;
+    let fb = 0;
+    for (const pid of pids) {
+      const tf = teamFactionMap[playerTeamMap[pid] ?? ''];
+      if (tf && tf === mf) fb += 0.5;
+    }
+    if (fb > 0) factionBonusMap[memberId] = fb;
   }
 
   // Token map: member_id → resolved effect
@@ -328,7 +357,7 @@ Deno.serve(async (req) => {
       if (pe) {
         if (pe.power === 'time_stone') {
           const ts      = lsTimeStone[playerId];
-          const injured = (injuryStatusMap[playerId] ?? null) !== null;
+          const injured = TS_INJURED_STATUSES.has(injuryStatusMap[playerId] ?? '');
           const inStart = lineupSet?.has(playerId) ?? true;
           if (ts) {
             if (ts.freezeBrokenAt) {
@@ -367,7 +396,11 @@ Deno.serve(async (req) => {
               tsUpdates.push(update);
             } else {
               pts = base;
-              tsUpdates.push({ leagueId: matchup.league_id, playerId, last_healthy_score: base, prev_healthy_score: ts.lastHealthyScore });
+              // Only rewrite the healthy-score trackers when the value actually
+              // changed — this ran on every 15-min cycle and churned the table.
+              if (ts.lastHealthyScore !== base) {
+                tsUpdates.push({ leagueId: matchup.league_id, playerId, last_healthy_score: base, prev_healthy_score: ts.lastHealthyScore });
+              }
             }
           }
         } else if (pe.power !== 'vampire_bite') {
@@ -375,8 +408,9 @@ Deno.serve(async (req) => {
             const bonus = applyDraftPower(pe.power, stats, base, settings);
             pts  += bonus;
             proj += applyDraftPower(pe.power, projData, baseProj, settings);
-            // Accumulate for Mirror Match
-            if (MIRROR_MATCH_POWERS.has(pe.power) && bonus > 0) {
+            // Accumulate for Mirror Match — starters only: bench players don't
+            // contribute to the opponent's actual total (audit M2)
+            if (MIRROR_MATCH_POWERS.has(pe.power) && bonus > 0 && isStarter) {
               draftPowerBonusMap[matchup.member_id] += bonus;
             }
           }
@@ -443,6 +477,9 @@ Deno.serve(async (req) => {
         break;
       }
       case 16: { // Iron Will: lowest-projected starter gets 2x actual score
+        // With a failed projections fetch every proj is 0 and the "lowest
+        // projected" pick is arbitrary — skip rather than misfire (audit M5)
+        if (!projOk) break;
         if (starters.length > 0) {
           starters.sort(([, a], [, b]) => a.proj - b.proj);
           const [lowestId] = starters[0];
@@ -456,10 +493,6 @@ Deno.serve(async (req) => {
   }
 
   // ── Vampire Bite siphon ───────────────────────────────────────────────────
-  // Build a reverse map: memberId → leagueId so we can scope lookups correctly.
-  const memberLeagueMap: Record<string, string> = {};
-  for (const m of typedMatchups) memberLeagueMap[m.member_id] = m.league_id;
-
   const vampireSiphon: Record<string, number> = {};
   for (const leagueId of leagueIds) {
     // Only look at rosters that belong to this league
@@ -596,41 +629,52 @@ Deno.serve(async (req) => {
       tokenBonusMap[sB.member_id] = (tokenBonusMap[sB.member_id] ?? 0) + benchPts;
     }
 
-    // Token 15: Underdog — if you lost, +3 pts (consolation; does not flip result)
+    // Token 15: Underdog — consolation for the losing side. The bonus is capped
+    // at the losing margin so it can never flip (or exceed) the result — the
+    // spec and standings both assume points order decides the winner (audit H5).
     if (tkA?.id === 15 && tA.pts < tB.pts) {
-      tA.pts = Math.round((tA.pts + 3) * 100) / 100;
-      tokenBonusMap[sA.member_id] = (tokenBonusMap[sA.member_id] ?? 0) + 3;
+      const bonus = Math.min(3, Math.round((tB.pts - tA.pts) * 100) / 100);
+      tA.pts = Math.round((tA.pts + bonus) * 100) / 100;
+      tokenBonusMap[sA.member_id] = (tokenBonusMap[sA.member_id] ?? 0) + bonus;
     }
     if (tkB?.id === 15 && tB.pts < tA.pts) {
-      tB.pts = Math.round((tB.pts + 3) * 100) / 100;
-      tokenBonusMap[sB.member_id] = (tokenBonusMap[sB.member_id] ?? 0) + 3;
+      const bonus = Math.min(3, Math.round((tA.pts - tB.pts) * 100) / 100);
+      tB.pts = Math.round((tB.pts + bonus) * 100) / 100;
+      tokenBonusMap[sB.member_id] = (tokenBonusMap[sB.member_id] ?? 0) + bonus;
     }
 
-    // Token 17: Clutch Gene — if matchup within 5 pts, round losing side up by 1
+    // Token 17: Clutch Gene — if matchup within 5 pts, losing side rounds up.
+    // Same margin cap: never flips the result.
     const diff = Math.abs(tA.pts - tB.pts);
     if (diff > 0 && diff <= 5) {
       if (tkA?.id === 17 && tA.pts < tB.pts) {
-        tA.pts = Math.round((tA.pts + 1) * 100) / 100;
-        tokenBonusMap[sA.member_id] = (tokenBonusMap[sA.member_id] ?? 0) + 1;
+        const bonus = Math.min(1, Math.round((tB.pts - tA.pts) * 100) / 100);
+        tA.pts = Math.round((tA.pts + bonus) * 100) / 100;
+        tokenBonusMap[sA.member_id] = (tokenBonusMap[sA.member_id] ?? 0) + bonus;
       }
       if (tkB?.id === 17 && tB.pts < tA.pts) {
-        tB.pts = Math.round((tB.pts + 1) * 100) / 100;
-        tokenBonusMap[sB.member_id] = (tokenBonusMap[sB.member_id] ?? 0) + 1;
+        const bonus = Math.min(1, Math.round((tA.pts - tB.pts) * 100) / 100);
+        tB.pts = Math.round((tB.pts + bonus) * 100) / 100;
+        tokenBonusMap[sB.member_id] = (tokenBonusMap[sB.member_id] ?? 0) + bonus;
       }
     }
   }
 
   // ── Write all scores to DB ────────────────────────────────────────────────
-  await Promise.all(
+  // score_adjustment (commissioner override delta) is re-applied on every
+  // recompute so cron runs no longer erase manual adjustments (audit U2).
+  const writeResults = await Promise.all(
     typedMatchups.map(m => {
       const total = memberTotalMap[m.member_id];
-      return supabase.from('uff_matchups').update({
-        points:      total?.pts  ?? 0,
-        projected:   total?.proj ?? 0,
+      const update: Record<string, number> = {
+        points:      Math.round((((total?.pts ?? 0) + (m.score_adjustment ?? 0))) * 100) / 100,
         token_bonus: Math.round((tokenBonusMap[m.member_id] ?? 0) * 100) / 100,
-      }).eq('id', m.id);
+      };
+      if (projOk) update.projected = total?.proj ?? 0;
+      return supabase.from('uff_matchups').update(update).eq('id', m.id);
     })
   );
+  const writeErrors = writeResults.filter(r => r.error != null).map(r => r.error!.message);
 
   // ── Apply Time Stone DB updates ───────────────────────────────────────────
   if (tsUpdates.length > 0) {
@@ -646,8 +690,15 @@ Deno.serve(async (req) => {
     );
   }
 
+  if (writeErrors.length > 0) {
+    return new Response(
+      JSON.stringify({ error: `score writes failed for ${writeErrors.length} matchup rows`, details: writeErrors.slice(0, 5), updated: typedMatchups.length - writeErrors.length }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+
   return new Response(
-    JSON.stringify({ updated: typedMatchups.length, week, season, tsUpdates: tsUpdates.length }),
+    JSON.stringify({ updated: typedMatchups.length, week, season, projectionsApplied: projOk, tsUpdates: tsUpdates.length }),
     { status: 200, headers: { 'Content-Type': 'application/json' } }
   );
 });

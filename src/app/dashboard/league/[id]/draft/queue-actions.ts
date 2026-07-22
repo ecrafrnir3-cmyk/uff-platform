@@ -102,18 +102,6 @@ export async function executeAutodraft(leagueId: string): Promise<{
   const { memberId, error: memberErr } = await getMemberId(leagueId);
   if (!memberId) return { error: memberErr };
 
-  // Fetch queue in order
-  const { data: queueItems } = await supabase
-    .from("draft_queue")
-    .select("player_id, players(full_name, position)")
-    .eq("member_id", memberId)
-    .eq("league_id", leagueId)
-    .order("position", { ascending: true });
-
-  if (!queueItems || queueItems.length === 0) {
-    return { error: "Your queue is empty. Star some players to queue them." };
-  }
-
   // All picked player IDs in this league
   const { data: picks } = await supabase
     .from("uff_draft_picks")
@@ -122,34 +110,62 @@ export async function executeAutodraft(leagueId: string): Promise<{
 
   const pickedIds = new Set((picks ?? []).map((p) => p.player_id));
 
-  // Top available from queue
-  const top = queueItems.find((q) => !pickedIds.has(q.player_id));
-  if (!top) {
-    return { error: "All queued players have been drafted. Add more players to your queue." };
+  // Preferred: top available player from the user's queue
+  const { data: queueItems } = await supabase
+    .from("draft_queue")
+    .select("player_id, players(full_name, position)")
+    .eq("member_id", memberId)
+    .eq("league_id", leagueId)
+    .order("position", { ascending: true });
+
+  let targetId: string | null = null;
+  let playerInfo: { full_name: string; position: string | null } | null = null;
+
+  const top = (queueItems ?? []).find((q) => !pickedIds.has(q.player_id));
+  if (top) {
+    targetId = top.player_id;
+    playerInfo = top.players as unknown as { full_name: string; position: string | null } | null;
+  } else {
+    // Queue empty or exhausted — fall back to best available player by ADP so
+    // an expired pick clock always produces a pick instead of stalling the
+    // draft on "your queue is empty" (audit U6).
+    const { data: best } = await supabase
+      .from("players")
+      .select("id, full_name, position, adp")
+      .not("adp", "is", null)
+      .order("adp", { ascending: true })
+      .limit(400);
+    const avail = (best ?? []).find((p) => !pickedIds.has(p.id));
+    if (avail) {
+      targetId = avail.id;
+      playerInfo = { full_name: avail.full_name, position: avail.position };
+    }
   }
 
-  const playerInfo = top.players as unknown as { full_name: string; position: string | null } | null;
+  if (!targetId) {
+    return { error: "No available ranked players found to autopick." };
+  }
 
-  // Make the pick (same RPC as makeDraftPick)
+  // Make the pick (same RPC as makeDraftPick — it validates turn + duplicates)
   const { error: pickErr } = await supabase.rpc("make_draft_pick", {
     p_league_id: leagueId,
     p_user_id: user.id,
-    p_player_id: top.player_id,
+    p_player_id: targetId,
   });
 
   if (pickErr) return { error: pickErr.message };
 
-  // Remove from queue
+  // Remove from queue (no-op for best-available fallback picks)
   await supabase
     .from("draft_queue")
     .delete()
     .eq("member_id", memberId)
-    .eq("player_id", top.player_id);
+    .eq("player_id", targetId);
 
   return {
     player: {
-      id: top.player_id,
-      full_name: playerInfo?.full_name ?? top.player_id,
+      id: targetId,
+      full_name: playerInfo?.full_name ?? targetId,
       position: playerInfo?.position ?? null,
     },
   };

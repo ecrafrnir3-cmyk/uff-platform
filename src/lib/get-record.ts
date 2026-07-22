@@ -26,7 +26,8 @@ export function getRecord(
     const opp = pair.find((m) => m.member_id !== memberId);
     if (!my || !opp) continue;
     if (my.points > opp.points) wins++;
-    else losses++;
+    else if (my.points < opp.points) losses++;
+    // exact ties count as neither a win nor a loss
   }
   return { wins, losses };
 }

@@ -191,6 +191,16 @@ export async function processWaivers(formData: FormData) {
     redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("Invalid week.")}`);
   }
 
+  // Commissioner check (the RPCs verify this again DB-side via auth.uid())
+  const { data: pwLeague } = await supabase
+    .from("uff_leagues")
+    .select("commissioner_id")
+    .eq("id", leagueId)
+    .maybeSingle();
+  if (pwLeague?.commissioner_id !== user.id) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=` + encodeURIComponent("Only the commissioner can process waivers."));
+  }
+
   const isPriority = waiverType === "priority";
   const { data, error } = isPriority
     ? await supabase.rpc("process_priority_waivers", { p_league_id: leagueId, p_week: week })
@@ -390,6 +400,17 @@ export async function syncPlayers(formData: FormData) {
   if (!user) redirect("/login");
 
   const leagueId = formData.get("leagueId") as string;
+
+  // Commissioner-only: this triggers a heavy service-role-authorized sync job —
+  // previously any authenticated user could hammer it on demand (audit M5)
+  const { data: spLeague } = await supabase
+    .from("uff_leagues")
+    .select("commissioner_id")
+    .eq("id", leagueId)
+    .maybeSingle();
+  if (spLeague?.commissioner_id !== user.id) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=` + encodeURIComponent("Only the commissioner can sync players."));
+  }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const syncSecret  = process.env.SYNC_SECRET ?? process.env.SUPABASE_SERVICE_ROLE_KEY;

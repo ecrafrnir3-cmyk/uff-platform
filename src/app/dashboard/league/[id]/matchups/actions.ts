@@ -73,12 +73,15 @@ export async function adjustScore(formData: FormData) {
     );
   }
 
-  // Fetch current points using admin client (bypasses RLS)
+  // Fetch current points using admin client (bypasses RLS).
+  // league_id filter is required: without it any commissioner of any league
+  // could adjust another league's scores by passing a foreign row id.
   const admin = createAdminClient();
   const { data: row, error: fetchErr } = await admin
     .from("uff_matchups")
-    .select("points")
+    .select("points, score_adjustment")
     .eq("id", matchupRowId)
+    .eq("league_id", leagueId)
     .maybeSingle();
 
   if (fetchErr || !row) {
@@ -88,12 +91,17 @@ export async function adjustScore(formData: FormData) {
     );
   }
 
-  const newPoints = Math.max(0, (row.points ?? 0) + delta);
+  // score_adjustment is the cumulative commissioner delta; the scoring cron
+  // recomputes points from scratch and re-applies this column, so adjustments
+  // survive re-scoring instead of being overwritten 15 minutes later.
+  const newPoints     = Math.round(((row.points ?? 0) + delta) * 100) / 100;
+  const newAdjustment = Math.round(((row.score_adjustment ?? 0) + delta) * 100) / 100;
 
   const { error: updateErr } = await admin
     .from("uff_matchups")
-    .update({ points: newPoints })
-    .eq("id", matchupRowId);
+    .update({ points: newPoints, score_adjustment: newAdjustment })
+    .eq("id", matchupRowId)
+    .eq("league_id", leagueId);
 
   if (updateErr) {
     redirect(

@@ -31,6 +31,9 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
     if (!me) return NextResponse.json({ error: "Not a member" }, { status: 403 });
 
+    const rl = checkRateLimit(`${user.id}:power-rankings`, 3);
+    if (!rl.allowed) return NextResponse.json({ error: "Rate limit exceeded — try again in a minute." }, { status: 429 });
+
     // Fetch all completed matchup rows with faction data
     const { data: allRows } = await supabase
       .from("uff_matchups")

@@ -127,10 +127,47 @@ export async function assignPowerToPick(params: {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { result: "error", message: "Not authenticated." };
 
-  const { leagueId, playerId, playerPosition, powerName, powerCategory, powerTiedPosition, round } = params;
+  // Power name/category/position from the client are display hints only — every
+  // authorization-relevant value is re-derived server-side below (audit U5:
+  // the old version trusted them, letting any member overwrite any player's
+  // power, e.g. strip an opponent's Shadow Guard before a Vampire Bite).
+  const { leagueId, playerId, round } = params;
+
+  const { data: member } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!member) return { result: "error", message: "Not a member of this league." };
+
+  // The caller must have actually drafted this player in this round
+  const { data: pick } = await supabase
+    .from("uff_draft_picks")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("player_id", playerId)
+    .eq("member_id", member.id)
+    .eq("round", round)
+    .maybeSingle();
+  if (!pick) return { result: "error", message: "You didn't draft that player in this round." };
+
+  // The power comes from the caller's own dealt assignment for this round
+  const { data: assignment } = await supabase
+    .from("draft_power_assignments")
+    .select("power_id, draft_powers(name, category, tied_position)")
+    .eq("league_id", leagueId)
+    .eq("member_id", member.id)
+    .eq("round", round)
+    .maybeSingle();
+  const power = (assignment?.draft_powers as unknown as { name: string; category: string; tied_position: string | null } | null);
+  if (!power) return { result: "error", message: "No power assignment found for this round." };
+
+  const powerName = power.name;
+  const powerTiedPosition = power.tied_position;
 
   // Draft mechanics are resolved during the draft flow itself, not tied to the player pick
-  if (powerCategory === "draft_mechanic") {
+  if (power.category === "draft_mechanic") {
     return { result: "meta", message: `${powerName} is a draft mechanic — it was applied automatically during your pick.` };
   }
 
@@ -138,6 +175,14 @@ export async function assignPowerToPick(params: {
   if (powerName === "Vampire Bite") {
     return { result: "vampire_bite", message: "Select your Vampire Bite target." };
   }
+
+  // Player position from the DB, not the client
+  const { data: playerRow } = await supabase
+    .from("players")
+    .select("position")
+    .eq("id", playerId)
+    .maybeSingle();
+  const playerPosition = playerRow?.position ?? "";
 
   // Check position eligibility
   let eligible = false;
@@ -156,6 +201,17 @@ export async function assignPowerToPick(params: {
       result: "fizzled",
       message: `${powerName} fizzled — ${playerPosition || "this position"} doesn't match the required position.`,
     };
+  }
+
+  // Never overwrite a power another manager attached to their own pick
+  const { data: existing } = await supabase
+    .from("player_draft_powers")
+    .select("drafted_by_user_id")
+    .eq("league_id", leagueId)
+    .eq("player_id", playerId)
+    .maybeSingle();
+  if (existing && existing.drafted_by_user_id !== user.id) {
+    return { result: "error", message: "That player already carries another manager's power." };
   }
 
   const slug = POWER_SLUG_MAP[powerName] ?? powerName.toLowerCase().replace(/[^a-z0-9]/g, "_");
@@ -187,33 +243,16 @@ export async function swapForesightCoin(params: {
 
   const { leagueId, currentRound, swapWithRound } = params;
 
-  const { data: member } = await supabase
-    .from("league_members")
-    .select("id")
-    .eq("league_id", leagueId)
-    .eq("user_id", user.id)
-    .maybeSingle();
-  if (!member) return { error: "Not a member of this league." };
-
-  const { data: assignments } = await supabase
-    .from("draft_power_assignments")
-    .select("id, round, power_id")
-    .eq("member_id", member.id)
-    .in("round", [currentRound, swapWithRound]);
-
-  if (!assignments || assignments.length < 2) return { error: "Could not find power assignments to swap." };
-
-  const curr = assignments.find((a) => a.round === currentRound);
-  const swap = assignments.find((a) => a.round === swapWithRound);
-  if (!curr || !swap) return { error: "Could not find power assignments to swap." };
-
-  // Swap power_ids between the two rows
-  const [e1, e2] = await Promise.all([
-    supabase.from("draft_power_assignments").update({ power_id: swap.power_id }).eq("id", curr.id),
-    supabase.from("draft_power_assignments").update({ power_id: curr.power_id }).eq("id", swap.id),
-  ]);
-  if (e1.error) return { error: e1.error.message };
-  if (e2.error) return { error: e2.error.message };
+  // Atomic RPC: verifies membership, that the caller actually holds Foresight
+  // Coin in currentRound, and that swapWithRound is a future round — then swaps
+  // both rows in one transaction (the old two-UPDATE version could duplicate a
+  // power if the second write failed, and never checked coin ownership).
+  const { error } = await supabase.rpc("swap_foresight_powers", {
+    p_league_id: leagueId,
+    p_current_round: currentRound,
+    p_swap_round: swapWithRound,
+  });
+  if (error) return { error: error.message };
 
   revalidatePath(`/dashboard/league/${leagueId}/draft`);
   return {};
@@ -238,6 +277,33 @@ export async function assignVampireBite(params: {
     .maybeSingle();
 
   if (!member) return { error: "Not a member of this league." };
+
+  // The caller must actually hold Vampire Bite (power_id 16) in this round —
+  // previously any member could bite at any time (audit U5)
+  const { data: vbAssignment } = await supabase
+    .from("draft_power_assignments")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("member_id", member.id)
+    .eq("round", round)
+    .eq("power_id", 16)
+    .maybeSingle();
+  if (!vbAssignment) {
+    return { error: "You don't hold Vampire Bite this round." };
+  }
+
+  // Biting your own player is a no-op that wastes the power — block it
+  const { data: ownCheck } = await supabase
+    .from("uff_roster_players")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("player_id", targetPlayerId)
+    .eq("member_id", member.id)
+    .is("dropped_at", null)
+    .maybeSingle();
+  if (ownCheck) {
+    return { error: "You can't bite your own player — choose an opponent's player." };
+  }
 
   // Shadow Guard check — reject bite if target player is protected
   const { data: guardCheck } = await supabase
@@ -284,6 +350,27 @@ export async function revealNextPower(params: {
 
   const { leagueId, nextMemberId, currentRound } = params;
 
+  // Caller must be a league member who actually holds Telepathy (power_id 8)
+  // this round — previously ANY authenticated user could reveal any manager's
+  // power in any league (audit U5)
+  const { data: caller } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!caller) return { powerName: null, cloaked: false, error: "Not a member of this league." };
+
+  const { data: telepathyCheck } = await supabase
+    .from("draft_power_assignments")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("member_id", caller.id)
+    .eq("round", currentRound)
+    .eq("power_id", 8) // Telepathy
+    .maybeSingle();
+  if (!telepathyCheck) return { powerName: null, cloaked: false, error: "You don't hold Telepathy this round." };
+
   // Check if next manager has Shadow Guard (power_id = 9) for this round — blocks Telepathy reveal
   const { data: cloakCheck } = await supabase
     .from("draft_power_assignments")
@@ -324,7 +411,20 @@ export async function executeHeist(params: {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { blocked: false, error: "Not authenticated." };
 
-  const { leagueId, targetMemberId, currentRound, currentDraftOrder, myMemberId } = params;
+  const { leagueId, targetMemberId, currentRound, currentDraftOrder } = params;
+
+  // Identity comes from the session, never from the client (audit U5). The
+  // update_draft_heist_order RPC additionally verifies the caller holds Draft
+  // Heist this round, no heist is already active, and the new order is a
+  // permutation of the current one.
+  const { data: me } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!me) return { blocked: false, error: "Not a member of this league." };
+  const myMemberId = me.id;
 
   // Check if target has Hero's Shield this round
   const { data: shieldCheck } = await supabase

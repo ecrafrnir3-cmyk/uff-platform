@@ -43,6 +43,9 @@ export async function POST(req: NextRequest) {
 
     if (!me) return NextResponse.json({ error: "Not a member" }, { status: 403 });
 
+    const rl = checkRateLimit(`${user.id}:oracle`, 5);
+    if (!rl.allowed) return NextResponse.json({ error: "Rate limit exceeded — try again in a minute." }, { status: 429 });
+
     // Fetch matchup rows
     const { data: rows, error: rowsErr } = await supabase
       .from("uff_matchups")

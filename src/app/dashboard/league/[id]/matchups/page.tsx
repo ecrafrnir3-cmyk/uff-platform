@@ -161,6 +161,7 @@ export default async function MatchupsPage({
             </div>
 
             <MatchupView
+              key={`${leagueId}-${viewWeek}`}
               leagueId={leagueId}
               week={viewWeek}
               matchupPairs={matchupPairs}

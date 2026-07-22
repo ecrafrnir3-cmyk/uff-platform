@@ -76,12 +76,14 @@ export default async function StandingsPage({
 
   const memberMap = Object.fromEntries((members ?? []).map((m) => [m.id, m]));
 
-  // Fetch all matchup rows for this league
+  // Fetch regular-season matchup rows for this league — playoff games must not
+  // pollute the regular-season record or PF/PA (audit: standings D16)
   const { data: matchupRows } = await supabase
     .from("uff_matchups")
     .select("matchup_id, member_id, points, is_complete, void_result, median_win")
     .eq("league_id", leagueId)
     .eq("season", league.season)
+    .eq("is_playoff", false)
     .returns<MatchupRow[]>();
 
   // Group by matchup_id to find pairs, then calculate W/L
@@ -120,12 +122,13 @@ export default async function StandingsPage({
         record[a.member_id].ties++;
         record[b.member_id].ties++;
       }
-      // Median scoring tally
-      if (a.is_complete) {
+      // Median scoring tally — median_win NULL means "not evaluated" (e.g. a
+      // week finalized before median mode was on); it must not count as a loss
+      if (a.is_complete && a.median_win !== null) {
         if (a.median_win) record[a.member_id].medianWins++;
         else record[a.member_id].medianLosses++;
       }
-      if (b.is_complete) {
+      if (b.is_complete && b.median_win !== null) {
         if (b.median_win) record[b.member_id].medianWins++;
         else record[b.member_id].medianLosses++;
       }

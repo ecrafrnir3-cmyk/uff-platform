@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getCurrentNFLWeek } from "@/lib/nfl-utils";
+import { getRawNFLWeek } from "@/lib/nfl-utils";
 import { sendEmail, getAllUserEmails, newsletterHtml } from "@/lib/email";
 import { TOKEN_NAMES } from "@/lib/token-names";
 
@@ -241,6 +241,10 @@ Voice: bold, witty, dramatic — like a fantasy sports columnist who takes the O
 // ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  // Fail closed if the secret was never configured (audit M1)
+  if (!process.env.CRON_SECRET) {
+    return NextResponse.json({ error: "CRON_SECRET not configured" }, { status: 500 });
+  }
   const auth = req.headers.get("authorization");
   if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -254,9 +258,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing env vars" }, { status: 500 });
   }
 
-  // Wednesday morning: current week has already advanced, so finalized week is currentWeek - 1
-  const currentWeek = getCurrentNFLWeek();
-  const week = Math.max(currentWeek - 1, 1);
+  // Wednesday morning: the raw week has already advanced, so the finalized week
+  // is raw - 1. Unclamped so week 18 gets a newsletter and off-season
+  // Wednesdays no-op instead of regenerating + re-emailing week 17 forever
+  // (audit C5).
+  const week = getRawNFLWeek() - 1;
+  if (week < 1 || week > 18) {
+    return NextResponse.json({ ok: true, skipped: "out of season", week, results: [] });
+  }
 
   const supabase = createClient(supabaseUrl, serviceKey);
 
@@ -279,6 +288,20 @@ export async function POST(req: NextRequest) {
 
   for (const league of leagues) {
     try {
+      // Idempotency guard: if this league+week newsletter already exists, it
+      // was generated AND emailed on a previous run — never regenerate (fresh
+      // Anthropic spend) or re-email members (audit C5).
+      const { data: existing } = await supabase
+        .from("league_newsletters")
+        .select("id")
+        .eq("league_id", league.id)
+        .eq("week", week)
+        .maybeSingle();
+      if (existing) {
+        results.push({ league_id: league.id, name: league.name, ok: true });
+        continue;
+      }
+
       const content = await generateLeagueNewsletter(supabase, league, week);
 
       // Upsert — if newsletter already exists for this league+week, overwrite it
@@ -337,6 +360,13 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // 200 = all leagues ok, 207 = partial failure, 500 = EVERY league failed —
+  // a total failure (e.g. revoked API key) must turn the workflow red instead
+  // of hiding behind an accepted 207 (audit M3).
   const allOk = results.every((r) => r.ok);
-  return NextResponse.json({ ok: allOk, week, results }, { status: allOk ? 200 : 207 });
+  const anyOk = results.some((r) => r.ok);
+  return NextResponse.json(
+    { ok: allOk, week, results },
+    { status: allOk ? 200 : anyOk ? 207 : 500 },
+  );
 }

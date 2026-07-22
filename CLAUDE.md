@@ -513,6 +513,25 @@ Nate tried the solo-vs-bots Mock Draft Mode and didn't find it useful. Decision:
 - `page.tsx` (league hub) — removed the "🎮 Mock Draft" button
 Also added `.gitattributes` (`* text=auto eol=lf`) after discovering this machine's Git checked out the whole repo with CRLF line endings, making every file show as modified. Fixed via `git config core.autocrlf true` + `git add -A` (renormalized cleanly, only the 4 real file changes stayed staged).
 **Do not rebuild Mock Draft Mode unless Nate explicitly asks — if he does, revisit as a true open multiplayer lobby (any UFF user, not scoped to one league), not the old solo-vs-bots version.**
+Push required setting git identity on this new laptop first (`git config --global user.email` / `user.name` — first commit attempt failed silently with "Please tell me who you are", which made `git push` a no-op ("Everything up-to-date") until fixed). Confirmed live: Vercel deployment `dpl_7mpNTZLqY4FfF3GS6p5vXXRAv284` (commit `18c9b9b`) built successfully off this removal.
+
+### Session 33 — New laptop confirmed fully operational + Graphify installed (2026-07-07)
+- **New laptop dev environment: fully verified working end-to-end.** Git (with identity configured), Node/npm, local clone, `.env.local` (all 3 Supabase vars), `npm run dev`, GitHub push access, and Vercel auto-deploy on push all confirmed functioning via the Mock Draft removal work above — that whole round-trip (edit → commit → push → Vercel build) is the proof.
+- **Graphify installed** — a free, local, MIT-licensed knowledge-graph CLI (`graphifyy` on PyPI, tree-sitter based, no API key needed for code-only extraction). Ran `graphify update .` against the full codebase: **678 nodes, 1142 edges, 52 communities**, 100% extracted (no LLM cost). Output lives in `graphify-out/` (`graph.json`, `graph.html` — open directly in a browser for a visual map, `GRAPH_REPORT.md` — readable summary with god-node list and community breakdown). Ran `graphify claude install`, which wrote the `## graphify` section below + a `.claude/settings.json` PreToolUse hook.
+- **Caveat**: the graphify CLI tool itself was installed in Claude's cloud sandbox for this session, not on Nate's actual laptop — it does not persist between sessions. The generated `graphify-out/` files are real and saved to disk, but to run `graphify query`/`graphify update` locally (e.g., after future edits, or from an actual Claude Code CLI session on this laptop), Nate needs Python 3.10+ and `uv` or `pipx` installed on this machine, then `pipx install graphifyy` (or `uv tool install graphifyy`). Not required for normal Next.js dev work — only for keeping the knowledge graph current.
+- **Next-steps assessment** (small hand-picked beta, season starts 2026-09-09 — about 9 weeks out): the honest read is most of the "not yet built" list below is over-engineering for a small private beta and should stay parked. The two things that actually matter before season start: (1) trigger `sync-players` once from the Supabase dashboard (Edge Functions → sync-players → Test) — still pending, populates v4 ADP data real players will draft from; (2) run one full live rehearsal of the **real** draft room (not mock) with actual invited members, well before Sept 9, to catch any real-multiplayer issues while there's still time to fix them. Cron migration (GitHub Actions → Vercel Cron) is worth doing before the season actually starts since crons will run unattended on real game data — moderate priority, not urgent today.
+
+### Session 34 — Deep-dive audit + fix sweep (2026-07-21/22)
+Six-agent audit + adversarial verification found ~60 defects; the critical ones were FIXED same-session. Full findings + fix status: `docs/deep-dive-audit-2026-07-21.md`. Highlights:
+- **Waiver system was broken end-to-end** (cron queried the wrong week → all claims stranded; priority claims blocked by FAAB guard; priority processing crashed on a slot CHECK; FAAB result emails never sent — status-word mismatch). All fixed: RPCs rewritten (sweep `week <= p_week`, slot='active', roster caps/add limits/Can't-Cut/eliminated checks, per-award priority re-eval), cron email block fixed.
+- **Week-18 clamp**: finalize + newsletter crons now use unclamped `getRawNFLWeek()` with in-season guards — week 18 finalizes, off-season no-ops, newsletter has an idempotency guard (was re-emailing week 17 forever).
+- **Security**: DB RPCs now enforce `auth.uid()` (finalize/seed/schedule/start_draft/make_draft_pick trusted caller-supplied user IDs); heist RPCs require actually holding Draft Heist + permutation check; adjustScore league-scoped + persisted in new `uff_matchups.score_adjustment` (scoring cron re-applies it instead of erasing it); public `/share/matchup` page DELETED (cross-league leak); open redirect in auth callback fixed; email HTML now escaped; **rate limiting actually wired up** (CLAUDE.md previously claimed "confirmed on all 10 routes" — it had ZERO call sites; the Session 22 note below was wrong).
+- **Trades**: status CHECK was missing `pending_review` (review-league accepts crashed!); veto now writes 'vetoed'; cancel/accept race closed; receiver must be same-league; loose RLS update policy dropped.
+- **Scoring engine v15**: query errors abort instead of writing zeros; faction bonus per-member (cross-league collision); Time Stone ignores Questionable; Underdog/Clutch capped at the margin (can't flip results); Iron Defense doubles per spec; Mirror Match starters-only; projections-fetch failure no longer zeroes projections.
+- **sync-players v5**: DEF entries (no `full_name` in Sleeper) now synced via first+last name — all 32 defenses were frozen at a June backfill. Note: sync-players runs NIGHTLY via pg_cron (the "run sync-players manually" note below is stale). A redundant pg_cron scoring job with a wrong season anchor was deleted; GH Actions is the scoring scheduler and now fails red on errors (route propagates non-200, workflow prints the body).
+- **Corrections to earlier notes**: the draft room is a 5-second POLL, not Supabase Realtime; `getWeekLockTime` anchor fixed to Thu Sep 10 kickoff (was locking lineups 24h early — the week-ROLL anchor stays Wed Sep 9, the crons depend on it).
+- ⚠️ **Nate to-do (dashboard only)**: set `CRON_SECRET` + `SYNC_SECRET` as Supabase edge-function secrets (functions are publicly invokable until then); Vercel deploy happens on push.
+- Still-open items are listed in the audit report's FIX STATUS block (notably: pick clock is still client-side-only for the on-the-clock user — an offline picker still stalls the draft; run the pre-season draft rehearsal with that in mind).
 
 ### Next priorities (not yet built):
 - **Push notifications** — mobile PWA (requires service worker + VAPID keys)
@@ -520,3 +539,13 @@ Also added `.gitattributes` (`* text=auto eol=lf`) after discovering this machin
 - **App Store listing** — iOS/Android PWA/TWA submission
 - **Cron migration** — GitHub Actions → Vercel Cron Jobs (more reliable, less drift)
 - Update `nfl-utils.ts` season start date every off-season (currently `2026-09-09`)
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

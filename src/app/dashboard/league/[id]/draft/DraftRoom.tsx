@@ -1525,7 +1525,7 @@ export default function DraftRoom({
                     <p className="mt-0.5 text-xs text-white">
                       {myPowerThisRound.draft_powers.description}
                     </p>
-                    {myPowerThisRound.draft_powers.name === "Hero’s Shield" && (
+                    {myPowerThisRound.draft_powers.name === "Hero's Shield" && (
                       <p className="mt-1.5 text-xs font-semibold" style={{ color: "#0057FF" }}>
                         🛡 Your pick slot is shielded against Draft Heist this round.
                       </p>

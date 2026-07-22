@@ -19,6 +19,10 @@ interface LeagueRow {
 }
 
 export async function GET(req: NextRequest) {
+  // Fail closed if the secret was never configured (audit M1)
+  if (!process.env.CRON_SECRET) {
+    return NextResponse.json({ error: "CRON_SECRET not configured" }, { status: 500 });
+  }
   const auth = req.headers.get("authorization");
   if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -96,13 +100,18 @@ export async function GET(req: NextRequest) {
     // ── Email waiver results to each manager who had bids ──────────────────
     if (!error) {
       try {
-        // Fetch all processed bids for this league+week
+        // Only bids processed in THIS run (cron is hourly; 65-min window).
+        // Two past bugs here (audit C4/cron-H4): the FAAB processor writes
+        // 'won'/'lost' (not 'awarded'/'rejected'), so FAAB leagues never got
+        // result emails — and without the processed_at window, every matching
+        // run re-emailed ALL of the week's old results.
+        const processedSince = new Date(Date.now() - 65 * 60 * 1000).toISOString();
         const { data: bids } = await supabase
           .from("uff_waiver_bids")
           .select("member_id, player_id, bid_amount, status")
           .eq("league_id", league.id)
-          .eq("week", week)
-          .in("status", ["awarded", "rejected"]);
+          .in("status", ["awarded", "rejected", "won", "lost"])
+          .gte("processed_at", processedSince);
 
         if (bids && bids.length > 0) {
           // Get all unique player IDs and member IDs
@@ -125,11 +134,11 @@ export async function GET(req: NextRequest) {
           const memberUserMap: Record<string, string> = {};
           for (const m of members ?? []) memberUserMap[m.id] = m.user_id;
 
-          // Group bids by member
+          // Group bids by member ('won'/'awarded' = success, 'lost'/'rejected' = miss)
           const byMember: Record<string, { awarded: typeof bids; rejected: typeof bids }> = {};
           for (const bid of bids) {
             if (!byMember[bid.member_id]) byMember[bid.member_id] = { awarded: [], rejected: [] };
-            if (bid.status === "awarded") byMember[bid.member_id].awarded.push(bid);
+            if (bid.status === "awarded" || bid.status === "won") byMember[bid.member_id].awarded.push(bid);
             else byMember[bid.member_id].rejected.push(bid);
           }
 

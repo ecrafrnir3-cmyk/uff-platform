@@ -34,6 +34,9 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
     if (!me) return NextResponse.json({ error: "Not a member" }, { status: 403 });
 
+    const rl = checkRateLimit(`${user.id}:waiver-intel`, 5);
+    if (!rl.allowed) return NextResponse.json({ error: "Rate limit exceeded — try again in a minute." }, { status: 429 });
+
     // Fetch target player
     const { data: player } = await supabase
       .from("players")

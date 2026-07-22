@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getCurrentNFLWeek } from "@/lib/nfl-utils";
+import { getRawNFLWeek } from "@/lib/nfl-utils";
 
 // Called by GitHub Actions cron every Wednesday at 07:00 UTC —
 // safely after Monday Night Football ends (MNF = ~01:00 UTC Tuesday).
 // Finalizes all active leagues for the week that just completed.
 export async function POST(req: NextRequest) {
+  // Fail closed if the secret was never configured — otherwise the comparison
+  // below matches a literal "Bearer undefined" header (audit M1).
+  if (!process.env.CRON_SECRET) {
+    return NextResponse.json({ error: "CRON_SECRET not configured" }, { status: 500 });
+  }
   const auth = req.headers.get("authorization");
   if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -18,10 +23,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing env vars" }, { status: 500 });
   }
 
-  // On Wednesday, getCurrentNFLWeek() has already advanced to the new week.
+  // On Wednesday, the raw week has already advanced to the new week.
   // We want the week that just finished (the one whose MNF ended Tuesday).
-  const currentWeek = getCurrentNFLWeek();
-  const weekToFinalize = Math.max(currentWeek - 1, 1);
+  // Using the UNCLAMPED week fixes two bugs (audit C5): week 18 is now
+  // finalized (raw 19 - 1), and pre-/post-season Wednesdays no-op instead of
+  // re-finalizing week 1 or 17.
+  const weekToFinalize = getRawNFLWeek() - 1;
+  if (weekToFinalize < 1 || weekToFinalize > 18) {
+    return NextResponse.json({ ok: true, skipped: "out of season", week: weekToFinalize });
+  }
 
   const supabase = createClient(supabaseUrl, serviceKey);
 

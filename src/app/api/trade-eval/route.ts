@@ -23,6 +23,9 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
     if (!me) return NextResponse.json({ error: "Not a member" }, { status: 403 });
 
+    const rl = checkRateLimit(`${user.id}:trade-eval`, 5);
+    if (!rl.allowed) return NextResponse.json({ error: "Rate limit exceeded — try again in a minute." }, { status: 429 });
+
     // Fetch partner info
     const { data: partner } = await supabase
       .from("league_members")

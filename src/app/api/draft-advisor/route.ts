@@ -49,6 +49,9 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
     if (!me) return NextResponse.json({ error: "Not a member" }, { status: 403 });
 
+    const rl = checkRateLimit(`${user.id}:draft-advisor`, 8);
+    if (!rl.allowed) return NextResponse.json({ error: "Rate limit exceeded — try again in a minute." }, { status: 429 });
+
     // Get league info (max_teams for round calculation)
     const { data: league } = await supabase
       .from("uff_leagues")

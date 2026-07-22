@@ -107,21 +107,30 @@ Deno.serve(async (req: Request) => {
   const needSyntheticAdp: Array<{ idx: number; searchRank: number }> = [];
 
   for (const [playerId, p] of Object.entries(sleeperData)) {
-    if (!p || !p.full_name) continue;
+    if (!p) continue;
+    // Sleeper team-defense entries (position DEF) have first_name/last_name but
+    // NO full_name — skipping on full_name alone dropped all 32 defenses from
+    // every sync (audit C7). Build their name from the parts instead.
+    const fullName: string | null =
+      (p.full_name as string | undefined) ??
+      (p.position === "DEF" && p.first_name && p.last_name
+        ? `${p.first_name} ${p.last_name}`
+        : null);
+    if (!fullName) continue;
     if (!RELEVANT_POSITIONS.has(p.position)) continue;
 
     const row: PlayerRow = {
       id: playerId,
-      full_name: p.full_name as string,
+      full_name: fullName,
       position: (p.position as string) ?? null,
-      team: (p.team as string) ?? null,
-      status: (p.status as string) ?? "Inactive",
+      team: (p.team as string) ?? (p.position === "DEF" ? playerId : null),
+      status: (p.status as string) ?? (p.position === "DEF" ? "Active" : "Inactive"),
       injury_status: (p.injury_status as string) ?? null,
       updated_at: now,
     };
 
     if (hasFpData) {
-      const norm = normalizeName(p.full_name as string);
+      const norm = normalizeName(fullName);
       const adp = adpMap.get(norm) ?? null;
       if (adp !== null) {
         row.adp = adp;
