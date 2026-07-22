@@ -13,14 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger finalize-week cron route
+        # --fail-with-body: non-200 fails the step AND prints the response body.
+        # HISTORY NOTE (2026-07-22): this file was invalid YAML from June until
+        # today — the old curl -w flag contained a literal quoted newline that
+        # terminated the YAML block, so the Wednesday schedule NEVER fired; all
+        # 79 historical "runs" were push-time parse failures. Discovered while
+        # verifying the audit-fix deploy.
         run: |
-          RESPONSE=$(curl -s -w "
-%{http_code}" -X POST             "${{ secrets.NEXT_PUBLIC_APP_URL }}/api/cron/finalize-week"             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"             -H "Content-Type: application/json")
-          BODY=$(echo "$RESPONSE" | head -n -1)
-          STATUS=$(echo "$RESPONSE" | tail -n 1)
-          echo "Response body: $BODY"
-          echo "Response status: $STATUS"
-          if [ "$STATUS" != "200" ]; then
-            echo "Unexpected status $STATUS"
-            exit 1
-          fi
+          curl -sS --fail-with-body -X POST "${{ secrets.NEXT_PUBLIC_APP_URL }}/api/cron/finalize-week" -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" -H "Content-Type: application/json"
