@@ -1,21 +1,26 @@
--- Server-enforced draft pick clock (audit U6 — offline picker froze the draft)
--- 1. draft_started_at anchors the deadline for pick #1 (later picks anchor on
---    the previous pick's picked_at).
--- 2. force_autopick lets ANY league member trigger the overdue pick once the
---    deadline (+30s round buffer for round-first picks, +15s grace) passes.
---    All timing validation is server-side; racing callers lose harmlessly.
+-- APPLIED LIVE 2026-08-17 via Supabase MCP (recorded server-side as
+-- draft_clock_server_side + season_readiness_game_rules +
+-- token_awards_next_week_both_finalize_paths).
 --
--- NOTE: force_autopick's pick-insert core must mirror make_draft_pick. This
--- file is finalized against the live make_draft_pick body at apply time.
+-- Structural change:
+ALTER TABLE uff_leagues ADD COLUMN IF NOT EXISTS draft_started_at timestamptz;
 
-ALTER TABLE uff_leagues
-  ADD COLUMN IF NOT EXISTS draft_started_at timestamptz;
-
--- Backfill: any in-progress draft anchors pick 1 at "now" on apply (harmless —
--- it only extends the very first deadline).
-UPDATE uff_leagues
-  SET draft_started_at = now()
-  WHERE draft_status = 'in_progress' AND draft_started_at IS NULL;
-
--- start_draft must stamp the anchor; finalized against live body at apply time.
--- force_autopick created at apply time (see session notes).
+-- Function changes (full final bodies live in ../schema-snapshot/functions.sql,
+-- the disaster-recovery source of truth for ALL game-logic RPCs):
+--   start_draft                  — stamps draft_started_at = now() on start
+--   force_autopick (NEW)         — any member executes the overdue pick once
+--                                  last-pick picked_at (+30s round buffer on
+--                                  round-first picks, +clock, +15s grace) has
+--                                  passed; queue-top else best-ADP; mirrors
+--                                  make_draft_pick's insert core (audit U6)
+--   move_to_ir                   — accepts official IR OR injury_status
+--                                  IR/Out/Doubtful/PUP (was IR-only; UI showed
+--                                  the button for Out/Doubtful → error clicks)
+--   award_season_titles          — bracket-driven champion with completion
+--                                  guard (was: any completed playoff week could
+--                                  crown a semifinalist by points heuristic)
+--   finalize_week                — parity with cron path: marks tokens used,
+--                                  awards faction-war tokens
+--   finalize_all_active_leagues  — token awards now land on week N+1 (were
+--                                  written to the just-finalized week, where
+--                                  the roster page never reads them)
