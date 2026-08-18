@@ -85,13 +85,23 @@ export async function POST(req: NextRequest) {
     const recA = getRecord(a.member_id, completedRows);
     const recB = getRecord(b.member_id, completedRows);
 
+    // Weekly tokens are secret pre-lock. A member sees only their own token here;
+    // the opponent's is revealed ONLY via Recon (token 9) — that's its exclusive power.
+    const callerInMatchup = rows.some((r) => r.member_id === me.id);
+    const callerToken = tokenMap[me.id];
+    const callerHasRecon = callerInMatchup && callerToken?.token_id === 9 && callerToken.status === "pending";
+
     const formatTeam = (row: MatchupDbRow, rec: { wins: number; losses: number }) => {
       const name = row.league_members?.team_name ?? "Unknown";
       const faction = row.league_members?.faction ?? "unknown";
       const token = tokenMap[row.member_id];
-      const tokenStr = token
-        ? `Token: ${TOKEN_NAMES[token.token_id] ?? `#${token.token_id}`} (${token.status})`
-        : "Token: unknown";
+      const isCallerRow = row.member_id === me.id;
+      const tokenVisible = isCallerRow || callerHasRecon;
+      const tokenStr = !tokenVisible
+        ? "Token: shrouded from the Oracle's sight"
+        : token
+          ? `Token: ${TOKEN_NAMES[token.token_id] ?? `#${token.token_id}`} (${token.status})`
+          : "Token: unknown";
       const proj = row.projected != null ? `Projected: ${row.projected.toFixed(1)} pts` : "Projected: TBD";
       return `${name} [${faction}] — ${rec.wins}W-${rec.losses}L — ${proj} — ${tokenStr}`;
     };

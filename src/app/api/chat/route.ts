@@ -12,6 +12,13 @@ export async function POST(req: NextRequest) {
     if (!leagueId || !Array.isArray(messages)) {
       return NextResponse.json({ error: "Missing league_id or messages" }, { status: 400 });
     }
+    // Bound message sizes — rate limiting caps request COUNT, but a single
+    // oversized message could still run up Anthropic spend.
+    const totalChars = messages.reduce(
+      (s: number, m: { content?: unknown }) => s + (typeof m?.content === "string" ? m.content.length : 0), 0);
+    if (totalChars > 8000 || messages.some((m: { content?: unknown }) => typeof m?.content === "string" && m.content.length > 2000)) {
+      return NextResponse.json({ error: "Message too long — keep it under 2000 characters." }, { status: 400 });
+    }
 
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();

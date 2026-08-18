@@ -262,6 +262,7 @@ export default async function RecordBookPage({
     .select("matchup_id, member_id, week, points, is_complete, void_result, league_members(team_name, faction)")
     .eq("league_id", leagueId)
     .eq("season", league.season)
+    .eq("is_playoff", false)
     .returns<MatchupRow[]>();
 
   const records = buildRecords(matchupRows ?? []);

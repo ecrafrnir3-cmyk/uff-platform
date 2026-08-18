@@ -203,11 +203,11 @@ export async function respondToTrade(formData: FormData) {
   const tradeId  = formData.get("tradeId") as string;
   const accept   = formData.get("accept") === "true";
 
-  // Enforce trade deadline for acceptances
+  // Enforce trade deadline + roster-size limits for acceptances
   if (accept) {
     const { data: leagueSettings } = await supabase
       .from("uff_leagues")
-      .select("trade_deadline_week")
+      .select("trade_deadline_week, draft_rounds, lineup_slots")
       .eq("id", leagueId)
       .maybeSingle();
     if (leagueSettings?.trade_deadline_week) {
@@ -215,6 +215,42 @@ export async function respondToTrade(formData: FormData) {
       if (currentWeek > leagueSettings.trade_deadline_week) {
         redirect(`/dashboard/league/${leagueId}/roster?error=${encodeURIComponent(
           `Trade deadline has passed (Week ${leagueSettings.trade_deadline_week}). This trade can no longer be accepted.`
+        )}`);
+      }
+    }
+
+    // Uneven trades (2-for-1 etc.) must leave BOTH rosters legal: no more than
+    // the roster cap (draft_rounds) and no fewer than the starter count.
+    const { data: tradeRow } = await supabase
+      .from("uff_trades")
+      .select("proposer_id, receiver_id, proposer_player_ids, receiver_player_ids")
+      .eq("id", tradeId)
+      .maybeSingle();
+    if (tradeRow && leagueSettings) {
+      const giveP = (tradeRow.proposer_player_ids as string[] | null)?.length ?? 0;
+      const giveR = (tradeRow.receiver_player_ids as string[] | null)?.length ?? 0;
+      const { data: activeRows } = await supabase
+        .from("uff_roster_players")
+        .select("member_id")
+        .in("member_id", [tradeRow.proposer_id, tradeRow.receiver_id])
+        .is("dropped_at", null)
+        .eq("slot", "active");
+      const counts: Record<string, number> = {};
+      for (const r of activeRows ?? []) counts[r.member_id] = (counts[r.member_id] ?? 0) + 1;
+      const cap = leagueSettings.draft_rounds as number;
+      const slots = (leagueSettings.lineup_slots as Record<string, number> | null) ?? { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DEF: 1 };
+      const minStarters = Object.values(slots).reduce((s, n) => s + Number(n), 0);
+      const postProposer = (counts[tradeRow.proposer_id] ?? 0) - giveP + giveR;
+      const postReceiver = (counts[tradeRow.receiver_id] ?? 0) - giveR + giveP;
+      const bad =
+        postProposer > cap ? `the proposer over the ${cap}-player roster limit (${postProposer})` :
+        postReceiver > cap ? `you over the ${cap}-player roster limit (${postReceiver})` :
+        postProposer < minStarters ? `the proposer under the ${minStarters}-starter minimum (${postProposer})` :
+        postReceiver < minStarters ? `you under the ${minStarters}-starter minimum (${postReceiver})` :
+        null;
+      if (bad) {
+        redirect(`/dashboard/league/${leagueId}/roster?error=${encodeURIComponent(
+          `This trade would leave ${bad}. Adjust the players involved and re-propose.`
         )}`);
       }
     }

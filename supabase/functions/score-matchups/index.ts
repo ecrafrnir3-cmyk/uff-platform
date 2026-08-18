@@ -78,13 +78,28 @@ interface TsUpdate {
 interface TokenEffect { id: number; choice: string | null; }
 
 function resolveToken(tokenId: number, choice: string | null): TokenEffect | null {
-  // Token 18 = Second Wind: replay a past token stored as its id in `choice`
+  // Token 18 = Second Wind: replay a past token. `choice` is either "9" or,
+  // when the replayed token itself needs a choice (Position Power), "7:RB" —
+  // the sub-choice must survive the replay or the token silently no-ops.
   if (tokenId === 18) {
-    const past = parseInt(choice ?? '');
-    return isNaN(past) ? null : { id: past, choice: null };
+    const [pastStr, subChoice] = (choice ?? '').split(':');
+    const past = parseInt(pastStr);
+    return isNaN(past) ? null : { id: past, choice: subChoice ?? null };
   }
   return { id: tokenId, choice };
 }
+
+// ── Lineup fallbacks ─────────────────────────────────────────────────────────
+// A member with no saved lineup for the week must NOT score their whole roster
+// (audit: isStarter defaulted true with no lineup rows). Fallback order:
+//   1. this week's saved lineup;  2. most recent prior week's lineup (players
+//   still rostered);  3. auto-filled best legal lineup from the league's slot
+//   template (projections first, actual points as tiebreak/fallback).
+const DEFAULT_LINEUP_SLOTS: Record<string, number> = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DEF: 1 };
+const SLOT_ELIGIBLE: Record<string, string[]> = {
+  QB: ['QB'], RB: ['RB'], WR: ['WR'], TE: ['TE'],
+  FLEX: ['RB', 'WR', 'TE'], K: ['K'], DEF: ['DEF', 'DST'], DST: ['DEF', 'DST'],
+};
 
 interface PlayerScore {
   pts:       number;
@@ -147,18 +162,22 @@ Deno.serve(async (req) => {
 
   const { data: leagues, error: lgErr } = await supabase
     .from('uff_leagues')
-    .select('id, scoring_settings')
+    .select('id, scoring_settings, lineup_slots')
     .in('id', leagueIds);
   if (lgErr) return new Response(JSON.stringify({ error: `leagues: ${lgErr.message}` }), { status: 500 });
 
   const settingsMap: Record<string, Record<string, number>> = {};
-  for (const lg of (leagues ?? [])) settingsMap[lg.id] = lg.scoring_settings ?? {};
+  const slotTemplateMap: Record<string, Record<string, number>> = {};
+  for (const lg of (leagues ?? [])) {
+    settingsMap[lg.id] = lg.scoring_settings ?? {};
+    slotTemplateMap[lg.id] = (lg.lineup_slots as Record<string, number> | null) ?? DEFAULT_LINEUP_SLOTS;
+  }
 
   // ── Parallel data fetch ───────────────────────────────────────────────────
   // Every result is error-checked: writing scores computed from silently-empty
   // maps overwrote real points with zeros (audit U7). Fail loudly instead.
   const [
-    powersQ, bitesQ, rostersQ, lineupsQ, factionsQ, nflTeamsQ, tokensQ, historyQ,
+    powersQ, bitesQ, rostersQ, lineupsQ, factionsQ, nflTeamsQ, tokensQ, historyQ, priorLineupsQ,
   ] = await Promise.all([
     supabase
       .from('player_draft_powers')
@@ -180,11 +199,16 @@ Deno.serve(async (req) => {
       .eq('week', week),
     // Win history for Momentum token streak computation
     supabase.from('uff_matchups')
-      .select('member_id, matchup_id, week, points, league_id')
+      .select('member_id, matchup_id, week, points, league_id, void_result')
       .in('member_id', memberIds)
       .eq('season', season)
       .lt('week', week)
       .eq('is_complete', true),
+    // Prior weeks' lineups for the carry-forward fallback
+    supabase.from('uff_lineups')
+      .select('member_id, player_id, week')
+      .in('member_id', memberIds)
+      .lt('week', week),
   ]);
 
   const queryErrors = [
@@ -192,6 +216,7 @@ Deno.serve(async (req) => {
     ['uff_roster_players', rostersQ.error], ['uff_lineups', lineupsQ.error],
     ['league_members', factionsQ.error],    ['nfl_teams', nflTeamsQ.error],
     ['weekly_token_assignments', tokensQ.error], ['win_history', historyQ.error],
+    ['prior_lineups', priorLineupsQ.error],
   ].filter(([, e]) => e != null);
   if (queryErrors.length > 0) {
     const msg = queryErrors.map(([name, e]) => `${name}: ${(e as { message: string }).message}`).join('; ');
@@ -259,6 +284,14 @@ Deno.serve(async (req) => {
     lineupMap[l.member_id].add(l.player_id);
   }
 
+  // Latest prior week's lineup per member (carry-forward source)
+  const priorByMember: Record<string, { week: number; ids: string[] }> = {};
+  for (const l of (priorLineupsQ.data ?? [])) {
+    const cur = priorByMember[l.member_id];
+    if (!cur || l.week > cur.week) priorByMember[l.member_id] = { week: l.week, ids: [l.player_id] };
+    else if (l.week === cur.week) cur.ids.push(l.player_id);
+  }
+
   const memberFactionMap: Record<string, string> = {};
   for (const m of (memberFactionRows ?? [])) {
     if (m.faction) memberFactionMap[m.id] = m.faction;
@@ -292,25 +325,27 @@ Deno.serve(async (req) => {
     if (eff) tokenMap[t.member_id] = eff;
   }
 
-  // Win streak map for Momentum token (consecutive wins before this week)
+  // Win streak map for Momentum token (consecutive wins before this week).
+  // An Insurance-voided loss ('V') is a no-contest: it neither extends nor
+  // breaks the streak — the rulebook says it doesn't count toward the record.
   const winStreakMap: Record<string, number> = {};
   {
-    const pairBuckets: Record<string, { member_id: string; points: number; week: number }[]> = {};
+    const pairBuckets: Record<string, { member_id: string; points: number; week: number; voided: boolean }[]> = {};
     for (const row of (winHistoryRows ?? [])) {
       const key = `${row.league_id}-${row.week}-${row.matchup_id}`;
       if (!pairBuckets[key]) pairBuckets[key] = [];
-      pairBuckets[key].push({ member_id: row.member_id, points: row.points ?? 0, week: row.week });
+      pairBuckets[key].push({ member_id: row.member_id, points: row.points ?? 0, week: row.week, voided: !!row.void_result });
     }
-    const results: Record<string, Record<number, 'W'|'L'|'T'>> = {};
+    const results: Record<string, Record<number, 'W'|'L'|'T'|'V'>> = {};
     for (const sides of Object.values(pairBuckets)) {
       if (sides.length !== 2) continue;
       const [a, b] = sides;
       if (!results[a.member_id]) results[a.member_id] = {};
       if (!results[b.member_id]) results[b.member_id] = {};
       if (a.points > b.points) {
-        results[a.member_id][a.week] = 'W'; results[b.member_id][b.week] = 'L';
+        results[a.member_id][a.week] = 'W'; results[b.member_id][b.week] = b.voided ? 'V' : 'L';
       } else if (b.points > a.points) {
-        results[b.member_id][b.week] = 'W'; results[a.member_id][a.week] = 'L';
+        results[b.member_id][b.week] = 'W'; results[a.member_id][a.week] = a.voided ? 'V' : 'L';
       } else {
         results[a.member_id][a.week] = 'T'; results[b.member_id][b.week] = 'T';
       }
@@ -319,9 +354,64 @@ Deno.serve(async (req) => {
       const mr = results[memberId] ?? {};
       const weeks = Object.keys(mr).map(Number).sort((x, y) => y - x);
       let streak = 0;
-      for (const w of weeks) { if (mr[w] === 'W') streak++; else break; }
+      for (const w of weeks) {
+        if (mr[w] === 'W') streak++;
+        else if (mr[w] === 'V') continue;
+        else break;
+      }
       winStreakMap[memberId] = streak;
     }
+  }
+
+  // ── Effective lineups: saved → carried-forward → auto-filled ─────────────
+  const effectiveLineupMap: Record<string, Set<string>> = {};
+  for (const matchup of typedMatchups) {
+    const memberId = matchup.member_id;
+    if (effectiveLineupMap[memberId]) continue;
+    if (lineupMap[memberId] && lineupMap[memberId].size > 0) {
+      effectiveLineupMap[memberId] = lineupMap[memberId];
+      continue;
+    }
+    const roster = rosterMap[memberId] ?? [];
+    const rosterSet = new Set(roster);
+
+    // 1) Carry forward the most recent prior lineup (only players still rostered)
+    const prior = priorByMember[memberId];
+    const carried = prior ? prior.ids.filter((pid) => rosterSet.has(pid)) : [];
+    if (carried.length > 0) {
+      effectiveLineupMap[memberId] = new Set(carried);
+      continue;
+    }
+
+    // 2) Never set a lineup — auto-fill the league's slot template, best first
+    const template = slotTemplateMap[matchup.league_id] ?? DEFAULT_LINEUP_SLOTS;
+    const settings = settingsMap[matchup.league_id] ?? {};
+    const ranked = roster.map((pid) => ({
+      pid,
+      pos: playerPosMap[pid] ?? '',
+      proj: calcScore(allProj[pid] ?? {}, settings),
+      pts:  calcScore(allStats[pid] ?? {}, settings),
+    }));
+    ranked.sort((a, b) => (projOk ? (b.proj - a.proj) || (b.pts - a.pts) : b.pts - a.pts));
+    const chosen = new Set<string>();
+    const fillSlot = (slotBase: string, count: number) => {
+      const elig = SLOT_ELIGIBLE[slotBase] ?? [slotBase];
+      let filled = 0;
+      for (const r of ranked) {
+        if (filled >= count) break;
+        if (chosen.has(r.pid)) continue;
+        if (elig.includes(r.pos)) { chosen.add(r.pid); filled++; }
+      }
+    };
+    // Dedicated slots first so FLEX takes leftovers
+    for (const [slotBase, count] of Object.entries(template)) {
+      const base = slotBase.toUpperCase();
+      if (base === 'FLEX') continue;
+      fillSlot(base, count as number);
+    }
+    const flexCount = Number(template['FLEX'] ?? template['flex'] ?? 0);
+    if (flexCount > 0) fillSlot('FLEX', flexCount);
+    effectiveLineupMap[memberId] = chosen;
   }
 
   // ── First pass: score ALL roster players (starters + bench) ──────────────
@@ -337,7 +427,7 @@ Deno.serve(async (req) => {
     const settings     = settingsMap[matchup.league_id] ?? {};
     const leaguePowers = powerMap[matchup.league_id]    ?? {};
     const lsTimeStone  = timeStoneMap[matchup.league_id] ?? {};
-    const lineupSet    = lineupMap[matchup.member_id];
+    const lineupSet    = effectiveLineupMap[matchup.member_id] ?? new Set<string>();
     const allPlayers   = rosterMap[matchup.member_id] ?? [];
 
     fullScoreCache[matchup.member_id]    = fullScoreCache[matchup.member_id]    ?? {};
@@ -349,7 +439,7 @@ Deno.serve(async (req) => {
       const projData = allProj[playerId]  ?? {};
       const base     = calcScore(stats, settings);
       const baseProj = calcScore(projData, settings);
-      const isStarter = lineupSet ? lineupSet.has(playerId) : true;
+      const isStarter = lineupSet.has(playerId);
       let pts  = base;
       let proj = baseProj;
 
@@ -358,7 +448,7 @@ Deno.serve(async (req) => {
         if (pe.power === 'time_stone') {
           const ts      = lsTimeStone[playerId];
           const injured = TS_INJURED_STATUSES.has(injuryStatusMap[playerId] ?? '');
-          const inStart = lineupSet?.has(playerId) ?? true;
+          const inStart = lineupSet.has(playerId);
           if (ts) {
             if (ts.freezeBrokenAt) {
               if (!injured) {

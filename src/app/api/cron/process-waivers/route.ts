@@ -54,13 +54,17 @@ export async function GET(req: NextRequest) {
 
   const week = getCurrentNFLWeek();
 
-  // Find leagues with auto-waiver enabled for this exact ET day + hour
+  // Find leagues whose waiver window is due: same ET day, scheduled hour AT OR
+  // BEFORE now. GitHub Actions hourly crons routinely skip runs — an exact
+  // hour match meant a skipped run skipped that league's waivers for the whole
+  // week (audit M3). Later same-day runs now catch up; already-processed bids
+  // are no longer 'pending', so repeat runs are no-ops.
   const { data: leagues, error: fetchErr } = await supabase
     .from("uff_leagues")
     .select("id, name, commissioner_id, waiver_day, waiver_hour, waiver_type")
     .eq("waiver_auto", true)
     .eq("waiver_day", etDow)
-    .eq("waiver_hour", etHour)
+    .lte("waiver_hour", etHour)
     .returns<LeagueRow[]>();
 
   if (fetchErr) {

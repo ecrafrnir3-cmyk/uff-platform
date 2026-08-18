@@ -134,9 +134,18 @@ export default async function TransactionsPage({
     });
   }
 
-  // Waiver adds + drops (exclude draft picks)
+  // Roster rows created by an executed trade are reported by the trade event
+  // itself — showing them as waiver "adds" double-reported every trade.
+  const tradedKeys = new Set<string>();
+  for (const t of trades) {
+    for (const pid of t.proposer_player_ids) tradedKeys.add(`${t.receiver_id}|${pid}`);
+    for (const pid of t.receiver_player_ids) tradedKeys.add(`${t.proposer_id}|${pid}`);
+  }
+
+  // Waiver adds + drops (exclude draft picks and trade acquisitions)
   for (const r of rosterRows) {
     const isDrafted = draftedKeys.has(`${r.member_id}|${r.player_id}`);
+    const isTraded  = tradedKeys.has(`${r.member_id}|${r.player_id}`);
     const player: PlayerInfo = {
       playerId: r.player_id,
       playerName: r.players?.full_name ?? r.player_id,
@@ -146,8 +155,8 @@ export default async function TransactionsPage({
     const teamName = r.league_members?.team_name ?? "Unknown";
     const faction = r.league_members?.faction ?? null;
 
-    // Add event — only for non-draft waiver pickups
-    if (!isDrafted) {
+    // Add event — only for genuine waiver pickups
+    if (!isDrafted && !isTraded) {
       transactions.push({
         type: "add",
         id: r.id + "-add",

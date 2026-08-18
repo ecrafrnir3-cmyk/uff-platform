@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { notifyNextPicker } from "@/lib/draft-notify";
 
 async function getMemberId(leagueId: string): Promise<{ memberId: string | null; error?: string }> {
   const supabase = await createClient();
@@ -162,6 +163,8 @@ export async function executeAutodraft(leagueId: string): Promise<{
     .eq("member_id", memberId)
     .eq("player_id", targetId);
 
+  await notifyNextPicker(supabase, leagueId);
+
   return {
     player: {
       id: targetId,
@@ -169,4 +172,34 @@ export async function executeAutodraft(leagueId: string): Promise<{
       position: playerInfo?.position ?? null,
     },
   };
+}
+
+// ── Force-autopick: any league member can invoke this once the on-the-clock
+// member's pick clock has expired (server-validated). This is the safety net
+// for the offline-picker freeze (audit U6): the clock no longer depends on the
+// on-the-clock user's browser being open. The force_autopick RPC re-validates
+// the deadline server-side from the last pick's picked_at, so early or
+// duplicate calls are harmless no-ops.
+export async function forceAutopick(leagueId: string): Promise<{
+  error?: string;
+  picked?: boolean;
+}> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const { memberId, error: memberErr } = await getMemberId(leagueId);
+  if (!memberId) return { error: memberErr };
+
+  const { data, error } = await supabase.rpc("force_autopick", {
+    p_league_id: leagueId,
+  });
+
+  if (error) {
+    // "clock not expired" / "not drafting" / lost race — all expected no-ops
+    return { error: error.message };
+  }
+
+  if (data) await notifyNextPicker(supabase, leagueId);
+  return { picked: !!data };
 }

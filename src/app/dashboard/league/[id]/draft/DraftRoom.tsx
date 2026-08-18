@@ -5,7 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import TrendingPlayers from "@/components/TrendingPlayers";
 import { makeDraftPick, assignPowerToPick, assignVampireBite, swapForesightCoin, executeHeist, restoreHeistOrder, revealNextPower } from "./actions";
-import { addToQueue, removeFromQueue, saveQueueOrder, executeAutodraft } from "./queue-actions";
+import { addToQueue, removeFromQueue, saveQueueOrder, executeAutodraft, forceAutopick } from "./queue-actions";
 import { addToWatchlist, removeFromWatchlist } from "./watchlist-actions";
 import { startDraft } from "../actions";
 
@@ -75,6 +75,7 @@ interface League {
   max_teams: number;
   draft_rounds: number;
   pick_clock_seconds?: number | null;
+  draft_started_at?: string | null;
 }
 
 interface PowerRow {
@@ -788,9 +789,12 @@ export default function DraftRoom({
   // Watchlist
   const [watchlistIds, setWatchlistIds] = useState<Set<string>>(new Set(initialWatchlist));
   const [watchlistPlayers, setWatchlistPlayers] = useState<Player[]>([]);
-  // Pick clock
+  // Pick clock — server-anchored: deadline derives from the last pick's
+  // picked_at (or draft_started_at for pick 1), so every client sees the same
+  // clock and an offline picker can't freeze the draft.
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
-  const needsAutopickRef = useRef(false);
+  const autopickFiredForPickRef = useRef<number | null>(null);
+  const forceFiredForPickRef = useRef<number | null>(null);
   // Round buffer
   const [roundBufferActive, setRoundBufferActive] = useState(false);
   const [roundBufferTimeLeft, setRoundBufferTimeLeft] = useState(30);
@@ -976,38 +980,63 @@ export default function DraftRoom({
       .then(({ data }) => { if (data) setWatchlistPlayers(data as Player[]); });
   }, [watchlistIds]);
 
-  // ---- Pick clock countdown -----------------------------------------------
+  // ---- Pick clock: server-anchored deadline (same on every client) ---------
+  // Anchor = last pick's picked_at (or draft_started_at for pick #1).
+  // Round-first picks get the 30s round buffer added, matching the buffer UI.
+  const clockSecs = league.pick_clock_seconds ?? null;
+  const lastPickAt = picks.length > 0 ? picks[picks.length - 1].picked_at : null;
+  const clockAnchorIso = lastPickAt ?? league.draft_started_at ?? null;
+  const isRoundFirstPick = (currentPickNo - 1) % league.max_teams === 0;
+  const pickDeadlineMs =
+    clockSecs && clockAnchorIso && draftStatus === "in_progress" && !isDraftComplete
+      ? new Date(clockAnchorIso).getTime() + ((isRoundFirstPick ? 30 : 0) + clockSecs) * 1000
+      : null;
+
   useEffect(() => {
-    const secs = league.pick_clock_seconds;
-    if (!secs || !isMyTurn || isDraftComplete || roundBufferActive) {
+    if (!pickDeadlineMs || roundBufferActive) {
       setTimeLeft(null);
-      needsAutopickRef.current = false;
       return;
     }
-    setTimeLeft(secs);
-    needsAutopickRef.current = false;
-    const id = window.setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev === null) return null;
-        if (prev <= 1) {
-          needsAutopickRef.current = true;
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    const tick = () =>
+      setTimeLeft(Math.max(0, Math.ceil((pickDeadlineMs - Date.now()) / 1000)));
+    tick();
+    const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMyTurn, isDraftComplete, roundBufferActive]);
+  }, [pickDeadlineMs, roundBufferActive]);
 
-  // Fire autopick when timeLeft hits 0
+  // On-the-clock client: fire self-autodraft once when the deadline passes
   useEffect(() => {
-    if (timeLeft === 0 && needsAutopickRef.current && isMyTurn && !submitting && !isDraftComplete) {
-      needsAutopickRef.current = false;
+    if (
+      timeLeft === 0 &&
+      isMyTurn &&
+      !submitting &&
+      !isDraftComplete &&
+      pickDeadlineMs &&
+      autopickFiredForPickRef.current !== currentPickNo
+    ) {
+      autopickFiredForPickRef.current = currentPickNo;
       handleAutodraft();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeLeft]);
+  }, [timeLeft, isMyTurn, submitting, isDraftComplete, currentPickNo, pickDeadlineMs]);
+
+  // Every OTHER client: safety net for an offline picker (audit U6). After the
+  // deadline plus a grace window, any client may force the pick server-side.
+  // Random jitter spreads the calls; the force_autopick RPC re-validates the
+  // deadline and turn, so losers of the race are cheap no-ops.
+  useEffect(() => {
+    if (timeLeft !== 0 || isMyTurn || isDraftComplete || !pickDeadlineMs) return;
+    if (forceFiredForPickRef.current === currentPickNo) return;
+    const delay = 15000 + Math.random() * 5000; // 15s grace + 0-5s jitter
+    const t = window.setTimeout(async () => {
+      if (forceFiredForPickRef.current === currentPickNo) return;
+      forceFiredForPickRef.current = currentPickNo;
+      await forceAutopick(leagueId);
+      fetchPicks();
+    }, delay);
+    return () => window.clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeLeft, isMyTurn, isDraftComplete, currentPickNo, pickDeadlineMs, leagueId]);
 
   // ---- Early return: pre-draft lobby -----------------------------------------
   if (draftStatus === "not_started") {
@@ -1536,20 +1565,45 @@ export default function DraftRoom({
             ) : (
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <p className="text-sm text-white">
-                  Waiting on{" "}
-                  <span className="font-semibold" style={{ color: "#f4f4f8" }}>
-                    {currentMember?.team_name ?? "another manager"}
-                  </span>{" "}
-                  to pick...
+                  {timeLeft === 0 ? (
+                    <>
+                      <span className="font-semibold" style={{ color: "#CC0000" }}>
+                        {currentMember?.team_name ?? "Another manager"}
+                      </span>{" "}
+                      ran out of time — autopicking…
+                    </>
+                  ) : (
+                    <>
+                      Waiting on{" "}
+                      <span className="font-semibold" style={{ color: "#f4f4f8" }}>
+                        {currentMember?.team_name ?? "another manager"}
+                      </span>{" "}
+                      to pick...
+                    </>
+                  )}
                 </p>
-                {myNextPickNo !== null && (
-                  <span
-                    className="rounded-full px-3 py-1 text-xs font-semibold"
-                    style={{ background: "#1c1c2b", color: "#FFD700", border: "1px solid rgba(255,215,0,0.25)" }}
-                  >
-                    Your next pick: #{myNextPickNo}
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {timeLeft !== null && timeLeft > 0 && (
+                    <span
+                      className="rounded-full px-3 py-1 text-xs font-bold tabular-nums"
+                      style={{
+                        background: timeLeft <= 10 ? "rgba(204,0,0,0.18)" : "#1c1c2b",
+                        color: timeLeft <= 10 ? "#CC0000" : "#d4d4e8",
+                        border: `1px solid ${timeLeft <= 10 ? "#CC0000" : "#2a2a40"}`,
+                      }}
+                    >
+                      ⏱ {timeLeft}s
+                    </span>
+                  )}
+                  {myNextPickNo !== null && (
+                    <span
+                      className="rounded-full px-3 py-1 text-xs font-semibold"
+                      style={{ background: "#1c1c2b", color: "#FFD700", border: "1px solid rgba(255,215,0,0.25)" }}
+                    >
+                      Your next pick: #{myNextPickNo}
+                    </span>
+                  )}
+                </div>
               </div>
             )}
           </div>

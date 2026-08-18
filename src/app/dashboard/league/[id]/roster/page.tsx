@@ -230,7 +230,8 @@ function WeeklyTokenCard({
         )}
         {choice && tokenId === 18 && (
           <span className="ml-2 text-sm font-normal" style={{ color: "#f4f4f8" }}>
-            (replaying: {TOKEN_INFO[parseInt(choice)]?.name ?? choice})
+            (replaying: {TOKEN_INFO[parseInt(choice)]?.name ?? choice}
+            {choice.includes(":") ? ` → ${choice.split(":")[1]}` : ""})
           </span>
         )}
       </p>
