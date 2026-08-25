@@ -109,11 +109,19 @@ export default function PushNotificationsCard({
         setStatus(perm === "denied" ? "denied" : "off");
         return;
       }
+      // Decode + sanity-check the key: a real VAPID public key is a 65-byte
+      // P-256 point. A wrong/truncated value would otherwise fail deep inside
+      // subscribe() with an opaque browser error.
+      const appServerKey = urlBase64ToUint8Array(key);
+      if (appServerKey.length !== 65) {
+        setError("Push key is misconfigured — the server key looks invalid.");
+        return;
+      }
       const reg = await navigator.serviceWorker.register("/sw.js");
       await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(key).buffer as ArrayBuffer,
+        applicationServerKey: appServerKey.buffer as ArrayBuffer,
       });
       const json = sub.toJSON();
       if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
