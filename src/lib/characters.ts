@@ -40,26 +40,46 @@ export async function syncCharacterForFaction(
     const currentFaction = embeddedFaction(mem?.uff_characters);
     if (mem?.character_id && currentFaction === faction) return; // already correct
 
-    const { data: takenRows } = await admin
-      .from("league_members")
-      .select("character_id")
-      .eq("league_id", leagueId)
-      .not("character_id", "is", null);
-    const taken = new Set(
-      (takenRows ?? [])
-        .map((r) => r.character_id as number)
-        .filter((id) => id !== mem?.character_id)
-    );
-
     const { data: pool } = await admin
       .from("uff_characters")
       .select("id")
       .eq("faction", faction);
-    const available = (pool ?? []).map((c) => c.id as number).filter((id) => !taken.has(id));
-    if (available.length === 0) return; // 10 per faction >= max faction size, so shouldn't happen
+    const poolIds = (pool ?? []).map((c) => c.id as number);
 
-    const pick = available[Math.floor(Math.random() * available.length)];
-    await admin.from("league_members").update({ character_id: pick }).eq("id", memberId);
+    // Retry loop: a partial UNIQUE index on (league_id, character_id) rejects a
+    // concurrent duplicate draw with 23505 — re-read what's taken and pick again,
+    // so a losing writer grabs a different character instead of duplicating.
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const { data: takenRows } = await admin
+        .from("league_members")
+        .select("character_id")
+        .eq("league_id", leagueId)
+        .not("character_id", "is", null);
+      const taken = new Set(
+        (takenRows ?? [])
+          .map((r) => r.character_id as number)
+          .filter((id) => id !== mem?.character_id)
+      );
+      const available = poolIds.filter((id) => !taken.has(id));
+      if (available.length === 0) {
+        // No character of this faction remains — clear any stale (wrong-faction)
+        // cast rather than leaving character_id pointing at the old faction.
+        await admin.from("league_members").update({ character_id: null }).eq("id", memberId);
+        return;
+      }
+      const pick = available[Math.floor(Math.random() * available.length)];
+      const { error } = await admin
+        .from("league_members")
+        .update({ character_id: pick })
+        .eq("id", memberId);
+      if (!error) return;
+      if (error.code !== "23505") {
+        console.error("[characters] assign failed:", error.message);
+        return;
+      }
+      // 23505: someone took `pick` between our read and write — loop and re-pick.
+    }
+    console.error("[characters] assign exhausted retries for member", memberId);
   } catch (err) {
     console.error("[characters] syncCharacterForFaction failed:", err);
   }

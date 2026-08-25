@@ -66,18 +66,30 @@ export default async function CharacterPage({ params }: { params: Promise<{ id: 
             style={{ borderColor: "#2a2a40" }}
           >
             <span className="text-4xl select-none">🎭</span>
-            <p className="text-base font-semibold">You haven&apos;t been cast yet</p>
-            <p className="max-w-md text-sm leading-relaxed" style={{ color: "#a0a0c0" }}>
-              Choose your side — Hero or Villain — on the league page, and one of the twenty legends
-              of the war will be drawn for you.
-            </p>
-            <Link
-              href={`/dashboard/league/${leagueId}`}
-              className="rounded-md px-4 py-2 text-sm font-semibold"
-              style={{ background: "#0057FF", color: "#f4f4f8" }}
-            >
-              Choose your faction
-            </Link>
+            {faction ? (
+              <>
+                <p className="text-base font-semibold">Your legend is being drawn…</p>
+                <p className="max-w-md text-sm leading-relaxed" style={{ color: "#a0a0c0" }}>
+                  You&apos;ve chosen your side. One of the war&apos;s legends is being cast for you —
+                  reload in a moment to meet them.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-base font-semibold">You haven&apos;t been cast yet</p>
+                <p className="max-w-md text-sm leading-relaxed" style={{ color: "#a0a0c0" }}>
+                  Choose your side — Hero or Villain — on the league page, and one of the twenty
+                  legends of the war will be drawn for you.
+                </p>
+                <Link
+                  href={`/dashboard/league/${leagueId}`}
+                  className="rounded-md px-4 py-2 text-sm font-semibold"
+                  style={{ background: "#0057FF", color: "#f4f4f8" }}
+                >
+                  Choose your faction
+                </Link>
+              </>
+            )}
           </section>
         ) : (
           <div className="grid gap-6 sm:grid-cols-[minmax(0,300px)_1fr]">

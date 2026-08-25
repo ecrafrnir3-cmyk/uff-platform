@@ -37,8 +37,8 @@ export async function createLeague(formData: FormData) {
     redirect("/dashboard?error=" + encodeURIComponent("League name and team name are required."));
   }
 
-  if (!Number.isInteger(maxTeams) || maxTeams < 2 || maxTeams % 2 !== 0) {
-    redirect("/dashboard?error=" + encodeURIComponent("League size must be an even number of teams."));
+  if (!Number.isInteger(maxTeams) || maxTeams < 2 || maxTeams > 16 || maxTeams % 2 !== 0) {
+    redirect("/dashboard?error=" + encodeURIComponent("League size must be an even number of teams between 2 and 16."));
   }
 
   // Generate a unique 6-character join code (retry on the rare collision).

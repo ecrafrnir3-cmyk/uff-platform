@@ -31,3 +31,16 @@ ALTER TABLE public.league_members
 REVOKE SELECT ON public.uff_characters FROM anon, authenticated;
 GRANT SELECT (id, faction, name, epithet, domain, starter_story, art_url)
   ON public.uff_characters TO anon, authenticated;
+
+-- Hardening (post-review):
+-- One character per (league, character) — blocks duplicate casting from a
+-- concurrent draw race or direct-API tampering. Partial (character_id nullable).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_league_member_character
+  ON public.league_members (league_id, character_id)
+  WHERE character_id IS NOT NULL;
+
+-- Cap league size at the UI max (16) so a crafted POST can't push faction
+-- capacity (max_teams/2) past the 10-per-faction character pool.
+ALTER TABLE public.uff_leagues DROP CONSTRAINT IF EXISTS uff_leagues_max_teams_range;
+ALTER TABLE public.uff_leagues ADD CONSTRAINT uff_leagues_max_teams_range
+  CHECK (max_teams BETWEEN 2 AND 16);

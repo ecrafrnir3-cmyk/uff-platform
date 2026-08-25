@@ -25,6 +25,11 @@ export async function startDraft(formData: FormData) {
     redirect(`/dashboard/league/${leagueId}?error=` + encodeURIComponent(error.message));
   }
 
+  // Safety net: ensure every factioned manager is cast as a character before
+  // the draft locks (covers a member who slipped past the per-faction-pick
+  // assignment, e.g. a transient failure). Never throws.
+  await syncAllCharactersForLeague(leagueId);
+
   // First overall pick is on the clock the moment the draft opens — without
   // this, the #1 picker never hears about it (notifyNextPicker otherwise only
   // fires AFTER a pick lands). Never throws.
