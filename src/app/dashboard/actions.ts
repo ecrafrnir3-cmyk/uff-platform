@@ -76,6 +76,21 @@ export async function createLeague(formData: FormData) {
     .single();
 
   if (leagueError || !league) {
+    // A unique-violation here means a concurrent double-submit: the other request
+    // already created this forming league (DB index uq_forming_league_name_per_
+    // commissioner). Redirect to the existing one instead of erroring.
+    if (leagueError?.code === "23505") {
+      const { data: existing } = await supabase
+        .from("uff_leagues")
+        .select("id")
+        .eq("commissioner_id", user.id)
+        .eq("name", name)
+        .eq("status", "forming")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (existing?.id) redirect(`/dashboard/league/${existing.id}`);
+    }
     redirect("/dashboard?error=" + encodeURIComponent(leagueError?.message ?? "Could not create league."));
   }
 
