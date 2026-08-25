@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { randomizeFactions, setMyFaction, startDraft } from "./actions";
+import RenameTeam from "./RenameTeam";
 import NewsletterCard from "./NewsletterCard";
 
 interface MemberRow {
@@ -74,7 +75,7 @@ export default async function LeagueDetailPage({
 
   const { data: me } = await supabase
     .from("league_members")
-    .select("id, faction, is_commissioner")
+    .select("id, faction, is_commissioner, team_name")
     .eq("league_id", leagueId)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -228,6 +229,10 @@ export default async function LeagueDetailPage({
             {decodeURIComponent(error)}
           </p>
         )}
+
+        <section className="rounded-lg border p-4" style={{ borderColor: "#2a2a40" }}>
+          <RenameTeam leagueId={leagueId} currentName={me.team_name} />
+        </section>
 
         {!draftLocked && (
           <section className="flex flex-col gap-4 rounded-lg border p-5" style={{ borderColor: "#2a2a40" }}>

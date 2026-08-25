@@ -112,6 +112,29 @@ export async function setMyFaction(formData: FormData) {
   redirect(`/dashboard/league/${leagueId}`);
 }
 
+/** A manager renames their own team. Client-invoked (returns {error?}). */
+export async function renameTeam(leagueId: string, rawName: string): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const name = (rawName ?? "").trim();
+  if (name.length < 2) return { error: "Team name must be at least 2 characters." };
+  if (name.length > 40) return { error: "Team name must be 40 characters or less." };
+
+  const { error } = await supabase
+    .from("league_members")
+    .update({ team_name: name })
+    .eq("league_id", leagueId)
+    .eq("user_id", user.id);
+  if (error) return { error: error.message };
+
+  revalidatePath(`/dashboard/league/${leagueId}`);
+  return {};
+}
+
 /** Commissioner-only: auto-balance any unassigned members to an even Hero/Villain split.
  *  Uses a single atomic Postgres RPC so a partial failure can never leave the
  *  league in a broken half-assigned state. */
