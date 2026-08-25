@@ -1,0 +1,25 @@
+-- APPLIED LIVE 2026-08-25 via Supabase MCP (migration:
+-- fix_generate_schedule_ambiguous_overload).
+--
+-- BUG (found via an autonomous full-draft rehearsal): two generate_schedule
+-- overloads existed —
+--   generate_schedule(uuid, uuid)                       -- a thin wrapper: PERFORM generate_schedule(l,u,14)
+--   generate_schedule(uuid, uuid, smallint DEFAULT 14)  -- the real body
+-- Because the 3-arg version has a DEFAULT, a 2-arg call matched BOTH candidates,
+-- so Postgres raised 42725 "function generate_schedule(uuid, uuid) is not unique".
+-- make_draft_pick calls generate_schedule(league, commissioner) on the FINAL pick
+-- inside a `BEGIN ... EXCEPTION WHEN OTHERS THEN NULL` block — so every league
+-- finished its draft with NO schedule (0 uff_matchups rows) and the error was
+-- swallowed silently. A season with no matchups has nothing for the scoring cron
+-- to score.
+--
+-- FIX: drop the redundant 2-arg wrapper. The remaining 3-arg version's
+-- DEFAULT 14 serves every existing 2-arg caller (make_draft_pick, the
+-- commissioner "generate schedule" action) with identical behavior, now
+-- unambiguously.
+--
+-- Verified: after the drop, a fresh 8-team/16-round autonomous draft completed
+-- with make_draft_pick auto-generating 112 matchups (8 teams x 14 weeks) on the
+-- final pick — issues=0.
+
+DROP FUNCTION IF EXISTS public.generate_schedule(uuid, uuid);

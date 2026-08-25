@@ -1450,17 +1450,11 @@ END;
 $function$
 ;
 
-CREATE OR REPLACE FUNCTION public.generate_schedule(p_league_id uuid, p_user_id uuid)
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-BEGIN
-  PERFORM generate_schedule(p_league_id, p_user_id, 14::smallint);
-END;
-$function$
-;
+-- NOTE: the redundant 2-arg generate_schedule(uuid, uuid) wrapper was DROPPED
+-- 2026-08-25 (migration fix_generate_schedule_ambiguous_overload) — it made
+-- 2-arg calls ambiguous with the 3-arg DEFAULT version below, silently breaking
+-- make_draft_pick's end-of-draft schedule generation. The 3-arg version's
+-- DEFAULT 14 covers all 2-arg callers.
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
  RETURNS trigger
