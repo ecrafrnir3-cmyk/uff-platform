@@ -98,6 +98,10 @@ export default function PushNotificationsCard({
       // .trim() guards against a trailing space/newline from pasting the value.
       const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim();
       if (!key) {
+        console.warn(
+          "[push] NEXT_PUBLIC_VAPID_PUBLIC_KEY is missing from this build — " +
+            "set it in the host env (Production scope) and redeploy."
+        );
         setError("Push isn't configured on the server yet.");
         return;
       }
