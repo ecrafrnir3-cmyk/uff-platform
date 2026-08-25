@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { notifyNextPicker } from "@/lib/draft-notify";
+import { syncCharacterForFaction, syncAllCharactersForLeague } from "@/lib/characters";
 
 /** Commissioner starts the draft. Calls the start_draft RPC which shuffles order and deals powers. */
 export async function startDraft(formData: FormData) {
@@ -93,6 +94,15 @@ export async function setMyFaction(formData: FormData) {
     redirect(`/dashboard/league/${leagueId}?error=` + encodeURIComponent(error.message));
   }
 
+  // Cast the manager as a character of their (new) faction.
+  const { data: meRow } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (meRow?.id) await syncCharacterForFaction(leagueId, meRow.id as string, faction);
+
   revalidatePath(`/dashboard/league/${leagueId}`);
   redirect(`/dashboard/league/${leagueId}`);
 }
@@ -117,6 +127,9 @@ export async function randomizeFactions(formData: FormData) {
   if (error) {
     redirect(`/dashboard/league/${leagueId}?error=` + encodeURIComponent(error.message));
   }
+
+  // Cast any newly-factioned managers as characters.
+  await syncAllCharactersForLeague(leagueId);
 
   revalidatePath(`/dashboard/league/${leagueId}`);
   redirect(`/dashboard/league/${leagueId}`);

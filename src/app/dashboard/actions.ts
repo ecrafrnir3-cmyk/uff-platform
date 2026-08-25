@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { syncCharacterForFaction } from "@/lib/characters";
 
 const JOIN_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I
 
@@ -62,16 +63,24 @@ export async function createLeague(formData: FormData) {
     redirect("/dashboard?error=" + encodeURIComponent(leagueError?.message ?? "Could not create league."));
   }
 
-  const { error: memberError } = await supabase.from("league_members").insert({
-    league_id: league.id,
-    user_id: user.id,
-    team_name: teamName,
-    is_commissioner: true,
-    faction,
-  });
+  const { data: member, error: memberError } = await supabase
+    .from("league_members")
+    .insert({
+      league_id: league.id,
+      user_id: user.id,
+      team_name: teamName,
+      is_commissioner: true,
+      faction,
+    })
+    .select("id")
+    .single();
 
   if (memberError) {
     redirect("/dashboard?error=" + encodeURIComponent(memberError.message));
+  }
+
+  if (faction && member?.id) {
+    await syncCharacterForFaction(league.id, member.id as string, faction);
   }
 
   revalidatePath("/dashboard");
@@ -124,17 +133,25 @@ export async function joinLeague(formData: FormData) {
     }
   }
 
-  const { error: memberError } = await supabase.from("league_members").insert({
-    league_id: league.id,
-    user_id: user.id,
-    team_name: teamName,
-    is_commissioner: false,
-    faction,
-  });
+  const { data: member, error: memberError } = await supabase
+    .from("league_members")
+    .insert({
+      league_id: league.id,
+      user_id: user.id,
+      team_name: teamName,
+      is_commissioner: false,
+      faction,
+    })
+    .select("id")
+    .single();
 
   if (memberError) {
     const message = memberError.code === "23505" ? "You're already in that league." : memberError.message;
     redirect("/dashboard?error=" + encodeURIComponent(message));
+  }
+
+  if (faction && member?.id) {
+    await syncCharacterForFaction(league.id, member.id as string, faction);
   }
 
   revalidatePath("/dashboard");

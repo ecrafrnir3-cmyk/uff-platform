@@ -36,6 +36,9 @@ export default async function LandingPage() {
           <Link href="/guide" className="hidden sm:inline text-sm font-medium hover:underline" style={{ color: "#d4d4e8" }}>
             Powers &amp; Guide
           </Link>
+          <Link href="/universe" className="hidden sm:inline text-sm font-medium hover:underline" style={{ color: "#d4d4e8" }}>
+            Universe
+          </Link>
           <Link
             href="/login"
             className="text-sm font-medium hover:underline"
