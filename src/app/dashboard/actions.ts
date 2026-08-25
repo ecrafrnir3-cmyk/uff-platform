@@ -41,6 +41,22 @@ export async function createLeague(formData: FormData) {
     redirect("/dashboard?error=" + encodeURIComponent("League size must be an even number of teams between 2 and 16."));
   }
 
+  // Double-submit guard: if this user created a same-named league in the last
+  // 20s, they almost certainly double-clicked — reuse it instead of making a
+  // duplicate. (The submit button is also disabled while pending client-side.)
+  const { data: recent } = await supabase
+    .from("uff_leagues")
+    .select("id")
+    .eq("commissioner_id", user.id)
+    .eq("name", name)
+    .gte("created_at", new Date(Date.now() - 20_000).toISOString())
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (recent?.id) {
+    redirect(`/dashboard/league/${recent.id}`);
+  }
+
   // Generate a unique 6-character join code (retry on the rare collision).
   let joinCode = generateJoinCode();
   for (let i = 0; i < 5; i++) {

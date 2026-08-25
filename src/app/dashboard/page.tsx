@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createLeague, joinLeague } from "./actions";
 import { LEAGUE_SIZE_OPTIONS } from "./constants";
 import PushNotificationsCard from "./PushNotificationsCard";
+import SubmitButton from "@/components/SubmitButton";
 
 interface LeagueRow {
   team_name: string;
@@ -220,13 +221,13 @@ export default async function DashboardPage({
                   <option value="villain">Villain (NFC)</option>
                 </select>
               </div>
-              <button
-                type="submit"
+              <SubmitButton
+                pendingLabel="Creating…"
                 className="rounded-md px-4 py-2 text-sm font-semibold"
                 style={{ background: "#0057FF", color: "#f4f4f8" }}
               >
                 Create league
-              </button>
+              </SubmitButton>
             </form>
           </section>
 
@@ -270,13 +271,13 @@ export default async function DashboardPage({
                   <option value="villain">Villain (NFC)</option>
                 </select>
               </div>
-              <button
-                type="submit"
+              <SubmitButton
+                pendingLabel="Joining…"
                 className="rounded-md px-4 py-2 text-sm font-semibold"
                 style={{ background: "#CC0000", color: "#f4f4f8" }}
               >
                 Join league
-              </button>
+              </SubmitButton>
             </form>
           </section>
         </div>
