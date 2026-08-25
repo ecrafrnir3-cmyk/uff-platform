@@ -93,8 +93,9 @@ export default function PushNotificationsCard({
     setBusy(true);
     setError(null);
     try {
-      // .trim() guards against a trailing space/newline if the key was pasted
-      // into the host's env config (a common cause of a silently invalid key).
+      // NEXT_PUBLIC_VAPID_PUBLIC_KEY is inlined at build time — it must be set
+      // in the host env AND scoped to Production, or this is undefined in prod.
+      // .trim() guards against a trailing space/newline from pasting the value.
       const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim();
       if (!key) {
         setError("Push isn't configured on the server yet.");
