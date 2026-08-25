@@ -2758,3 +2758,39 @@ BEGIN
 END;
 $function$
 ;
+
+CREATE OR REPLACE FUNCTION public.init_faab_balances(p_league_id uuid, p_amount smallint)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM uff_leagues WHERE id = p_league_id AND commissioner_id = auth.uid()) THEN
+    RAISE EXCEPTION 'Only the commissioner can set FAAB balances';
+  END IF;
+  UPDATE league_members SET faab_balance = p_amount
+   WHERE league_id = p_league_id AND faab_balance IS NULL;
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.set_waiver_order(p_league_id uuid, p_member_ids uuid[])
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE i int;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM uff_leagues WHERE id = p_league_id AND commissioner_id = auth.uid()) THEN
+    RAISE EXCEPTION 'Only the commissioner can set waiver priority';
+  END IF;
+  IF p_member_ids IS NULL THEN RETURN; END IF;
+  FOR i IN 1..array_length(p_member_ids, 1) LOOP
+    UPDATE league_members SET waiver_priority = i
+     WHERE id = p_member_ids[i] AND league_id = p_league_id;
+  END LOOP;
+END;
+$function$
+;

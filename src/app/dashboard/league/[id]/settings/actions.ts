@@ -165,13 +165,11 @@ export async function saveLeagueSettings(formData: FormData) {
     redirect(`/dashboard/league/${leagueId}/settings?error=` + encodeURIComponent(error.message));
   }
 
-  // If FAAB is enabled, initialize balances for any members who don't have one yet
+  // If FAAB is enabled, initialize balances for any members who don't have one
+  // yet (commissioner-checked SECURITY DEFINER RPC — faab_balance is not
+  // directly user-writable).
   if (faabBudget > 0) {
-    await supabase
-      .from("league_members")
-      .update({ faab_balance: faabBudget })
-      .eq("league_id", leagueId)
-      .is("faab_balance", null);
+    await supabase.rpc("init_faab_balances", { p_league_id: leagueId, p_amount: faabBudget });
   }
 
   revalidatePath(`/dashboard/league/${leagueId}/settings`);
@@ -272,11 +270,9 @@ export async function saveWaiverPriority(formData: FormData) {
     redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("Invalid priority order.")}`);
   }
 
-  // Update each member's waiver_priority by position in the array (1-indexed)
-  const updates = memberIds.map((id, idx) =>
-    supabase.from("league_members").update({ waiver_priority: idx + 1 }).eq("id", id).eq("league_id", leagueId)
-  );
-  await Promise.all(updates);
+  // Set each member's waiver_priority by position (commissioner-checked
+  // SECURITY DEFINER RPC — waiver_priority is not directly user-writable).
+  await supabase.rpc("set_waiver_order", { p_league_id: leagueId, p_member_ids: memberIds });
 
   revalidatePath(`/dashboard/league/${leagueId}/settings`);
   revalidatePath(`/dashboard/league/${leagueId}/free-agents`);
