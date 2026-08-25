@@ -13,7 +13,7 @@ export default function manifest(): MetadataRoute.Manifest {
     categories: ["sports", "games"],
     icons: [
       {
-        src: "/icon",
+        src: "/icon-192.png",
         sizes: "192x192",
         type: "image/png",
         purpose: "any",
@@ -25,7 +25,7 @@ export default function manifest(): MetadataRoute.Manifest {
         purpose: "any",
       },
       {
-        src: "/icon",
+        src: "/icon-maskable.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",

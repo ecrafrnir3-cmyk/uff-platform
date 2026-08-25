@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createLeague, joinLeague } from "./actions";
 import { LEAGUE_SIZE_OPTIONS } from "./constants";
+import PushNotificationsCard from "./PushNotificationsCard";
 
 interface LeagueRow {
   team_name: string;
@@ -157,6 +158,8 @@ export default async function DashboardPage({
             </div>
           )}
         </section>
+
+        <PushNotificationsCard />
 
         <div className="grid gap-6 sm:grid-cols-2">
           <section

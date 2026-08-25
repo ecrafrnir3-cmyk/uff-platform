@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import MarkReadButton from "./MarkReadButton";
+import PushNotificationsCard from "@/app/dashboard/PushNotificationsCard";
 
 interface Notification {
   id: string;
@@ -14,6 +15,8 @@ interface Notification {
 }
 
 const TYPE_ICON: Record<string, string> = {
+  on_the_clock:    "⏰",
+  newsletter:      "📰",
   trade_proposed:  "🤝",
   trade_accepted:  "✅",
   trade_rejected:  "❌",
@@ -92,6 +95,8 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
             </p>
           )}
         </header>
+
+        <PushNotificationsCard variant="banner" />
 
         {/* List */}
         {(notifications ?? []).length === 0 ? (

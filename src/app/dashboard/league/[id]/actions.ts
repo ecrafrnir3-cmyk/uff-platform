@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { notifyNextPicker } from "@/lib/draft-notify";
 
 /** Commissioner starts the draft. Calls the start_draft RPC which shuffles order and deals powers. */
 export async function startDraft(formData: FormData) {
@@ -22,6 +23,11 @@ export async function startDraft(formData: FormData) {
   if (error) {
     redirect(`/dashboard/league/${leagueId}?error=` + encodeURIComponent(error.message));
   }
+
+  // First overall pick is on the clock the moment the draft opens — without
+  // this, the #1 picker never hears about it (notifyNextPicker otherwise only
+  // fires AFTER a pick lands). Never throws.
+  await notifyNextPicker(supabase, leagueId);
 
   revalidatePath(`/dashboard/league/${leagueId}`);
   redirect(`/dashboard/league/${leagueId}/draft`);

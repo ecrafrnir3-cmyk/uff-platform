@@ -1,6 +1,6 @@
 -- UFF RLS policy snapshot: every policy in schema public (project synfuvgdamhjboobjmls)
 -- Generated 2026-08-17. NOT a migration — disaster-recovery source of truth (audit item 13).
--- 65 policies.
+-- 67 policies (65 @ 2026-08-17 + 2 push-subscription policies @ 2026-08-24).
 
 CREATE POLICY "authenticated read draft_power_assignments" ON public.draft_power_assignments FOR SELECT TO authenticated USING (true);
 CREATE POLICY "commissioner manage league draft_power_assignments" ON public.draft_power_assignments FOR ALL TO public USING ((EXISTS ( SELECT 1
@@ -165,3 +165,6 @@ CREATE POLICY "members update own weekly_token_assignments" ON public.weekly_tok
    FROM league_members lm
   WHERE ((lm.id = weekly_token_assignments.member_id) AND (lm.user_id = ( SELECT auth.uid() AS uid))))));
 CREATE POLICY "public read weekly_tokens" ON public.weekly_tokens FOR SELECT TO public USING (true);
+-- uff_push_subscriptions (added 2026-08-24, Session 36 push layer)
+CREATE POLICY "users read own push subscriptions" ON public.uff_push_subscriptions FOR SELECT TO public USING ((user_id = auth.uid()));
+CREATE POLICY "users delete own push subscriptions" ON public.uff_push_subscriptions FOR DELETE TO public USING ((user_id = auth.uid()));

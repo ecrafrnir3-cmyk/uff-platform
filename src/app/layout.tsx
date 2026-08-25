@@ -31,9 +31,6 @@ export const metadata: Metadata = {
     title: "UFF",
     statusBarStyle: "black-translucent",
   },
-  icons: {
-    apple: "/icon",
-  },
 };
 
 export default function RootLayout({

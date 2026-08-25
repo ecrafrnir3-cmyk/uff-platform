@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getRawNFLWeek } from "@/lib/nfl-utils";
 import { sendEmail, getAllUserEmails, newsletterHtml } from "@/lib/email";
 import { TOKEN_NAMES } from "@/lib/token-names";
+import { createNotification } from "@/lib/notifications";
 
 // ─── Called by GitHub Actions every Wednesday at 07:30 UTC ──────────────────
 // Fires 30 minutes after finalize-week (07:00 UTC) to ensure all matchups
@@ -349,6 +350,31 @@ export async function POST(req: NextRequest) {
       } catch (emailErr) {
         // Email failure must not abort the cron — newsletter is already saved to DB
         console.error(`Newsletter email failed for ${league.name}:`, emailErr);
+      }
+
+      // In-app + push notification per member. Sits inside the idempotency
+      // guard above, so it fires exactly once per league+week — same
+      // double-send protection the emails get. createNotification never throws.
+      try {
+        const { data: notifMembers } = await supabase
+          .from("league_members")
+          .select("user_id")
+          .eq("league_id", league.id);
+        if (notifMembers && notifMembers.length > 0) {
+          await Promise.all(
+            notifMembers.map((m: { user_id: string }) =>
+              createNotification({
+                leagueId: league.id,
+                userId: m.user_id,
+                type: "newsletter",
+                title: `📰 Week ${week} Newsletter`,
+                body: `The ${league.name} weekly newsletter is out — tap to read it.`,
+              })
+            )
+          );
+        }
+      } catch (notifErr) {
+        console.error(`Newsletter notifications failed for ${league.name}:`, notifErr);
       }
 
       console.log(`Newsletter generated: ${league.name} week ${week}`);
