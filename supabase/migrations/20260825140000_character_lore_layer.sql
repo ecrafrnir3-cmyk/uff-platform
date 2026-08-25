@@ -22,3 +22,12 @@ CREATE POLICY "characters are publicly readable" ON public.uff_characters
 
 ALTER TABLE public.league_members
   ADD COLUMN IF NOT EXISTS character_id smallint REFERENCES public.uff_characters(id);
+
+-- secret_story is spoiler content. The table is publicly readable at the row
+-- level, so hide the secret at the COLUMN level from the public REST API. A
+-- table-level SELECT grant covers every column, so we drop it and re-grant only
+-- the public columns. The app only ever selects explicit columns (never *);
+-- the future hidden-dossier feature reads secret_story via the service role.
+REVOKE SELECT ON public.uff_characters FROM anon, authenticated;
+GRANT SELECT (id, faction, name, epithet, domain, starter_story, art_url)
+  ON public.uff_characters TO anon, authenticated;
