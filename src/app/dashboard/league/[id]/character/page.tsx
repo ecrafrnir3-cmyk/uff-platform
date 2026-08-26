@@ -174,7 +174,11 @@ export default async function CharacterPage({ params }: { params: Promise<{ id: 
         )}
 
         <p className="text-center text-xs" style={{ color: "#6b6b8a" }}>
-          Explore the whole war in the{" "}
+          Track the war in{" "}
+          <Link href={`/dashboard/league/${leagueId}/war`} className="underline" style={{ color: "#0057FF" }}>
+            The War Room
+          </Link>{" "}
+          · explore the whole saga in the{" "}
           <Link href="/universe" className="underline" style={{ color: "#0057FF" }}>
             UFF Universe
           </Link>
