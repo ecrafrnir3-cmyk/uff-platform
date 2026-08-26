@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getRawNFLWeek } from "@/lib/nfl-utils";
+import { recomputeLeagueLegends } from "@/lib/story-engine/engine";
+import { computeWeekFeats } from "@/lib/story-engine/feats";
 
 // Called by GitHub Actions cron every Wednesday at 07:00 UTC —
 // safely after Monday Night Football ends (MNF = ~01:00 UTC Tuesday).
@@ -45,10 +47,35 @@ export async function POST(req: NextRequest) {
   }
 
   console.log(`Finalized week ${weekToFinalize}:`, data);
+
+  // ── Story Engine hook (parallel layer, opted-in leagues only) ────────────
+  // Runs AFTER finalize succeeds. Fully isolated: any failure is logged and
+  // swallowed so the story layer can never affect the real finalize result,
+  // scores, or standings. No-ops entirely when no league has opted in.
+  let storyLeagues = 0;
+  try {
+    const { data: enabled } = await supabase
+      .from("uff_leagues")
+      .select("id")
+      .eq("story_engine_enabled", true);
+    for (const lg of (enabled ?? []) as { id: string }[]) {
+      try {
+        await computeWeekFeats(supabase, lg.id, weekToFinalize);
+        await recomputeLeagueLegends(supabase, lg.id, weekToFinalize);
+        storyLeagues++;
+      } catch (e) {
+        console.error(`story engine failed for league ${lg.id}:`, (e as Error).message);
+      }
+    }
+  } catch (e) {
+    console.error("story engine hook failed:", (e as Error).message);
+  }
+
   // Note: finalize_all_active_leagues already marks tokens used internally (step 2).
   return NextResponse.json({
     ok: true,
     week: weekToFinalize,
     result: data,
+    storyLeagues,
   });
 }

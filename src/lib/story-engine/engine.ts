@@ -62,6 +62,11 @@ export interface LegendState {
   decline_state: DeclineState;
   week_surge: number;
   ultimate_unlocked: boolean;
+  attr_strike: number;
+  attr_guard: number;
+  attr_burst: number;
+  attr_nerve: number;
+  attr_omen: number;
 }
 export interface BattleRow {
   league_id: string;
@@ -146,15 +151,37 @@ export async function recomputeLeagueLegends(
   const matchRows = (matches ?? []) as MatchRow[];
   const weeks = [...new Set(matchRows.map((r) => r.week))].sort((a, b) => a - b);
 
+  // Persisted stat feats (Phase 2b) → (character_id → week → feats). Ice Water is
+  // derived from margins during the replay, not stored.
+  const { data: featRows, error: fErr } = await admin
+    .from("character_feats")
+    .select("character_id, week, feat, attr")
+    .eq("league_id", leagueId)
+    .lte("week", throughWeek);
+  if (fErr) throw new Error(`feats: ${fErr.message}`);
+  const featsByCharWeek = new Map<number, Map<number, { feat: string; attr: string }[]>>();
+  for (const r of (featRows ?? []) as { character_id: number; week: number; feat: string; attr: string }[]) {
+    let wm = featsByCharWeek.get(r.character_id);
+    if (!wm) {
+      wm = new Map();
+      featsByCharWeek.set(r.character_id, wm);
+    }
+    const arr = wm.get(r.week) ?? [];
+    arr.push({ feat: r.feat, attr: r.attr });
+    wm.set(r.week, arr);
+  }
+
   // 5. Replay LP week by week; snapshot each claimed char's (legend, surge) per week,
   //    and each week's claimed-LP pools per faction (for per-week Faction-Tide).
   interface St {
     lp: number;
     lossStreak: number;
     lastWeekLp: number;
+    attrs: Record<string, number>;
   }
+  const zeroAttrs = (): Record<string, number> => ({ STRIKE: 0, GUARD: 0, BURST: 0, NERVE: 0, OMEN: 0 });
   const state = new Map<number, St>();
-  for (const cid of claimedCharIds) state.set(cid, { lp: 0, lossStreak: 0, lastWeekLp: 0 });
+  for (const cid of claimedCharIds) state.set(cid, { lp: 0, lossStreak: 0, lastWeekLp: 0, attrs: zeroAttrs() });
   const snapByWeek = new Map<number, Map<number, Snap>>();
   const claimedPoolByWeek = new Map<number, Record<Faction, number[]>>();
 
@@ -189,7 +216,12 @@ export async function recomputeLeagueLegends(
         const myRank = rankEntering.get(cid) ?? 0;
         const oppRank = oppChar != null ? rankEntering.get(oppChar) ?? 0 : 0;
         const upset = won && oppChar != null && oppRank - myRank >= 2;
-        const delta = lpForResult({ won, lost, margin, lossStreak: newStreak, beatRival, upset, feats: 0 });
+        const statFeats = featsByCharWeek.get(cid)?.get(wk) ?? [];
+        const iceWater = won && margin <= 5; // clutch-win proxy for the NERVE feat
+        const feats = statFeats.length + (iceWater ? 1 : 0);
+        const delta = lpForResult({ won, lost, margin, lossStreak: newStreak, beatRival, upset, feats });
+        for (const f of statFeats) st.attrs[f.attr] = (st.attrs[f.attr] ?? 0) + 1;
+        if (iceWater) st.attrs.NERVE = (st.attrs.NERVE ?? 0) + 1;
         st.lp += delta;
         st.lossStreak = newStreak;
         wkDelta.set(cid, (wkDelta.get(cid) ?? 0) + delta);
@@ -228,6 +260,11 @@ export async function recomputeLeagueLegends(
       decline_state: declineFor(st.lp),
       week_surge: st.lastWeekLp,
       ultimate_unlocked: rank >= ULTIMATE_UNLOCK_RANK,
+      attr_strike: st.attrs.STRIKE,
+      attr_guard: st.attrs.GUARD,
+      attr_burst: st.attrs.BURST,
+      attr_nerve: st.attrs.NERVE,
+      attr_omen: st.attrs.OMEN,
     });
     finalPool[meta.faction].push(st.lp);
   }
@@ -252,6 +289,11 @@ export async function recomputeLeagueLegends(
       decline_state: "stable",
       week_surge: 0,
       ultimate_unlocked: rank >= ULTIMATE_UNLOCK_RANK,
+      attr_strike: 0,
+      attr_guard: 0,
+      attr_burst: 0,
+      attr_nerve: 0,
+      attr_omen: 0,
     });
   }
 
@@ -498,6 +540,11 @@ export async function recomputeLeagueLegends(
       decline_state: l.decline_state,
       week_surge: l.week_surge,
       ultimate_unlocked: l.ultimate_unlocked,
+      attr_strike: l.attr_strike,
+      attr_guard: l.attr_guard,
+      attr_burst: l.attr_burst,
+      attr_nerve: l.attr_nerve,
+      attr_omen: l.attr_omen,
       updated_at: now,
     }));
     const upRes = await admin.from("character_legend").upsert(legUpserts, { onConflict: "league_id,character_id" });

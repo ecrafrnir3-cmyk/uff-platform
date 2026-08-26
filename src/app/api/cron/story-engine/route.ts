@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { recomputeLeagueLegends } from "@/lib/story-engine/engine";
+import { computeWeekFeats } from "@/lib/story-engine/feats";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -43,8 +44,18 @@ export async function POST(req: NextRequest) {
   });
 
   try {
+    // Compute this week's stat feats first (best-effort — a Sleeper hiccup must
+    // not block the legend recompute). Skipped on a dry run.
+    let featsComputed: number | null = null;
+    if (!dryRun) {
+      try {
+        featsComputed = (await computeWeekFeats(admin, leagueId, week)).feats;
+      } catch (e) {
+        console.error("story-engine feats:", (e as Error).message);
+      }
+    }
     const result = await recomputeLeagueLegends(admin, leagueId, week, { dryRun });
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, featsComputed });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
