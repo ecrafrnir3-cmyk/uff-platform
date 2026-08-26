@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import CharacterSilhouette from "@/components/CharacterSilhouette";
+import PowerSheet, { type LegendData } from "@/components/story/PowerSheet";
 
 interface Character {
   id: number;
@@ -11,6 +12,10 @@ interface Character {
   faction: "hero" | "villain";
   starter_story: string;
   art_url: string | null;
+  signature_name: string | null;
+  signature_effect: string | null;
+  ultimate_name: string | null;
+  ultimate_effect: string | null;
 }
 
 export default async function CharacterPage({ params }: { params: Promise<{ id: string }> }) {
@@ -31,7 +36,7 @@ export default async function CharacterPage({ params }: { params: Promise<{ id: 
   const { data: me } = await supabase
     .from("league_members")
     .select(
-      "id, faction, team_name, character_id, uff_characters(id, name, epithet, domain, faction, starter_story, art_url)"
+      "id, faction, team_name, character_id, uff_characters(id, name, epithet, domain, faction, starter_story, art_url, signature_name, signature_effect, ultimate_name, ultimate_effect)"
     )
     .eq("league_id", leagueId)
     .eq("user_id", user.id)
@@ -44,6 +49,19 @@ export default async function CharacterPage({ params }: { params: Promise<{ id: 
   const isHero = faction === "hero";
   const accent = isHero ? "#0057FF" : "#CC0000";
   const factionLabel = isHero ? "⚔️ The Vanguard · Hero" : "🐍 The Dominion · Villain";
+
+  let legend: LegendData | null = null;
+  if (character) {
+    const { data: cl } = await supabase
+      .from("character_legend")
+      .select(
+        "legend_points, rank, decline_state, earned_epithets, attr_strike, attr_guard, attr_burst, attr_nerve, attr_omen, week_surge, ultimate_unlocked, ultimate_used_week"
+      )
+      .eq("league_id", leagueId)
+      .eq("character_id", character.id)
+      .maybeSingle();
+    legend = (cl as LegendData | null) ?? null;
+  }
 
   return (
     <div className="min-h-screen px-4 py-10 sm:px-8" style={{ background: "#0d0d1a", color: "#f4f4f8" }}>
@@ -136,6 +154,8 @@ export default async function CharacterPage({ params }: { params: Promise<{ id: 
                   {character.starter_story}
                 </p>
               </section>
+
+              <PowerSheet character={character} legend={legend} faction={character.faction} />
 
               <section
                 className="flex flex-col gap-2 rounded-lg border p-5"
