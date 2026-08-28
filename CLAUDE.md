@@ -6,7 +6,7 @@ Read this at the start of every session. It is the authoritative source of truth
 
 ## Project Overview
 
-**Ultimate Fantasy Football (UFF)** — a custom fantasy football platform built by Nate. Full-stack Next.js 15 app with deep custom mechanics layered on top of standard fantasy: draft powers, weekly tokens, faction war, Oracle AI recaps, FAAB waivers, priority waivers, commissioner tools.
+**Ultimate Fantasy Football (UFF)** — a custom fantasy football platform built by Nate. Full-stack Next.js 16 app with deep custom mechanics layered on top of standard fantasy: draft powers, weekly tokens, faction war, Oracle AI recaps, FAAB waivers, priority waivers, commissioner tools, plus a parallel read-only story layer (character lore + Story Engine, see Session 37 catch-up).
 
 **Live URL**: https://playuff.com (primary) — https://uff-platform.vercel.app also works  
 **Custom domain**: `playuff.com` — purchased via Vercel ($11.25/yr), DNS managed by Vercel, Resend verified ✅  
@@ -59,7 +59,7 @@ EMAIL_FROM          # Set to: "UFF <noreply@playuff.com>" — Resend domain veri
 - League settings page (playoff config, median scoring, trade deadline, Can't Cut List, waiver settings, acquisition limits)
 
 ### Draft
-- Full real-time draft room (`/draft/`) with Supabase Realtime
+- Full multi-user draft room (`/draft/`) — live via a 5-second POLL (NOT Supabase Realtime; Session 34 correction) with a server-anchored pick clock (Session 35)
 - 16 named draft powers (Gunslinger, Vampire Bite, Draft Heist, Telepathy, Shadow Guard, Foresight Coin, Hero's Shield, etc.)
 - Autodraft queue with drag-to-reorder
 - Commissioner starts draft via `startDraft` RPC
@@ -193,7 +193,7 @@ src/
     get-record.ts   # getRecord() + CompletedMatchupRow — shared across AI routes
 supabase/
   functions/
-    score-matchups/index.ts   # ~640 lines — 18 tokens + 11 draft powers + faction bonus
+    score-matchups/index.ts   # ~800 lines (v17) — 18 tokens + 11 draft powers + faction bonus
     sync-players/index.ts     # Pulls from Sleeper + FFC ADP + Sleeper search_rank fallback (v4)
 .github/workflows/            # All cron triggers
 ```
@@ -244,7 +244,7 @@ Muted text: #d4d4e8
 
 ## Common Gotchas
 
-1. **Bash mount is stale** — `/sessions/.../mnt/uff-platform/` shows cached old file versions. Always use Read tool for current Windows filesystem state. Git in bash also can't see Edit tool changes — user must `git add/commit/push` from their terminal for any Edit-tool-only changes.
+1. **Bash mount is stale** *(Cowork desktop sessions on Nate's machine only — remote/cloud sessions have a normal filesystem and working git)* — `/sessions/.../mnt/uff-platform/` shows cached old file versions. Always use Read tool for current Windows filesystem state. Git in bash also can't see Edit tool changes — user must `git add/commit/push` from their terminal for any Edit-tool-only changes.
 2. **Turbopack cascade** — each build error masks the next. After fixing a TS error, the next build may reveal a new one.
 3. **`boolean | null` mismatches** — Supabase nullable columns come back as `T | null`. Both sides of structural type comparisons must agree.
 4. **Git staging** — always `git add` before `git commit`. Nate has forgotten this before.
@@ -265,11 +265,11 @@ Muted text: #d4d4e8
 
 ## Current Build Status
 
-All features through **#119 (Player Rankings + Waiver Wire)** are built and pushed. Sessions 18–30 completed.
+All work through the **Story Engine ("The Legend & the War", Phases 1–3b)** is built and pushed. Sessions 18–37 completed (36 documented below; the 2026-08-24→26 work between Sessions 36 and 37 is reconstructed in the Session 37 catch-up).
 
 **Latest Vercel deployment**: Live at playuff.com  
-**Last pushed commits**: #119 (sync-players v4 synthetic ADP + free-agents limit 300) — pushed 2026-07-06.  
-**Pending**: Run sync-players once from Supabase dashboard (Edge Functions → sync-players → Test) to populate v4 data in DB.
+**Last pushed commit**: `1a71a96` (Story Engine: War Room link from Character tab) — pushed 2026-08-26.  
+**sync-players**: runs NIGHTLY via pg_cron — no manual trigger needed (the old "run it once from the dashboard" note was retired in Session 34).
 
 ### Completed setup (don't redo):
 - Sentry account created, DSN set, org=`uff-platform`, project=`javascript-nextjs`
@@ -280,7 +280,7 @@ All features through **#119 (Player Rankings + Waiver Wire)** are built and push
 
 ### Full Feature List (deployed + pending push):
 - **Marketing landing page** — `/` shows hero + 4 feature cards + faction war section + Season Titles teaser + CTA for visitors; redirects logged-in users to `/dashboard`
-- **Mock draft mode** — `/mock-draft` (accessible from league hub + nav). Client-side-only simulation, zero DB writes. CPU picks every 800ms using positional need algorithm. All 16 powers simulated: tied_to_pick (auto), Draft Heist (CPU steals earlier slot if back-half), Vampire Bite (CPU targets user's best player; user gets modal to bite CPU player), Hero's Shield (blocks Heist), Telepathy (reveals next picker's power), Foresight Coin (user chooses between current/future round powers), Shadow Guard (permanently marks player as bite-immune), Power Negation (removes power from highest-ADP powered pick). UI: player list with position filter + search, draft board grid (collapsible), My Roster tab with composition, Power Log tab. Reset button reruns from scratch.
+- ~~Mock draft mode~~ — **REMOVED in Session 32** (solo-vs-bots wasn't useful; don't rebuild unless Nate explicitly asks — and then as an open multiplayer lobby)
 - Core league, member management, faction war
 - Real-time draft room with 16 named draft powers + AI Draft Advisor
 - **Draft pick clock with autopick** — configurable timer (30s–5min), countdown ring, auto-selects best queued/available player on expiry
@@ -316,6 +316,10 @@ All features through **#119 (Player Rankings + Waiver Wire)** are built and push
 - Mobile PWA (installable)
 - Recent Activity widget on league hub
 - Shared libs: `token-names.ts`, `get-record.ts`, `notifications.ts`
+- **PWA Web Push notifications** (Session 36) — all 8 in-app notification types fan out to push; VAPID vars live in Vercel Production since 2026-08-25
+- **Character lore layer** — managers cast as unique canon Hero/Villain characters on faction lock (`src/lib/characters.ts`, `/character` tab, public `/universe` page)
+- **Story Engine — "The Legend & the War"** — parallel READ-ONLY story layer (Legend Points, ranks, feats, War Battles vs Internal Duels, War Meter); zero impact on real fantasy results by design. Spec: `docs/legend-and-the-war.md` (LOCKED v2). Auto-runs from the finalize-week cron (failure-isolated) for leagues with `story_engine_enabled = true`
+- **Self-serve team rename** (`RenameTeam.tsx` on league hub)
 
 ### New key file locations (added #77–#100):
 ```
@@ -348,10 +352,6 @@ src/
     notifications.ts                  # createNotification() — non-blocking, admin client
     rate-limit.ts                     # checkRateLimit(key, maxPerMin) — in-memory per-instance
 ```
-
-### Known gotcha added:
-10. **Windows CMD no `&&`** — CMD does not support `&&` chaining. If a git commit fails with "index.lock" or "HEAD.lock" errors, run `del .git\index.lock` and/or `del .git\HEAD.lock`, then retry the three commands separately: `git add -A`, `git commit -m "..."`, `git push`.
-11. **Dotall `/s` regex flag** — TypeScript target below ES2018 rejects `/pattern/s`. Use `.split(/PATTERN/)[0]` instead or `[\s\S]*` in place of `.*` with `s` flag.
 
 ### New key files added (#101–#105):
 ```
@@ -504,7 +504,7 @@ Enhancements to `MockDraftRoom.tsx`:
 - **Reset button**: `prevRoundRef.current = 0` added so round 1 buffer fires again on the next mock.
 - **Architectural note**: Buffer fires at round start including round 1 (by design). If user presses Reset mid-buffer, prevRoundRef resets to 0 → buffer effect re-fires naturally for round 1.
 - **Power randomization**: `shufflePowerAssignments()` helper shuffles `draft_powers` values across existing member/round slots (Fisher-Yates) so each mock run has a different power configuration. Driven by `activeRows` state (replaces direct `allPowerRows` use in `allPowersMap` derivation). Reset calls `setActiveRows(shufflePowerAssignments(allPowerRows))` for a fresh shuffle. Real power assignments are never mutated — the DB rows are just rearranged client-side.
-- **Pending push**: Files changed: `MockDraftRoom.tsx` + `mock-draft/page.tsx` + `FreeAgents.tsx` (page.tsx/FreeAgents were missed in the Phase 1 push).
+- ~~Pending push~~ *(resolved: pushed in `7288e47`; the mock-draft files were then deleted entirely in Session 32)*
 
 ### Session 32 — Mock Draft Mode REMOVED (2026-07-07)
 Nate tried the solo-vs-bots Mock Draft Mode and didn't find it useful. Decision: kill it entirely rather than build Phase 2 (multi-user lobby). Reasoning: Season 1 is a small beta with hand-picked people Nate already knows — there's no pool of strangers to matchmake with, and the real draft room (already live, real-time, multi-user) can be reused with a disposable test league for any group rehearsal needed. Removed:
@@ -563,12 +563,36 @@ Web Push built end-to-end. Everything below is verified locally (build green, es
   - **`PushNotificationsCard`** — permission prompt now fires FIRST (preserves iOS transient activation); reconciles the server row with the browser subscription on load (heals prunes + re-claims on a shared device); `disable()` checks the delete result before unsubscribing; a transient SW-registration failure shows "off" (retryable) not "unsupported".
 - **Verification method note**: created a throwaway auth user, logged in via the dev server, confirmed the card renders (denied-state path, since the embedded browser blocks notification prompts), verified the send path in Node against FCM, then deleted the test user. Real-device push test happens post-deploy on Nate's phone.
 
+### Session 37 — Project memory review (2026-08-28)
+Full review of this file against the repo. **Main finding: 14 commits (2026-08-24 → 26) were never documented here** — reconstructed below from git history + code reading (same precedent as the journal's overnight-build entry). Corrections applied to the sections above are listed at the end.
+
+**Catch-up — undocumented work 2026-08-24 → 26 (all pushed to `main`, head `1a71a96`):**
+- **Push activation saga** (`371596a`…`3ed4330`): the 3 VAPID env vars were added to Vercel and scoped to Production; several forced recompiles were needed because `NEXT_PUBLIC_VAPID_PUBLIC_KEY` is build-inlined; `PushNotificationsCard` now trims pasted whitespace and validates the decoded key is a real 65-byte P-256 point before subscribing. App-side push activation is DONE; real-device test status unrecorded.
+- **DB fixes** (`e581f2a`, `ce8750d`): dropped the ambiguous `generate_schedule(uuid,uuid)` overload; `start_draft` power dealing is now round-aware. Both mirrored into `supabase/schema-snapshot/functions.sql`.
+- **Character lore layer** (`5a513fe` + hardening `9f0d3d0`, `2b59bbd`): managers are cast as unique canon Hero/Villain characters when they lock a faction — `src/lib/characters.ts` (`syncCharacterForFaction`, never throws: casting must not break join/faction flows), `uff_characters` table (migration `20260825140000`), `/character` league tab (in `LeagueNav`), public `/universe` page, `CharacterSilhouette`, seed script `scripts/seed-characters.mjs`. `secret_story` column hidden via revoke-table-SELECT + grant-public-columns. Hardening: per-league uniqueness, size caps, stale-cast fixes.
+- **RLS hardening** (`03e3839`): `league_members` writes locked down; FAAB/waiver commissioner ops moved to commissioner RPCs (migration `20260825150000`, snapshot updated).
+- **Duplicate-league guard** (`0b2d46e`, `0ad5be2`): double-submit protection (`SubmitButton` component) + a DB unique index on forming leagues as the real guarantee (migration `20260825160000`).
+- **Self-serve team rename** (`bb3f14e`): `RenameTeam.tsx` on the league hub + server action + migration `20260825170000`.
+- **Story Engine — "The Legend & the War"** (`deddbbd`, `45cd21a`, `b03ff87`, `1a71a96`): spec `docs/legend-and-the-war.md` (**LOCKED v2**, approved by Nate) + lore corpus in `lore/` + art brief `art/higgsfield-brief.md`. Two sealed layers: fantasy league untouched; the engine is READ-ONLY on fantasy data and writes only to isolated tables (`character_legend`, battles, feats — migrations `20260826120000/130000/140000`). Code: `src/lib/story-engine/` (`engine.ts` ~590 lines, `rules.ts`, `battles.ts` War Battles vs Internal Duels, `feats.ts` stat-line feats). Cron route `api/cron/story-engine` (POST leagueId/week/dryRun, x-cron-secret) + **auto-hook inside finalize-week** — wrapped so story failures can NEVER affect real finalization, gated on `uff_leagues.story_engine_enabled`. Surfaces: `/war` (War Room: `WarMeter`, `BattleReport`, `FreeLegendsBoard`) + Power Sheet on `/character`, linked from the Character tab. Test scripts: `scripts/story-battles-test.ts`, `story-feats-test.ts`, `story-engine-dryrun.mjs`.
+
+**Corrections applied to this file in this review:**
+- Overview said "Next.js 15" while Tech Stack said 16 — `package.json` has `next 16.2.9`; fixed to 16.
+- Feature Inventory still claimed the draft room uses "Supabase Realtime" — it's a 5-second poll (Session 34 correction never propagated up); fixed.
+- Feature Inventory still listed Mock Draft Mode (removed Session 32); struck through with a do-not-rebuild pointer.
+- Current Build Status was frozen at #119 / 2026-07-06 with a stale "run sync-players manually" pending item (sync is nightly pg_cron since Session 34); rewritten.
+- Duplicate "Known gotcha added" block (gotchas 10–11 verbatim twice) removed; Session 31 "Pending push" note resolved; `score-matchups` line count updated (~800, v17); Gotcha #1 (stale Bash mount) scoped to Cowork-desktop sessions only.
+- Verified still true: rate limiting really is wired on all 10 AI routes (20 `checkRateLimit` call sites — Session 34's fix holds); mock-draft directory gone; season anchors in `nfl-utils.ts` correct (week ROLLS Wed 2026-09-09, lock anchor Thu Sep 10); all 4 GitHub Actions cron schedules match the Tech Stack line; `finalize-week.yml` parses (has a display name in the workflow list).
+- Also noted: `docs/journal.md` stops at 2026-06-12 — it never picked up the CLAUDE.md session-log era; treat this file, not the journal, as the history of record.
+
 ### Next priorities (not yet built):
-- **Activate push in prod** — Nate: add the 3 VAPID env vars to Vercel (values in `.env.local`), push Session 36, then enable + test-push on his phone
+- **Confirm push on a real phone** — VAPID vars are in Vercel Production and the client card recompiled (2026-08-24→25 commits); the remaining step is Nate enabling + test-pushing on his own device (status unconfirmed in this memory)
+- **Draft rehearsal** — run one full live rehearsal of the real draft room with actual invited members before Sept 9 (pick clock now server-anchored, but rehearse anyway — Session 35)
+- **Story Engine next phases** — comic/art generation (`art/higgsfield-brief.md` brief exists), Great Battles / campaign arc per `docs/legend-and-the-war.md`
 - **Admin dashboard** — cross-league health view for Nate
 - **App Store listing** — iOS/Android PWA/TWA submission
 - **Cron migration** — GitHub Actions → Vercel Cron Jobs (more reliable, less drift)
 - Update `nfl-utils.ts` season start date every off-season (currently `2026-09-09`)
+- **Refresh the graphify graph** (on Nate's laptop: `graphify update .`) — last refreshed 2026-07-22, now well behind (Sessions 35–36 + Story Engine not in the graph); `graphify-out/` is not checked into the repo, so remote sessions can't use it
 
 ## graphify
 
