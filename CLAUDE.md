@@ -47,7 +47,16 @@ ANTHROPIC_API_KEY
 CRON_SECRET
 RESEND_API_KEY
 EMAIL_FROM          # Set to: "UFF <noreply@playuff.com>" — Resend domain verified ✅
+NEXT_PUBLIC_SENTRY_DSN
+SENTRY_ORG
+SENTRY_PROJECT
+SENTRY_AUTH_TOKEN
+NEXT_PUBLIC_VAPID_PUBLIC_KEY   # build-inlined — changing it requires a redeploy
+VAPID_PRIVATE_KEY
+VAPID_SUBJECT
 ```
+
+`SYNC_SECRET` is referenced by `sync-players` but **deliberately unset** — setting it would break the 4 AM pg_cron player sync, which calls the function with no auth header (Session 34).
 
 ---
 
@@ -583,6 +592,8 @@ Full review of this file against the repo. **Main finding: 14 commits (2026-08-2
 - Duplicate "Known gotcha added" block (gotchas 10–11 verbatim twice) removed; Session 31 "Pending push" note resolved; `score-matchups` line count updated (~800, v17); Gotcha #1 (stale Bash mount) scoped to Cowork-desktop sessions only.
 - Verified still true: rate limiting really is wired on all 10 AI routes (20 `checkRateLimit` call sites — Session 34's fix holds); mock-draft directory gone; season anchors in `nfl-utils.ts` correct (week ROLLS Wed 2026-09-09, lock anchor Thu Sep 10); all 4 GitHub Actions cron schedules match the Tech Stack line; `finalize-week.yml` parses (has a display name in the workflow list).
 - Also noted: `docs/journal.md` stops at 2026-06-12 — it never picked up the CLAUDE.md session-log era; treat this file, not the journal, as the history of record.
+
+**Addendum (same day) — code + graph verification pass.** Installed graphify in the remote container and rebuilt the graph: **1125 nodes, 1833 edges, 86 communities** (session-local only — `graphify-out/` is gitignored by design, so this doesn't refresh the laptop's copy). Verified against code, all TRUE: 18 tokens in `token-names.ts`; VB siphon league-scoped (`leagueMemberIds` filter, score-matchups ~L589); Shadow Guard both layers (`actions.ts:249` + score-matchups `:592` — the Session 24 "line 469" reference has drifted with the file, use the `shadow_guard` grep not the line number); `isEDT` DST in process-waivers; Oracle `rows[0] ?? rows[1]` cache read; `getAllUserEmails` `page++` pagination; `faabEnabled` formula + `(faabEnabled || isPriorityMode)` gating; per-route rate limits (chat 10 / draft-advisor 8 / power-rankings 3); `claude-haiku-4-5-20251001` at 11 call sites; schema snapshot holds 40 functions (was 39 at Session 35) + 67 policies; there is no `src/middleware.ts` — the auth middleware lives in `src/proxy.ts`. Graph agrees with the documented architecture: god nodes are `createClient` (159 edges), `createAdminClient`, `checkRateLimit` (25), `getCurrentNFLWeek`, `createNotification`, `sendEmail`; zero import cycles; story-engine subgraph wires finalize-week POST → `recomputeLeagueLegends` + `computeWeekFeats` exactly as documented. **One fix applied**: the Environment Variables section was missing the 4 Sentry + 3 VAPID vars the code uses (added, with the SYNC_SECRET deliberately-unset note). Known parser quirk: tree-sitter reports a false-positive "syntax error" in `DragDropLineup.tsx` L411 — the JSX is valid and production builds green; it only slightly thins that file's graph extraction.
 
 ### Next priorities (not yet built):
 - **Confirm push on a real phone** — VAPID vars are in Vercel Production and the client card recompiled (2026-08-24→25 commits); the remaining step is Nate enabling + test-pushing on his own device (status unconfirmed in this memory)
