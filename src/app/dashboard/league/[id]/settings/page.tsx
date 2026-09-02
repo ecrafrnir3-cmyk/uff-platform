@@ -10,15 +10,20 @@ import { getCurrentNFLWeek } from "@/lib/nfl-utils";
 import VetoAnalyzer from "./VetoAnalyzer";
 
 const PRESETS = {
+  // Stat keys MUST match Sleeper's /stats/nfl payload exactly (verified against
+  // live data 2026-09-02). Notably: defensive INT = `int` (not def_int); made XP
+  // = `xpm` (not pat_md); return TDs are two keys `kr_td`+`pr_td` (no `ret_td`);
+  // D/ST TDs need `def_st_td`+`st_td` alongside `def_td`. Sleeper exposes no
+  // single missed-XP key (only xpa/xpm), so a missed-PAT penalty is omitted.
   "Full PPR": {
     pass_td: 4, pass_yd: 0.04, pass_int: -2, pass_2pt: 2,
     rush_td: 6, rush_yd: 0.1, rush_2pt: 2,
     rec: 1, rec_td: 6, rec_yd: 0.1, rec_2pt: 2,
-    fum_lost: -2, ret_td: 6,
-    def_td: 6, sack: 1, def_int: 2, fum_rec: 2, safe: 2, blk_kick: 2,
+    fum_lost: -2, kr_td: 6, pr_td: 6,
+    def_td: 6, def_st_td: 6, st_td: 6, sack: 1, int: 2, fum_rec: 2, safe: 2, blk_kick: 2,
     pts_allow_0: 10, pts_allow_1_6: 7, pts_allow_7_13: 4, pts_allow_14_20: 1,
     pts_allow_21_27: 0, pts_allow_28_34: -1, pts_allow_35p: -4,
-    fgm_0_19: 3, fgm_20_29: 3, fgm_30_39: 3, fgm_40_49: 4, fgm_50p: 5, pat_md: 1, pat_ms: -1,
+    fgm_0_19: 3, fgm_20_29: 3, fgm_30_39: 3, fgm_40_49: 4, fgm_50p: 5, xpm: 1,
   },
   "Half PPR": { rec: 0.5 },
   "Standard": { rec: 0 },
@@ -55,15 +60,18 @@ const SCORING_GROUPS = [
     label: "Miscellaneous",
     fields: [
       { key: "fum_lost", label: "Fumble lost" },
-      { key: "ret_td", label: "Return TD" },
+      { key: "kr_td", label: "Kick return TD" },
+      { key: "pr_td", label: "Punt return TD" },
     ],
   },
   {
     label: "Defense / Special Teams",
     fields: [
       { key: "def_td", label: "Defensive TD" },
+      { key: "def_st_td", label: "Special-teams TD" },
+      { key: "st_td", label: "Special-teams TD (other)" },
       { key: "sack", label: "Sack" },
-      { key: "def_int", label: "Interception" },
+      { key: "int", label: "Interception" },
       { key: "fum_rec", label: "Fumble recovery" },
       { key: "safe", label: "Safety" },
       { key: "blk_kick", label: "Blocked kick" },
@@ -84,8 +92,7 @@ const SCORING_GROUPS = [
       { key: "fgm_30_39", label: "FG made: 30–39 yds" },
       { key: "fgm_40_49", label: "FG made: 40–49 yds" },
       { key: "fgm_50p", label: "FG made: 50+ yds" },
-      { key: "pat_md", label: "PAT made" },
-      { key: "pat_ms", label: "PAT missed" },
+      { key: "xpm", label: "Extra point made" },
     ],
   },
 ];
