@@ -1280,6 +1280,14 @@ DECLARE
   v_buffer_secs     int := 0;
   v_deadline        timestamptz;
   v_player_id       text;
+  -- power-attach locals (mirrors client assignPowerToPick)
+  v_pw_name         text;
+  v_pw_cat          text;
+  v_pw_tied         text;
+  v_pw_slug         text;
+  v_pos             text;
+  v_member_user     uuid;
+  v_owner           uuid;
 BEGIN
   IF auth.uid() IS NULL THEN
     RAISE EXCEPTION 'Not authenticated';
@@ -1352,6 +1360,49 @@ BEGIN
 
   DELETE FROM draft_queue
   WHERE member_id = v_member_id AND league_id = p_league_id AND player_id = v_player_id;
+
+  -- ── Attach the round's draft power to the auto-picked player ────────────────
+  -- Mirrors the client assignPowerToPick + self-autodraft rules so a manager who
+  -- is force-autopicked while offline keeps the power they were dealt for this
+  -- round instead of silently losing it (the client safety-net path never ran
+  -- assignPowerToPick). Never attaches the interactive powers (Vampire Bite /
+  -- Foresight Coin / Draft Heist) or the draft-mechanic powers; a position-tied
+  -- power attaches only when the picked player's position matches (otherwise it
+  -- fizzles, exactly like a mismatched manual/self-autodraft pick). The power is
+  -- credited to the ON-THE-CLOCK member (the offline manager), never to
+  -- auth.uid() (the peer client that fired the safety-net force).
+  SELECT dp.name, dp.category, dp.tied_position
+    INTO v_pw_name, v_pw_cat, v_pw_tied
+  FROM draft_power_assignments dpa
+  JOIN draft_powers dp ON dp.id = dpa.power_id
+  WHERE dpa.league_id = p_league_id AND dpa.member_id = v_member_id AND dpa.round = v_round;
+
+  IF v_pw_name IS NOT NULL
+     AND v_pw_name NOT IN ('Vampire Bite', 'Foresight Coin', 'Draft Heist')
+     AND v_pw_cat IS DISTINCT FROM 'draft_mechanic'
+  THEN
+    SELECT position INTO v_pos FROM players WHERE id = v_player_id;
+    IF v_pw_tied IS NULL
+       OR v_pw_tied = 'ANY'
+       OR (v_pw_tied = 'WR/RB/TE' AND v_pos IN ('WR', 'RB', 'TE'))
+       OR (v_pw_tied = 'D/ST'     AND v_pos = 'DEF')
+       OR (v_pw_tied = v_pos)
+    THEN
+      SELECT user_id INTO v_member_user FROM league_members WHERE id = v_member_id;
+      SELECT drafted_by_user_id INTO v_owner
+        FROM player_draft_powers
+        WHERE league_id = p_league_id AND player_id = v_player_id;
+      IF v_owner IS NULL OR v_owner = v_member_user THEN
+        v_pw_slug := lower(regexp_replace(v_pw_name, '[^a-zA-Z0-9]+', '_', 'g'));
+        INSERT INTO player_draft_powers (league_id, player_id, power, round, drafted_by_user_id)
+        VALUES (p_league_id, v_player_id, v_pw_slug, v_round, v_member_user)
+        ON CONFLICT (league_id, player_id) DO UPDATE
+          SET power = EXCLUDED.power,
+              round = EXCLUDED.round,
+              drafted_by_user_id = EXCLUDED.drafted_by_user_id;
+      END IF;
+    END IF;
+  END IF;
 
   IF v_pick_count + 1 >= v_total_picks THEN
     UPDATE uff_leagues
