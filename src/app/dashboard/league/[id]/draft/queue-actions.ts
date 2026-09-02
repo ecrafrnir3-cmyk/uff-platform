@@ -228,3 +228,110 @@ export async function commissionerPick(
   await notifyNextPicker(supabase, leagueId);
   return { picked: !!data };
 }
+
+// ── Commissioner proxy — interactive powers ────────────────────────────────────
+// When the commissioner drafts for a no-show, the no-show's INTERACTIVE powers
+// (Vampire Bite / Foresight Coin / Draft Heist) can't auto-attach — they need a
+// choice. These let the commissioner make that choice AS the on-clock team. Each
+// RPC re-checks commissioner identity + that the acting member actually holds the
+// power this round, server-side, so none of this can be driven by a non-commish.
+
+type ProxyPowerRow = {
+  round: number;
+  draft_powers: {
+    id: number;
+    name: string;
+    category: string | null;
+    description: string;
+    tied_position: string | null;
+  } | null;
+};
+
+// The on-clock member's power rows for the whole draft, so the commissioner UI
+// can tell which interactive power (if any) that team holds this round and drive
+// the right modal. Gated to the league commissioner.
+export async function getMemberPowers(
+  leagueId: string,
+  memberId: string,
+): Promise<{ error?: string; powers?: ProxyPowerRow[] }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const { data: league } = await supabase
+    .from("uff_leagues")
+    .select("commissioner_id")
+    .eq("id", leagueId)
+    .maybeSingle();
+  if (!league || league.commissioner_id !== user.id) {
+    return { error: "Only the commissioner can view another manager's powers." };
+  }
+
+  const { data } = await supabase
+    .from("draft_power_assignments")
+    .select("round, draft_powers(id, name, category, description, tied_position)")
+    .eq("league_id", leagueId)
+    .eq("member_id", memberId)
+    .order("round", { ascending: true });
+
+  return { powers: (data ?? []) as unknown as ProxyPowerRow[] };
+}
+
+export async function commissionerVampireBite(
+  leagueId: string,
+  actingMemberId: string,
+  targetPlayerId: string,
+  round: number,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const { error } = await supabase.rpc("commissioner_vampire_bite", {
+    p_league_id: leagueId,
+    p_acting_member_id: actingMemberId,
+    p_target_player_id: targetPlayerId,
+    p_round: round,
+  });
+  if (error) return { error: error.message };
+  return {};
+}
+
+export async function commissionerForesightSwap(
+  leagueId: string,
+  actingMemberId: string,
+  currentRound: number,
+  swapRound: number,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const { error } = await supabase.rpc("commissioner_foresight_swap", {
+    p_league_id: leagueId,
+    p_acting_member_id: actingMemberId,
+    p_current_round: currentRound,
+    p_swap_round: swapRound,
+  });
+  if (error) return { error: error.message };
+  return {};
+}
+
+export async function commissionerHeist(
+  leagueId: string,
+  actingMemberId: string,
+  targetMemberId: string,
+): Promise<{ error?: string; blocked?: boolean; blockerTeam?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const { data, error } = await supabase.rpc("commissioner_heist", {
+    p_league_id: leagueId,
+    p_acting_member_id: actingMemberId,
+    p_target_member_id: targetMemberId,
+  });
+  if (error) return { error: error.message };
+  const res = data as { blocked: boolean; blockerTeam?: string } | null;
+  return { blocked: res?.blocked ?? false, blockerTeam: res?.blockerTeam };
+}

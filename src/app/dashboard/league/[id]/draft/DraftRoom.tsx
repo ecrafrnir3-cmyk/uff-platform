@@ -5,7 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import TrendingPlayers from "@/components/TrendingPlayers";
 import { makeDraftPick, assignPowerToPick, assignVampireBite, swapForesightCoin, executeHeist, restoreHeistOrder, revealNextPower } from "./actions";
-import { addToQueue, removeFromQueue, saveQueueOrder, executeAutodraft, forceAutopick, commissionerPick } from "./queue-actions";
+import { addToQueue, removeFromQueue, saveQueueOrder, executeAutodraft, forceAutopick, commissionerPick, getMemberPowers, commissionerVampireBite, commissionerForesightSwap, commissionerHeist } from "./queue-actions";
 import { addToWatchlist, removeFromWatchlist } from "./watchlist-actions";
 import { startDraft } from "../actions";
 
@@ -149,12 +149,14 @@ function VampireBiteModal({
   onSelect,
   onSkip,
   submitting,
+  forTeam,
 }: {
   picks: Pick[];
   memberMap: Record<string, Member>;
   onSelect: (playerId: string) => void;
   onSkip: () => void;
   submitting: boolean;
+  forTeam?: string;
 }) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<{ id: string; name: string } | null>(null);
@@ -172,11 +174,16 @@ function VampireBiteModal({
         style={{ background: "#0d0d1a", borderColor: "#CC0000" }}
       >
         <div className="mb-4">
+          {forTeam && (
+            <div className="mb-2 rounded-md px-2.5 py-1.5 text-xs font-bold" style={{ background: "#7A5CFF", color: "#f4f4f8" }}>
+              ⚡ COMMISSIONER PROXY — acting for {forTeam}
+            </div>
+          )}
           <p className="text-xs uppercase tracking-[0.2em]" style={{ color: "#CC0000" }}>
             Vampire Bite
           </p>
           <h2 className="mt-1 text-xl font-bold" style={{ color: "#f4f4f8" }}>
-            Choose your target
+            {forTeam ? `Choose ${forTeam}'s target` : "Choose your target"}
           </h2>
           <p className="mt-1 text-sm text-white">
             10% of their weekly score drains to you every week, all season.
@@ -259,11 +266,13 @@ function ForesightCoinModal({
   myPowers,
   onSelect,
   submitting,
+  forTeam,
 }: {
   currentRound: number;
   myPowers: PowerRow[];
   onSelect: (swapWithRound: number) => void; // currentRound = keep current
   submitting: boolean;
+  forTeam?: string;
 }) {
   const [selectedRound, setSelectedRound] = useState<number>(currentRound);
 
@@ -277,6 +286,11 @@ function ForesightCoinModal({
         className="relative mx-4 flex max-h-[90vh] w-full max-w-md flex-col rounded-xl border p-6"
         style={{ background: "#0d0d1a", borderColor: "#FFD700" }}
       >
+        {forTeam && (
+          <div className="mb-2 rounded-md px-2.5 py-1.5 text-xs font-bold" style={{ background: "#7A5CFF", color: "#f4f4f8" }}>
+            ⚡ COMMISSIONER PROXY — acting for {forTeam}
+          </div>
+        )}
         <p className="text-xs uppercase tracking-[0.2em]" style={{ color: "#FFD700" }}>Foresight Coin</p>
         <h2 className="mt-1 text-xl font-bold" style={{ color: "#f4f4f8" }}>Choose your power</h2>
         <p className="mt-1 mb-4 text-sm" style={{ color: "#f4f4f8" }}>
@@ -343,6 +357,7 @@ function HeistModal({
   onSelect,
   onSkip,
   submitting,
+  forTeam,
 }: {
   members: Member[];
   myMemberId: string;
@@ -351,6 +366,7 @@ function HeistModal({
   onSelect: (targetMemberId: string) => void;
   onSkip: () => void;
   submitting: boolean;
+  forTeam?: string;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   // Only allow targeting managers who haven't picked yet this round.
@@ -363,6 +379,11 @@ function HeistModal({
         className="relative mx-4 flex max-h-[90vh] w-full max-w-md flex-col rounded-xl border p-6"
         style={{ background: "#0d0d1a", borderColor: "#CC0000" }}
       >
+        {forTeam && (
+          <div className="mb-2 rounded-md px-2.5 py-1.5 text-xs font-bold" style={{ background: "#7A5CFF", color: "#f4f4f8" }}>
+            ⚡ COMMISSIONER PROXY — acting for {forTeam}
+          </div>
+        )}
         <p className="text-xs uppercase tracking-[0.2em]" style={{ color: "#CC0000" }}>Draft Heist</p>
         <h2 className="mt-1 text-xl font-bold" style={{ color: "#f4f4f8" }}>Steal a pick slot</h2>
         <p className="mt-1 mb-4 text-sm text-white">
@@ -804,6 +825,13 @@ export default function DraftRoom({
   const [heistOriginalOrder, setHeistOriginalOrder] = useState<string[] | null>(null);
   // Telepathy
   const [telepathyReveal, setTelepathyReveal] = useState<{ powerName: string | null; cloaked: boolean } | null>(null);
+  // Commissioner proxy — the on-clock member's powers (so the commissioner can
+  // apply that team's interactive power on their behalf when drafting for a no-show)
+  const [proxyPowers, setProxyPowers] = useState<PowerRow[]>([]);
+  const [proxySubmitting, setProxySubmitting] = useState(false);
+  const [proxyVB, setProxyVB] = useState<{ memberId: string; teamName: string; round: number } | null>(null);
+  const [proxyFC, setProxyFC] = useState<{ memberId: string; teamName: string; round: number } | null>(null);
+  const [proxyHeist, setProxyHeist] = useState<{ memberId: string; teamName: string; round: number } | null>(null);
   // Draft Queue
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [autodraftSubmitting, setAutodraftSubmitting] = useState(false);
@@ -839,6 +867,10 @@ export default function DraftRoom({
   const isMyTurn = !isDraftComplete && currentMemberId === myMemberId;
   const currentMember = members.find((m) => m.id === currentMemberId);
   const myPowerThisRound = myPowersState.find((p) => p.round === currentRound);
+  // Commissioner proxy mode: I'm the commissioner and someone ELSE (a no-show) is
+  // on the clock. In this mode I draft — and apply interactive powers — for them.
+  const isProxyMode = isCommissioner && !isMyTurn && !isDraftComplete && !!currentMemberId && currentMemberId !== myMemberId;
+  const proxyPowerThisRound = isProxyMode ? (proxyPowers.find((p) => p.round === currentRound)?.draft_powers ?? null) : null;
 
   // ---- fetchPicks (used in effect below) -------------------------------------
   const fetchPicks = useCallback(async () => {
@@ -890,6 +922,17 @@ export default function DraftRoom({
     const interval = setInterval(fetchPicks, 5000);
     return () => clearInterval(interval);
   }, [fetchPicks, isDraftComplete]);
+
+  // Load the on-clock member's powers whenever proxy mode is active, so the
+  // commissioner UI knows which interactive power (if any) that team holds.
+  useEffect(() => {
+    if (!isProxyMode || !currentMemberId) { setProxyPowers([]); return; }
+    let cancelled = false;
+    getMemberPowers(leagueId, currentMemberId).then((res) => {
+      if (!cancelled && res.powers) setProxyPowers(res.powers as PowerRow[]);
+    });
+    return () => { cancelled = true; };
+  }, [isProxyMode, currentMemberId, leagueId]);
 
   // Restore heist order when round advances
   useEffect(() => {
@@ -1227,6 +1270,10 @@ export default function DraftRoom({
   // ---- Commissioner proxy pick (draft for the on-the-clock no-show) ----------
   async function handleCommissionerPick(playerId: string, playerName: string, targetMemberId: string, teamName: string) {
     if (!window.confirm(`Draft ${playerName} for ${teamName}? This is a commissioner pick on their behalf.`)) return;
+    // Capture the team's power for THIS round before the pick advances the clock.
+    const powerNow = proxyPowers.find((p) => p.round === currentRound)?.draft_powers ?? null;
+    const roundNow = currentRound;
+    const hasFuturePeek = proxyPowers.some((p) => p.round > roundNow && p.round <= roundNow + 2);
     setError(null);
     setPowerResult(null);
     setSubmitting(true);
@@ -1238,11 +1285,99 @@ export default function DraftRoom({
         setSuccess(`Drafted ${playerName} for ${teamName}.`);
         await fetchPicks();
         setTimeout(() => setSuccess(null), 4000);
+        // Apply the team's INTERACTIVE power on their behalf (position-tied powers
+        // already auto-attached inside the RPC). Draft Heist is pre-pick (banner button).
+        if (powerNow?.name === "Vampire Bite") {
+          setProxyVB({ memberId: targetMemberId, teamName, round: roundNow });
+        } else if (powerNow?.name === "Foresight Coin") {
+          if (hasFuturePeek) {
+            setProxyFC({ memberId: targetMemberId, teamName, round: roundNow });
+          } else {
+            setPowerResult({ type: "meta", message: `Foresight Coin (${teamName}) — no future rounds to swap.` });
+            setTimeout(() => setPowerResult(null), 5000);
+          }
+        }
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Commissioner pick failed.");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  // ---- Commissioner proxy power handlers -------------------------------------
+  async function handleProxyVampireBite(targetPlayerId: string) {
+    if (!proxyVB) return;
+    setProxySubmitting(true);
+    const result = await commissionerVampireBite(leagueId, proxyVB.memberId, targetPlayerId, proxyVB.round);
+    setProxySubmitting(false);
+    const team = proxyVB.teamName;
+    setProxyVB(null);
+    if (result.error) {
+      setError(result.error);
+    } else {
+      setPowerResult({ type: "applied", message: `Vampire Bite locked in for ${team} — 10% of that player's weekly score drains to them all season.` });
+      setTimeout(() => setPowerResult(null), 6000);
+    }
+  }
+
+  async function handleProxyForesight(swapWithRound: number) {
+    if (!proxyFC) return;
+    setProxySubmitting(true);
+    const team = proxyFC.teamName;
+    if (swapWithRound !== proxyFC.round) {
+      const result = await commissionerForesightSwap(leagueId, proxyFC.memberId, proxyFC.round, swapWithRound);
+      if (result.error) {
+        setError(result.error);
+      } else {
+        const swappedName = proxyPowers.find((p) => p.round === swapWithRound)?.draft_powers?.name ?? "Unknown";
+        setProxyPowers((prev) => {
+          const next = prev.map((p) => ({ ...p }));
+          const ci = next.findIndex((p) => p.round === proxyFC.round);
+          const si = next.findIndex((p) => p.round === swapWithRound);
+          if (ci !== -1 && si !== -1) {
+            const tmp = next[ci].draft_powers;
+            next[ci] = { ...next[ci], draft_powers: next[si].draft_powers };
+            next[si] = { ...next[si], draft_powers: tmp };
+          }
+          return next;
+        });
+        setPowerResult({ type: "applied", message: `Foresight Coin (${team}) — swapped to Round ${swapWithRound}'s power: ${swappedName}!` });
+        setTimeout(() => setPowerResult(null), 6000);
+      }
+    } else {
+      setPowerResult({ type: "meta", message: `Foresight Coin (${team}) — kept this round's power.` });
+      setTimeout(() => setPowerResult(null), 5000);
+    }
+    setProxySubmitting(false);
+    setProxyFC(null);
+  }
+
+  async function handleProxyHeist(targetMemberId: string) {
+    if (!proxyHeist) return;
+    setProxySubmitting(true);
+    const team = proxyHeist.teamName;
+    const actingMemberId = proxyHeist.memberId;
+    const result = await commissionerHeist(leagueId, actingMemberId, targetMemberId);
+    setProxySubmitting(false);
+    setProxyHeist(null);
+    if (result.error) {
+      setError(result.error);
+    } else if (result.blocked) {
+      setPowerResult({ type: "blocked", message: `Draft Heist blocked! ${result.blockerTeam ?? "That team"} has Hero's Shield this round.` });
+      setTimeout(() => setPowerResult(null), 8000);
+    } else {
+      // Reflect the swapped order locally so the board updates immediately.
+      const newOrder = [...activeDraftOrder];
+      const aIdx = newOrder.indexOf(actingMemberId);
+      const tIdx = newOrder.indexOf(targetMemberId);
+      if (aIdx !== -1 && tIdx !== -1) { newOrder[aIdx] = targetMemberId; newOrder[tIdx] = actingMemberId; }
+      setHeistOriginalOrder(activeDraftOrder);
+      setHeistUsedRound(currentRound);
+      setDraftOrderState(newOrder);
+      const targetTeam = memberMap[targetMemberId]?.team_name ?? "target";
+      setPowerResult({ type: "applied", message: `Draft Heist executed for ${team} — swapped draft slots with ${targetTeam} this round!` });
+      setTimeout(() => setPowerResult(null), 8000);
     }
   }
 
@@ -1455,6 +1590,47 @@ export default function DraftRoom({
         />
       )}
 
+      {/* Commissioner proxy modals — apply a no-show's interactive power on their behalf */}
+      {proxyVB && (
+        <VampireBiteModal
+          picks={picks}
+          memberMap={memberMap}
+          forTeam={proxyVB.teamName}
+          onSelect={handleProxyVampireBite}
+          onSkip={() => {
+            setProxyVB(null);
+            setPowerResult({ type: "fizzled", message: `Vampire Bite skipped for ${proxyVB.teamName} — power forfeited.` });
+            setTimeout(() => setPowerResult(null), 5000);
+          }}
+          submitting={proxySubmitting}
+        />
+      )}
+      {proxyFC && (
+        <ForesightCoinModal
+          currentRound={proxyFC.round}
+          myPowers={proxyPowers}
+          forTeam={proxyFC.teamName}
+          onSelect={handleProxyForesight}
+          submitting={proxySubmitting}
+        />
+      )}
+      {proxyHeist && (
+        <HeistModal
+          members={members}
+          myMemberId={proxyHeist.memberId}
+          memberMap={memberMap}
+          forTeam={proxyHeist.teamName}
+          pickedThisRound={new Set(picks.filter((p) => p.round === currentRound).map((p) => p.member_id))}
+          onSelect={handleProxyHeist}
+          onSkip={() => {
+            setProxyHeist(null);
+            setPowerResult({ type: "fizzled", message: `Draft Heist skipped for ${proxyHeist.teamName} — power forfeited this round.` });
+            setTimeout(() => setPowerResult(null), 5000);
+          }}
+          submitting={proxySubmitting}
+        />
+      )}
+
       <div className="mx-auto max-w-6xl flex flex-col gap-6">
 
         {/* Header */}
@@ -1556,8 +1732,9 @@ export default function DraftRoom({
           <div
             className="rounded-lg border px-5 py-4"
             style={{
-              borderColor: isMyTurn ? "#FFD700" : "#2a2a40",
-              background: isMyTurn ? "rgba(255,215,0,0.07)" : "#15151f",
+              borderColor: isMyTurn ? "#FFD700" : isProxyMode ? "#7A5CFF" : "#2a2a40",
+              background: isMyTurn ? "rgba(255,215,0,0.07)" : isProxyMode ? "rgba(122,92,255,0.12)" : "#15151f",
+              boxShadow: isProxyMode ? "0 0 0 1px rgba(122,92,255,0.35)" : undefined,
             }}
           >
             {isMyTurn ? (
@@ -1605,6 +1782,74 @@ export default function DraftRoom({
                       </p>
                     )}
                   </div>
+                )}
+              </div>
+            ) : isProxyMode ? (
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] font-bold" style={{ color: "#B9A6FF" }}>
+                      ⚡ Commissioner Proxy
+                    </p>
+                    <p className="mt-1 text-lg font-bold" style={{ color: "#f4f4f8" }}>
+                      You are drafting for{" "}
+                      <span style={{ color: "#B9A6FF" }}>{currentMember?.team_name ?? "this team"}</span>
+                    </p>
+                    <p className="mt-0.5 text-xs" style={{ color: "#c9c2f0" }}>
+                      This is <span className="font-semibold">not your team</span> — use the purple
+                      “Draft for {currentMember?.team_name ?? "this team"}” buttons in the player list below.
+                    </p>
+                  </div>
+                  {timeLeft !== null && timeLeft > 0 && (
+                    <div
+                      className="flex items-center justify-center rounded-full font-bold tabular-nums shrink-0"
+                      style={{
+                        width: 52, height: 52,
+                        background: timeLeft <= 10 ? "rgba(204,0,0,0.18)" : "rgba(122,92,255,0.15)",
+                        border: `2px solid ${timeLeft <= 10 ? "#CC0000" : "#7A5CFF"}`,
+                        color: timeLeft <= 10 ? "#CC0000" : "#B9A6FF",
+                        fontSize: timeLeft >= 100 ? 14 : 18,
+                      }}
+                    >
+                      {timeLeft}
+                    </div>
+                  )}
+                </div>
+                {proxyPowerThisRound && (
+                  <div className="rounded-md border px-3 py-2.5" style={{ borderColor: "#7A5CFF", background: "#12101f" }}>
+                    <p className="text-xs uppercase tracking-wide mb-0.5" style={{ color: "#B9A6FF" }}>
+                      {currentMember?.team_name ?? "This team"}’s power this round
+                    </p>
+                    <p className="text-sm font-semibold" style={{ color: "#f4f4f8" }}>
+                      {proxyPowerThisRound.name}
+                      {proxyPowerThisRound.tied_position && proxyPowerThisRound.tied_position !== "ANY" && (
+                        <span className="ml-2 rounded px-1.5 py-0.5 text-xs font-normal" style={{ background: "#1c1c2b", color: "#f4f4f8" }}>
+                          {proxyPowerThisRound.tied_position} only
+                        </span>
+                      )}
+                    </p>
+                    <p className="mt-0.5 text-xs" style={{ color: "#c9c2f0" }}>{proxyPowerThisRound.description}</p>
+                    {proxyPowerThisRound.name === "Draft Heist" && currentMemberId && currentMember && (
+                      <button
+                        onClick={() => setProxyHeist({ memberId: currentMemberId, teamName: currentMember.team_name, round: currentRound })}
+                        disabled={proxySubmitting}
+                        className="mt-2 rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                        style={{ background: "#CC0000", color: "#f4f4f8" }}
+                      >
+                        Use Draft Heist for {currentMember.team_name} (before picking)
+                      </button>
+                    )}
+                    {(proxyPowerThisRound.name === "Vampire Bite" || proxyPowerThisRound.name === "Foresight Coin") && (
+                      <p className="mt-1.5 text-xs font-semibold" style={{ color: "#B9A6FF" }}>
+                        You’ll choose how to use {proxyPowerThisRound.name} right after you make {currentMember?.team_name ?? "their"} pick.
+                      </p>
+                    )}
+                  </div>
+                )}
+                {timeLeft === 0 && (
+                  <p className="text-xs font-semibold" style={{ color: "#CC0000" }}>
+                    Clock expired — pick now for {currentMember?.team_name ?? "this team"} or it will autopick.
+                  </p>
                 )}
               </div>
             ) : (
