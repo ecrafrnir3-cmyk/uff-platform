@@ -11,6 +11,27 @@ import { startDraft } from "../actions";
 
 const supabase = createClient();
 
+// What each draft power wants you to DO in the round it lands in — shown under
+// each entry in the My Powers panel so a manager can plan their picks at a glance.
+const POWER_HINTS: Record<string, string> = {
+  "Gunslinger": "Draft a QB",
+  "Berserker Rage": "Draft an RB",
+  "Goal Line Hammer": "Draft an RB",
+  "Red Zone Menace": "Draft a WR",
+  "Reception Specialist": "Draft a WR / RB / TE",
+  "Seam Buster": "Draft a TE",
+  "Iron Defense": "Draft a D/ST",
+  "Sniper": "Draft a K",
+  "Shadow Guard": "Shields this pick from Vampire Bite",
+  "Time Stone": "Injury-freeze on this pick",
+  "Power Negation": "⚠ Halves this pick's score — draft a spare",
+  "Vampire Bite": "Bite an opponent's player",
+  "Draft Heist": "Swap draft slots with a manager",
+  "Foresight Coin": "Pull a later power forward",
+  "Telepathy": "Peek at the next manager's power",
+  "Hero's Shield": "Auto-blocks a Heist aimed at you",
+};
+
 interface Player {
   id: string;
   full_name: string;
@@ -2022,6 +2043,11 @@ export default function DraftRoom({
                     <p className="text-xs font-semibold" style={{ color: "#f4f4f8" }}>
                       {dp?.name ?? "Unknown"}
                     </p>
+                    {dp?.name && POWER_HINTS[dp.name] && (
+                      <p className="text-xs" style={{ color: dp.name === "Power Negation" ? "#CC6666" : "#8888aa" }}>
+                        {POWER_HINTS[dp.name]}
+                      </p>
+                    )}
                     {isCurr && dp?.name === "Hero's Shield" && (
                       <p className="mt-0.5 text-xs" style={{ color: "#0057FF" }}>&nbsp;Shielded</p>
                     )}
