@@ -5,7 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import TrendingPlayers from "@/components/TrendingPlayers";
 import { makeDraftPick, assignPowerToPick, assignVampireBite, swapForesightCoin, executeHeist, restoreHeistOrder, revealNextPower } from "./actions";
-import { addToQueue, removeFromQueue, saveQueueOrder, executeAutodraft, forceAutopick } from "./queue-actions";
+import { addToQueue, removeFromQueue, saveQueueOrder, executeAutodraft, forceAutopick, commissionerPick } from "./queue-actions";
 import { addToWatchlist, removeFromWatchlist } from "./watchlist-actions";
 import { startDraft } from "../actions";
 
@@ -1224,6 +1224,28 @@ export default function DraftRoom({
     }
   }
 
+  // ---- Commissioner proxy pick (draft for the on-the-clock no-show) ----------
+  async function handleCommissionerPick(playerId: string, playerName: string, targetMemberId: string, teamName: string) {
+    if (!window.confirm(`Draft ${playerName} for ${teamName}? This is a commissioner pick on their behalf.`)) return;
+    setError(null);
+    setPowerResult(null);
+    setSubmitting(true);
+    try {
+      const result = await commissionerPick(leagueId, targetMemberId, playerId);
+      if (result?.error) {
+        setError(result.error);
+      } else {
+        setSuccess(`Drafted ${playerName} for ${teamName}.`);
+        await fetchPicks();
+        setTimeout(() => setSuccess(null), 4000);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Commissioner pick failed.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   // ---- Pick handler ----------------------------------------------------------
   async function handlePick(playerId: string, playerPosition: string) {
     setError(null);
@@ -1767,6 +1789,17 @@ export default function DraftRoom({
                         style={{ background: "#0057FF", color: "#f4f4f8" }}
                       >
                         {submitting ? "..." : "Draft"}
+                      </button>
+                    )}
+                    {isCommissioner && !isMyTurn && !isDraftComplete && !roundBufferActive && currentMemberId && currentMember && (
+                      <button
+                        onClick={() => handleCommissionerPick(p.id, p.full_name, currentMemberId, currentMember.team_name)}
+                        disabled={submitting}
+                        className="ml-3 shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                        style={{ background: "#7A5CFF", color: "#f4f4f8" }}
+                        title={`Commissioner: draft ${p.full_name} for ${currentMember.team_name}`}
+                      >
+                        {submitting ? "..." : `Draft for ${currentMember.team_name}`}
                       </button>
                     )}
                   </div>

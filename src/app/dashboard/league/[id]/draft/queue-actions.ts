@@ -203,3 +203,28 @@ export async function forceAutopick(leagueId: string): Promise<{
   if (data) await notifyNextPicker(supabase, leagueId);
   return { picked: !!data };
 }
+
+// ── Commissioner proxy pick: the commissioner drafts a specific player FOR the
+// manager currently on the clock (for a no-show who can't attend the draft). The
+// RPC re-checks commissioner identity + that the target is actually on the clock
+// server-side, so this cannot jump the draft order or be called by a non-commish.
+export async function commissionerPick(
+  leagueId: string,
+  targetMemberId: string,
+  playerId: string,
+): Promise<{ error?: string; picked?: boolean }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const { data, error } = await supabase.rpc("commissioner_draft_pick", {
+    p_league_id: leagueId,
+    p_target_member_id: targetMemberId,
+    p_player_id: playerId,
+  });
+
+  if (error) return { error: error.message };
+
+  await notifyNextPicker(supabase, leagueId);
+  return { picked: !!data };
+}
