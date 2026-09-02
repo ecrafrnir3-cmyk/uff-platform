@@ -1009,7 +1009,12 @@ export default function DraftRoom({
   }, [roundBufferActive, myPowerThisRound?.draft_powers?.name, currentRound]);
 
   useEffect(() => {
-    const fetchPlayers = async () => {
+    let cancelled = false;
+    // Retries on a transient failure and NEVER blanks a good list with []. Under
+    // many managers loading at draft start on a shared DB, a single dropped
+    // request used to leave the list permanently empty until a manual refresh
+    // (inaugural-draft incident 2026-09-02).
+    const fetchPlayers = async (attempt: number) => {
       const hasSearch = search.trim().length >= 2;
       const hasPos = posFilter !== "ALL";
 
@@ -1022,13 +1027,37 @@ export default function DraftRoom({
       if (hasPos) q = q.eq("position", posFilter);
 
       // Default (ALL + no search): show top 60 by ADP
-      const { data } = await q.order("adp", { ascending: true, nullsFirst: false }).limit(60);
-      setPlayers((data as Player[]) ?? []);
+      const { data, error } = await q.order("adp", { ascending: true, nullsFirst: false }).limit(60);
+      if (cancelled) return;
+      if (error || !data) {
+        // Back off and retry rather than clobbering whatever we already show.
+        if (attempt < 4) setTimeout(() => { if (!cancelled) fetchPlayers(attempt + 1); }, 600 * (attempt + 1));
+        return;
+      }
+      setPlayers(data as Player[]);
     };
 
-    const timer = setTimeout(fetchPlayers, search ? 300 : 0);
-    return () => clearTimeout(timer);
+    const timer = setTimeout(() => fetchPlayers(0), search ? 300 : 0);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [search, posFilter]);
+
+  // Self-heal: if the DEFAULT available-player view is empty while the draft is
+  // live, keep re-pulling the top 60 every 3s until it populates — so a manager
+  // whose initial load lost the race recovers on their own, no refresh needed.
+  useEffect(() => {
+    const defaultView = search.trim().length < 2 && posFilter === "ALL";
+    if (!defaultView || players.length > 0 || isDraftComplete) return;
+    const id = setInterval(async () => {
+      const { data } = await supabase
+        .from("players")
+        .select("id, full_name, position, team, status, injury_status, adp")
+        .not("position", "is", null)
+        .order("adp", { ascending: true, nullsFirst: false })
+        .limit(60);
+      if (data && data.length) setPlayers(data as Player[]);
+    }, 3000);
+    return () => clearInterval(id);
+  }, [players.length, isDraftComplete, search, posFilter]);
 
   // Load queue on mount (and whenever myMemberId changes)
   useEffect(() => {
