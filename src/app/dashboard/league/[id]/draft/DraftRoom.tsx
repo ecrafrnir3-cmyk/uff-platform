@@ -2109,6 +2109,39 @@ export default function DraftRoom({
           {/* Right: queue + draft order + my powers */}
           <aside className="flex flex-col gap-5">
 
+            {/* My Team — the current user's own drafted players, live. Previously
+                a roster was only visible AFTER the draft; mid-draft your picks
+                were buried in the 14-wide board grid (invisible on a phone). */}
+            {(() => {
+              const myPicks = picks
+                .filter((p) => p.member_id === myMemberId)
+                .sort((a, b) => a.round - b.round);
+              return (
+                <div className="flex flex-col gap-2 rounded-lg border p-3" style={{ borderColor: "#0057FF", background: "#0a0e1a" }}>
+                  <h3 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "#0057FF" }}>
+                    My Team ({myPicks.length})
+                  </h3>
+                  {myPicks.length === 0 ? (
+                    <p className="text-xs" style={{ color: "#8888aa" }}>No picks yet — your drafted players show up here.</p>
+                  ) : (
+                    <div className="flex flex-col gap-1">
+                      {myPicks.map((p) => (
+                        <div key={p.id} className="flex items-center justify-between rounded-md px-2 py-1.5" style={{ background: "#12121c" }}>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ background: "#1c1c2b", color: "#8ab4ff" }}>R{p.round}</span>
+                            <span className="text-sm font-semibold truncate" style={{ color: "#f4f4f8" }}>{p.players?.full_name ?? p.player_id}</span>
+                          </div>
+                          <span className="shrink-0 text-xs" style={{ color: "#8888aa" }}>
+                            {p.players?.position ?? "?"}{p.players?.team ? ` · ${p.players.team}` : ""}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Draft Advisor */}
             {!isDraftComplete && (
               <div className="flex flex-col gap-2">
