@@ -2541,6 +2541,7 @@ DECLARE
   v_member_id uuid;
   v_power_ids smallint[];
   v_unassigned_count int;
+  v_sg_round int;
   i int;
   j int;
   tmp_uuid uuid;
@@ -2584,17 +2585,28 @@ BEGIN
       draft_started_at = now()
   WHERE id = p_league_id;
 
-  -- 16 powers (id 7 = cut Extra Roster Spot), one per round for rounds 1-16.
-  v_power_ids := ARRAY[1,2,3,4,5,6,8,9,10,11,12,13,14,15,16,17]::smallint[];
+  -- 15 powers here; Shadow Guard (id 9) is dealt separately into an early round
+  -- below. (id 7 = cut Extra Roster Spot.) 15 + Shadow Guard = 16, one per round.
+  v_power_ids := ARRAY[1,2,3,4,5,6,8,10,11,12,13,14,15,16,17]::smallint[];
 
   -- Round-aware placement: lower weight => earlier round; jitter keeps it random
   -- per manager. Late-tier weights (14-15) always sort after everyone else.
   FOREACH v_member_id IN ARRAY v_shuffled_order LOOP
+    -- Shadow Guard is dealt to a random EARLY round (1-5) so it can shield a
+    -- genuinely draftable player and act as a real Vampire Bite counter — it was
+    -- previously weighted mid/late, where it only ever protected a bench-tier pick.
+    v_sg_round := floor(random() * 5)::int + 1;   -- 1..5
+
     INSERT INTO draft_power_assignments (league_id, member_id, round, power_id)
-    SELECT
-      p_league_id,
-      v_member_id,
-      (row_number() OVER (ORDER BY
+    VALUES (p_league_id, v_member_id, v_sg_round, 9);
+
+    -- The other 15 powers rank by weight (+jitter) into the 15 remaining rounds
+    -- (every round except the one Shadow Guard took). Vampire Bite (weight 8) can
+    -- never land in round 1 because a lower-weight power always outranks it there.
+    INSERT INTO draft_power_assignments (league_id, member_id, round, power_id)
+    SELECT p_league_id, v_member_id, slots.round, ranked.pid
+    FROM (
+      SELECT pid, row_number() OVER (ORDER BY
         CASE pid
           WHEN 11 THEN 2   -- Gunslinger (QB)
           WHEN 6  THEN 3   -- Berserker Rage (RB)
@@ -2608,15 +2620,19 @@ BEGIN
           WHEN 1  THEN 7   -- Foresight Coin
           WHEN 16 THEN 8   -- Vampire Bite (never round 1)
           WHEN 4  THEN 9   -- Hero's Shield
-          WHEN 9  THEN 10  -- Shadow Guard
           WHEN 5  THEN 14  -- Iron Defense (D/ST -> late)
           WHEN 12 THEN 14  -- Sniper (K -> late)
           WHEN 10 THEN 15  -- Power Negation (self-cost -> throwaway rounds)
           ELSE 8
         END + random() * 3
-      ))::smallint AS round,
-      pid AS power_id
-    FROM unnest(v_power_ids) AS pid;
+      ) AS rnk
+      FROM unnest(v_power_ids) AS pid
+    ) ranked
+    JOIN (
+      SELECT r AS round, row_number() OVER (ORDER BY r) AS slot
+      FROM generate_series(1, array_length(v_power_ids, 1) + 1) AS r
+      WHERE r <> v_sg_round
+    ) slots ON slots.slot = ranked.rnk;
   END LOOP;
 END;
 $function$
