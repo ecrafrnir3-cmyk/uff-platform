@@ -575,11 +575,13 @@ function PreDraftLobby({
   const unassigned = members.filter((m) => m.faction === null).length;
 
   // ── Commissioner checklist ────────────────────────────────────────────────
+  // Note: the draft order is NOT a prerequisite — start_draft randomly shuffles
+  // it (Fisher-Yates) when the draft begins, so requiring a pre-set order here
+  // both blocked the start and was discarded by start_draft anyway.
   const checks = {
     enoughMembers:  members.length >= 2,
     leagueFull:     members.length >= league.max_teams,
     factionsSet:    allFactionsSet,
-    draftOrderSet:  league.draft_order.length === members.length,
     roundsSet:      (league.draft_rounds ?? 0) > 0,
   };
   const allChecksPassed = Object.values(checks).every(Boolean);
@@ -689,8 +691,8 @@ function PreDraftLobby({
               <ChecklistItem ok={checks.enoughMembers}  label={`At least 2 managers have joined (${members.length}/${league.max_teams})`} />
               <ChecklistItem ok={checks.leagueFull}     label={`League is full (${members.length}/${league.max_teams} managers)`} />
               <ChecklistItem ok={checks.factionsSet}    label={allFactionsSet ? "All managers have factions assigned" : `${unassigned} manager${unassigned !== 1 ? "s" : ""} missing faction`} />
-              <ChecklistItem ok={checks.draftOrderSet}  label={checks.draftOrderSet ? "Draft order is set" : "Draft order not yet configured — set it in Settings"} />
               <ChecklistItem ok={checks.roundsSet}      label={`Draft rounds configured (${league.draft_rounds ?? 0} rounds)`} />
+              <p className="text-xs mt-1" style={{ color: "#8888aa" }}>Draft order is randomly assigned when the draft starts — no setup needed.</p>
             </div>
 
             {allChecksPassed ? (
