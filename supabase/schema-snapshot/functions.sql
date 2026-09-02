@@ -924,6 +924,7 @@ BEGIN
           AND b.member_id  > a.member_id
         WHERE a.league_id = v_league.id
           AND a.week      = p_week::smallint
+          AND a.is_playoff = false
       ),
       winner_factions AS (
         SELECT mp.winner_id AS member_id,
@@ -970,6 +971,7 @@ BEGIN
               AND b.member_id  > a.member_id
             WHERE a.league_id = v_league.id
               AND a.week      = p_week::smallint
+              AND a.is_playoff = false
           ),
           winners AS (
             SELECT member_a AS member_id FROM pairs WHERE pts_a > pts_b
@@ -1174,6 +1176,7 @@ BEGIN
       AND b.member_id  > a.member_id
     WHERE a.league_id = p_league_id
       AND a.week      = p_week::smallint
+      AND a.is_playoff = false
   ),
   winner_factions AS (
     SELECT mp.winner_id AS member_id,
@@ -1219,6 +1222,7 @@ BEGIN
           AND b.member_id  > a.member_id
         WHERE a.league_id = p_league_id
           AND a.week      = p_week::smallint
+          AND a.is_playoff = false
       ),
       winners AS (
         SELECT member_a AS member_id FROM pairs WHERE pts_a > pts_b

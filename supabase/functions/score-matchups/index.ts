@@ -695,6 +695,16 @@ Deno.serve(async (req) => {
     const tkA = tokenMap[sA.member_id];
     const tkB = tokenMap[sB.member_id];
 
+    // Evaluate every pair-dependent token trigger against a SNAPSHOT of the
+    // pre-token totals so the pass is order-independent. Mutating tA.pts in place
+    // and then reading it for the opposing trigger let two opposing Last Stands
+    // BOTH fire (the second read the bench-boosted first total) and let a later
+    // token see an already-boosted opponent total (audit). Each member holds
+    // exactly one token, so a side's own total is only moved by its own token;
+    // the snapshots matter for the cross-side reads and the margin caps.
+    const aBase = tA.pts;
+    const bBase = tB.pts;
+
     // Token 5: Mirror Match — bonus = opponent's draft power bonus total
     if (tkA?.id === 5) {
       const bonus = draftPowerBonusMap[sB.member_id] ?? 0;
@@ -707,43 +717,45 @@ Deno.serve(async (req) => {
       tokenBonusMap[sB.member_id] = (tokenBonusMap[sB.member_id] ?? 0) + bonus;
     }
 
-    // Token 12: Last Stand — if trailing by 20+, add all bench pts
-    if (tkA?.id === 12 && tB.pts - tA.pts >= 20) {
+    // Token 12: Last Stand — if trailing by 20+ (snapshot margin), add all bench
+    // pts. Snapshot margins guarantee at most one side can qualify.
+    if (tkA?.id === 12 && bBase - aBase >= 20) {
       const benchPts = Object.values(fullScoreCache[sA.member_id] ?? {}).filter(ps => !ps.isStarter).reduce((s, ps) => s + ps.pts, 0);
       tA.pts = Math.round((tA.pts + benchPts) * 100) / 100;
       tokenBonusMap[sA.member_id] = (tokenBonusMap[sA.member_id] ?? 0) + benchPts;
     }
-    if (tkB?.id === 12 && tA.pts - tB.pts >= 20) {
+    if (tkB?.id === 12 && aBase - bBase >= 20) {
       const benchPts = Object.values(fullScoreCache[sB.member_id] ?? {}).filter(ps => !ps.isStarter).reduce((s, ps) => s + ps.pts, 0);
       tB.pts = Math.round((tB.pts + benchPts) * 100) / 100;
       tokenBonusMap[sB.member_id] = (tokenBonusMap[sB.member_id] ?? 0) + benchPts;
     }
 
-    // Token 15: Underdog — consolation for the losing side. The bonus is capped
-    // at the losing margin so it can never flip (or exceed) the result — the
-    // spec and standings both assume points order decides the winner (audit H5).
-    if (tkA?.id === 15 && tA.pts < tB.pts) {
-      const bonus = Math.min(3, Math.round((tB.pts - tA.pts) * 100) / 100);
+    // Token 15: Underdog — consolation for the losing side, evaluated on the
+    // snapshot and capped at (margin − 0.01) so the loser stays STRICTLY below —
+    // it can never tie or flip the result (audit: min(3, margin) landed an exact
+    // tie, which erases the opponent's win since standings require points >).
+    if (tkA?.id === 15 && aBase < bBase) {
+      const bonus = Math.max(0, Math.min(3, Math.round((bBase - aBase - 0.01) * 100) / 100));
       tA.pts = Math.round((tA.pts + bonus) * 100) / 100;
       tokenBonusMap[sA.member_id] = (tokenBonusMap[sA.member_id] ?? 0) + bonus;
     }
-    if (tkB?.id === 15 && tB.pts < tA.pts) {
-      const bonus = Math.min(3, Math.round((tA.pts - tB.pts) * 100) / 100);
+    if (tkB?.id === 15 && bBase < aBase) {
+      const bonus = Math.max(0, Math.min(3, Math.round((aBase - bBase - 0.01) * 100) / 100));
       tB.pts = Math.round((tB.pts + bonus) * 100) / 100;
       tokenBonusMap[sB.member_id] = (tokenBonusMap[sB.member_id] ?? 0) + bonus;
     }
 
-    // Token 17: Clutch Gene — if matchup within 5 pts, losing side rounds up.
-    // Same margin cap: never flips the result.
-    const diff = Math.abs(tA.pts - tB.pts);
+    // Token 17: Clutch Gene — if the matchup is within 5 pts (snapshot), the
+    // losing side rounds up, capped at (margin − 0.01) so it can never tie/flip.
+    const diff = Math.abs(aBase - bBase);
     if (diff > 0 && diff <= 5) {
-      if (tkA?.id === 17 && tA.pts < tB.pts) {
-        const bonus = Math.min(1, Math.round((tB.pts - tA.pts) * 100) / 100);
+      if (tkA?.id === 17 && aBase < bBase) {
+        const bonus = Math.max(0, Math.min(1, Math.round((bBase - aBase - 0.01) * 100) / 100));
         tA.pts = Math.round((tA.pts + bonus) * 100) / 100;
         tokenBonusMap[sA.member_id] = (tokenBonusMap[sA.member_id] ?? 0) + bonus;
       }
-      if (tkB?.id === 17 && tB.pts < tA.pts) {
-        const bonus = Math.min(1, Math.round((tA.pts - tB.pts) * 100) / 100);
+      if (tkB?.id === 17 && bBase < aBase) {
+        const bonus = Math.max(0, Math.min(1, Math.round((aBase - bBase - 0.01) * 100) / 100));
         tB.pts = Math.round((tB.pts + bonus) * 100) / 100;
         tokenBonusMap[sB.member_id] = (tokenBonusMap[sB.member_id] ?? 0) + bonus;
       }
