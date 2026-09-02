@@ -919,9 +919,33 @@ export default function DraftRoom({
   // ---- All effects (must be before any conditional returns) ------------------
   useEffect(() => {
     if (isDraftComplete) return; // stop polling once draft is done
-    const interval = setInterval(fetchPicks, 5000);
-    return () => clearInterval(interval);
+    const interval = setInterval(fetchPicks, 2500);
+    // Instantly re-sync when the tab regains focus/visibility. Browsers (phones
+    // especially) throttle setInterval to a crawl in a backgrounded tab, which
+    // is what made the board look frozen until a manual refresh — this catches
+    // everything the moment the manager looks back at the draft.
+    const onWake = () => { if (typeof document === "undefined" || document.visibilityState === "visible") fetchPicks(); };
+    document.addEventListener("visibilitychange", onWake);
+    window.addEventListener("focus", onWake);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onWake);
+      window.removeEventListener("focus", onWake);
+    };
   }, [fetchPicks, isDraftComplete]);
+
+  // Realtime push: refresh the instant any pick lands or the league row changes
+  // (heist / draft_order / status), so the board advances after EVERY pick with
+  // no polling lag. Falls back to the poll above if the socket drops.
+  useEffect(() => {
+    if (isDraftComplete) return;
+    const channel = supabase
+      .channel(`draft-room-${leagueId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "uff_draft_picks", filter: `league_id=eq.${leagueId}` }, () => { fetchPicks(); })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "uff_leagues", filter: `id=eq.${leagueId}` }, () => { fetchPicks(); })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [leagueId, isDraftComplete, fetchPicks]);
 
   // Load the on-clock member's powers whenever proxy mode is active, so the
   // commissioner UI knows which interactive power (if any) that team holds.
