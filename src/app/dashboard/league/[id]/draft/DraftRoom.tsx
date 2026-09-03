@@ -925,12 +925,25 @@ export default function DraftRoom({
     // is what made the board look frozen until a manual refresh — this catches
     // everything the moment the manager looks back at the draft.
     const onWake = () => { if (typeof document === "undefined" || document.visibilityState === "visible") fetchPicks(); };
+    // Mobile safety net: any tap/scroll re-syncs (throttled), so even when the
+    // phone has frozen the poll timer the board catches up the instant you touch it.
+    let lastInteract = 0;
+    const onInteract = () => {
+      const now = Date.now();
+      if (now - lastInteract > 1500) { lastInteract = now; fetchPicks(); }
+    };
     document.addEventListener("visibilitychange", onWake);
     window.addEventListener("focus", onWake);
+    window.addEventListener("pointerdown", onInteract, { passive: true });
+    window.addEventListener("touchstart", onInteract, { passive: true });
+    window.addEventListener("scroll", onInteract, { passive: true });
     return () => {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onWake);
       window.removeEventListener("focus", onWake);
+      window.removeEventListener("pointerdown", onInteract);
+      window.removeEventListener("touchstart", onInteract);
+      window.removeEventListener("scroll", onInteract);
     };
   }, [fetchPicks, isDraftComplete]);
 
@@ -2125,17 +2138,25 @@ export default function DraftRoom({
                     <p className="text-xs" style={{ color: "#8888aa" }}>No picks yet — your drafted players show up here.</p>
                   ) : (
                     <div className="flex flex-col gap-1">
-                      {myPicks.map((p) => (
-                        <div key={p.id} className="flex items-center justify-between rounded-md px-2 py-1.5" style={{ background: "#12121c" }}>
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ background: "#1c1c2b", color: "#8ab4ff" }}>R{p.round}</span>
-                            <span className="text-sm font-semibold truncate" style={{ color: "#f4f4f8" }}>{p.players?.full_name ?? p.player_id}</span>
+                      {myPicks.map((p) => {
+                        const rp = myPowersState.find((mp) => mp.round === p.round)?.draft_powers?.name ?? null;
+                        return (
+                          <div key={p.id} className="flex flex-col gap-0.5 rounded-md px-2 py-1.5" style={{ background: "#12121c" }}>
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ background: "#1c1c2b", color: "#8ab4ff" }}>R{p.round}</span>
+                                <span className="text-sm font-semibold truncate" style={{ color: "#f4f4f8" }}>{p.players?.full_name ?? p.player_id}</span>
+                              </div>
+                              <span className="shrink-0 text-xs" style={{ color: "#8888aa" }}>
+                                {p.players?.position ?? "?"}{p.players?.team ? ` · ${p.players.team}` : ""}
+                              </span>
+                            </div>
+                            {rp && (
+                              <span className="text-[11px]" style={{ color: "#FFD700" }}>⚡ {rp}</span>
+                            )}
                           </div>
-                          <span className="shrink-0 text-xs" style={{ color: "#8888aa" }}>
-                            {p.players?.position ?? "?"}{p.players?.team ? ` · ${p.players.team}` : ""}
-                          </span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
