@@ -32,6 +32,11 @@ const POWER_HINTS: Record<string, string> = {
   "Hero's Shield": "Auto-blocks a Heist aimed at you",
 };
 
+// Draft Heist is disabled for the inaugural draft: its slot swap/restore has a
+// cross-client race that skipped a manager's pick. The RPCs also reject it
+// server-side. Flip back to true once the swap/restore is fixed.
+const HEIST_ENABLED = false;
+
 interface Player {
   id: string;
   full_name: string;
@@ -1053,7 +1058,7 @@ export default function DraftRoom({
   // persistent "Use Draft Heist" banner lets a holder open it any time before
   // their pick, so missing the 30s buffer no longer wastes the power.
   useEffect(() => {
-    if (roundBufferActive && myPowerThisRound?.draft_powers?.name === "Draft Heist"
+    if (HEIST_ENABLED && roundBufferActive && myPowerThisRound?.draft_powers?.name === "Draft Heist"
         && heistUsedRound !== currentRound && !showHeistModal
         && heistAutoOpenedRef.current !== currentRound) {
       heistAutoOpenedRef.current = currentRound;
@@ -1920,7 +1925,7 @@ export default function DraftRoom({
                       )}
                     </p>
                     <p className="mt-0.5 text-xs" style={{ color: "#c9c2f0" }}>{proxyPowerThisRound.description}</p>
-                    {proxyPowerThisRound.name === "Draft Heist" && currentMemberId && currentMember && (
+                    {HEIST_ENABLED && proxyPowerThisRound.name === "Draft Heist" && currentMemberId && currentMember && (
                       <button
                         onClick={() => setProxyHeist({ memberId: currentMemberId, teamName: currentMember.team_name, round: currentRound })}
                         disabled={proxySubmitting}
@@ -1993,7 +1998,7 @@ export default function DraftRoom({
         {/* Draft Heist — persistent trigger. Usable the WHOLE round (not just the
             30s buffer) until you use it or make your pick, so a holder can never
             miss their window. */}
-        {!isDraftComplete
+        {HEIST_ENABLED && !isDraftComplete
           && myPowerThisRound?.draft_powers?.name === "Draft Heist"
           && heistUsedRound !== currentRound
           && !picks.some((p) => p.member_id === myMemberId && p.round === currentRound) && (
