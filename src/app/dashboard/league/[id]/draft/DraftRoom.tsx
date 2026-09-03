@@ -846,6 +846,7 @@ export default function DraftRoom({
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const autopickFiredForPickRef = useRef<number | null>(null);
   const forceFiredForPickRef = useRef<number | null>(null);
+  const heistAutoOpenedRef = useRef<number>(-1); // round the Heist modal auto-opened for (once per round)
   // Round buffer
   const [roundBufferActive, setRoundBufferActive] = useState(false);
   const [roundBufferTimeLeft, setRoundBufferTimeLeft] = useState(30);
@@ -1018,28 +1019,44 @@ export default function DraftRoom({
     return () => window.clearInterval(id);
   }, [roundBufferActive]);
 
-  // ---- Telepathy: auto-reveal first picker's power at buffer start ---------
+  // ---- Telepathy: peek at the NEXT manager's power — the manager who picks
+  // right after you THIS round — during the pre-round buffer, so you can plan
+  // your pick. (Was incorrectly revealing the round's FIRST picker, which in a
+  // snake draft is usually an unrelated team that has often already picked.) --
   useEffect(() => {
     if (!roundBufferActive) return;
     if (myPowerThisRound?.draft_powers?.name !== "Telepathy") return;
     if (bufferTelepathyReveal) return;
-    const firstPickNo = (currentRound - 1) * league.max_teams + 1;
-    const firstSlot = snakeDraftSlot(firstPickNo, league.max_teams);
-    const firstMemberId = activeDraftOrder[firstSlot - 1];
-    if (!firstMemberId || firstMemberId === myMemberId) {
-      setBufferTelepathyReveal({ powerName: null, cloaked: false, teamName: "you pick first" });
+    const myIdx = activeDraftOrder.indexOf(myMemberId);
+    if (myIdx === -1) return;
+    // My pick number this round (snake), then the very next pick.
+    const posInRound = currentRound % 2 === 1 ? myIdx + 1 : league.max_teams - myIdx;
+    const myPickNo = (currentRound - 1) * league.max_teams + posInRound;
+    const nextPickNo = myPickNo + 1;
+    if (Math.ceil(nextPickNo / league.max_teams) !== currentRound) {
+      // I'm the last pick of the round — no next manager to peek at this round.
+      setBufferTelepathyReveal({ powerName: null, cloaked: false, teamName: "__last__" });
       return;
     }
-    const teamName = members.find((m) => m.id === firstMemberId)?.team_name ?? "First picker";
-    revealNextPower({ leagueId, nextMemberId: firstMemberId, currentRound }).then((reveal) => {
+    const nextSlot = snakeDraftSlot(nextPickNo, league.max_teams);
+    const nextMemberId = activeDraftOrder[nextSlot - 1];
+    if (!nextMemberId) return;
+    const teamName = members.find((m) => m.id === nextMemberId)?.team_name ?? "Next manager";
+    revealNextPower({ leagueId, nextMemberId, currentRound }).then((reveal) => {
       setBufferTelepathyReveal({ ...reveal, teamName });
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundBufferActive, myPowerThisRound?.draft_powers?.name, bufferTelepathyReveal]);
 
-  // Show Draft Heist modal at round buffer start (replaces old isMyTurn trigger)
+  // Auto-open the Draft Heist modal ONCE at round-buffer start (a convenience for
+  // holders who are watching). It is no longer the only way to heist — the
+  // persistent "Use Draft Heist" banner lets a holder open it any time before
+  // their pick, so missing the 30s buffer no longer wastes the power.
   useEffect(() => {
-    if (roundBufferActive && myPowerThisRound?.draft_powers?.name === "Draft Heist" && heistUsedRound !== currentRound && !showHeistModal) {
+    if (roundBufferActive && myPowerThisRound?.draft_powers?.name === "Draft Heist"
+        && heistUsedRound !== currentRound && !showHeistModal
+        && heistAutoOpenedRef.current !== currentRound) {
+      heistAutoOpenedRef.current = currentRound;
       setShowHeistModal(true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1628,13 +1645,16 @@ export default function DraftRoom({
             });
             setHeistSubmitting(false);
             setShowHeistModal(false);
-            setHeistUsedRound(currentRound);
             if (result.error) {
+              // Not spent — let them try again from the banner.
               setError(result.error);
             } else if (result.blocked) {
-              setPowerResult({ type: "blocked", message: `Draft Heist blocked! ${result.blockerTeam ?? "That team"} has Hero\'s Shield this round.` });
+              // Blocked = NO swap happened, so the heist is NOT spent — the holder
+              // can pick a different (unshielded) manager from the banner.
+              setPowerResult({ type: "blocked", message: `Draft Heist blocked — ${result.blockerTeam ?? "that team"} has Hero's Shield this round. Pick a different manager.` });
               setTimeout(() => setPowerResult(null), 8000);
             } else {
+              setHeistUsedRound(currentRound); // spent only on a successful swap
               const targetTeam = memberMap[targetMemberId]?.team_name ?? "target";
               const newOrder = [...activeDraftOrder];
               const myIdx = newOrder.indexOf(myMemberId);
@@ -1647,10 +1667,11 @@ export default function DraftRoom({
             }
           }}
           onSkip={() => {
+            // Soft cancel — does NOT forfeit. The heist stays available from the
+            // banner until you use it or make your pick this round.
             setShowHeistModal(false);
-            setHeistUsedRound(currentRound);
-            setPowerResult({ type: "fizzled", message: "Draft Heist skipped — power forfeited for this round." });
-            setTimeout(() => setPowerResult(null), 5000);
+            setPowerResult({ type: "meta", message: "Draft Heist still ready — use it any time before your pick this round." });
+            setTimeout(() => setPowerResult(null), 4000);
           }}
           submitting={heistSubmitting}
         />
@@ -1753,11 +1774,15 @@ export default function DraftRoom({
             {bufferTelepathyReveal && (
               <div className="rounded-md border px-3 py-2.5" style={{ borderColor: "#0057FF", background: "#0a0e1a" }}>
                 <p className="text-xs uppercase tracking-wide mb-1" style={{ color: "#0057FF" }}>
-                  🧠 Telepathy — First Picker This Round
+                  🧠 Telepathy — Next Manager&rsquo;s Power
                 </p>
-                {bufferTelepathyReveal.cloaked ? (
+                {bufferTelepathyReveal.teamName === "__last__" ? (
+                  <p className="text-sm" style={{ color: "#f4f4f8" }}>
+                    You pick last this round — no manager after you to peek at.
+                  </p>
+                ) : bufferTelepathyReveal.cloaked ? (
                   <p className="text-sm font-semibold" style={{ color: "#f4f4f8" }}>
-                    {bufferTelepathyReveal.teamName} — power is <span style={{ color: "#8888aa" }}>Shadow Guard</span>
+                    {bufferTelepathyReveal.teamName} — <span style={{ color: "#8888aa" }}>cloaked by Shadow Guard</span>
                   </p>
                 ) : bufferTelepathyReveal.powerName ? (
                   <p className="text-sm font-semibold" style={{ color: "#f4f4f8" }}>
@@ -1962,6 +1987,31 @@ export default function DraftRoom({
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Draft Heist — persistent trigger. Usable the WHOLE round (not just the
+            30s buffer) until you use it or make your pick, so a holder can never
+            miss their window. */}
+        {!isDraftComplete
+          && myPowerThisRound?.draft_powers?.name === "Draft Heist"
+          && heistUsedRound !== currentRound
+          && !picks.some((p) => p.member_id === myMemberId && p.round === currentRound) && (
+          <div className="rounded-lg border px-4 py-3 flex items-center justify-between gap-3 flex-wrap" style={{ borderColor: "#CC0000", background: "rgba(204,0,0,0.10)" }}>
+            <div className="min-w-0">
+              <p className="text-xs uppercase tracking-[0.2em] font-bold" style={{ color: "#ff8a8a" }}>⚡ Draft Heist available (Round {currentRound})</p>
+              <p className="text-xs mt-0.5" style={{ color: "#f4f4f8" }}>
+                Swap your draft slot with another manager — use it any time before your pick this round.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowHeistModal(true)}
+              disabled={submitting}
+              className="shrink-0 rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-50"
+              style={{ background: "#CC0000", color: "#f4f4f8" }}
+            >
+              Use Draft Heist
+            </button>
           </div>
         )}
 
