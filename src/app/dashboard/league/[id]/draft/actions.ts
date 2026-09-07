@@ -271,6 +271,144 @@ export async function assignVampireBite(params: {
   return {};
 }
 
+// ── Post-draft Vampire Bite window ────────────────────────────────────────────
+// Vampire Bite is interactive: it only fired if the holder made their pick
+// manually, in the exact round they held it, and answered the modal. In the
+// 2026-09-07 inaugural draft that meant it was silently forfeited by anyone who
+// was auto-picked, drafted from the queue, or simply missed the prompt. These
+// two actions reopen the choice once the draft is complete, so every manager
+// gets the one bite they were dealt.
+
+export async function getBiteState(leagueId: string): Promise<{
+  canBite: boolean;
+  alreadyBitten: string[];
+  myTargetPlayerId: string | null;
+  error?: string;
+}> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { canBite: false, alreadyBitten: [], myTargetPlayerId: null, error: "Not authenticated." };
+
+  const { data: member } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!member) return { canBite: false, alreadyBitten: [], myTargetPlayerId: null, error: "Not a member of this league." };
+
+  const [{ data: vb }, { data: bites }] = await Promise.all([
+    supabase
+      .from("draft_power_assignments")
+      .select("round")
+      .eq("league_id", leagueId)
+      .eq("member_id", member.id)
+      .eq("power_id", 16)
+      .maybeSingle(),
+    supabase
+      .from("vampire_bites")
+      .select("target_player_id, biting_member_id")
+      .eq("league_id", leagueId),
+  ]);
+
+  const mine = (bites ?? []).find((b) => b.biting_member_id === member.id) ?? null;
+  return {
+    canBite: !!vb && !mine,
+    alreadyBitten: (bites ?? []).map((b) => b.target_player_id),
+    myTargetPlayerId: mine?.target_player_id ?? null,
+  };
+}
+
+export async function postDraftVampireBite(params: {
+  leagueId: string;
+  targetPlayerId: string;
+}): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated." };
+
+  const { leagueId, targetPlayerId } = params;
+
+  // The draft must actually be finished — this is the post-draft window, not a
+  // way to bite early or twice.
+  const { data: league } = await supabase
+    .from("uff_leagues")
+    .select("draft_status")
+    .eq("id", leagueId)
+    .maybeSingle();
+  if (league?.draft_status !== "completed") {
+    return { error: "The post-draft bite window opens when the draft is complete." };
+  }
+
+  const { data: member } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!member) return { error: "Not a member of this league." };
+
+  // Must actually hold Vampire Bite (any round — the round no longer gates it).
+  const { data: vb } = await supabase
+    .from("draft_power_assignments")
+    .select("round")
+    .eq("league_id", leagueId)
+    .eq("member_id", member.id)
+    .eq("power_id", 16)
+    .maybeSingle();
+  if (!vb) return { error: "You weren't dealt Vampire Bite." };
+
+  // One bite per manager. In-draft this was implicit (you hold the power for a
+  // single round); post-draft it has to be enforced explicitly.
+  const { data: existing } = await supabase
+    .from("vampire_bites")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("biting_member_id", member.id)
+    .maybeSingle();
+  if (existing) return { error: "You've already used your Vampire Bite." };
+
+  // Can't bite your own player.
+  const { data: ownCheck } = await supabase
+    .from("uff_roster_players")
+    .select("id")
+    .eq("league_id", leagueId)
+    .eq("player_id", targetPlayerId)
+    .eq("member_id", member.id)
+    .is("dropped_at", null)
+    .maybeSingle();
+  if (ownCheck) return { error: "You can't bite your own player — choose an opponent's player." };
+
+  // Shadow Guard still protects its player.
+  const { data: guardCheck } = await supabase
+    .from("player_draft_powers")
+    .select("player_id")
+    .eq("league_id", leagueId)
+    .eq("player_id", targetPlayerId)
+    .eq("power", "shadow_guard")
+    .maybeSingle();
+  if (guardCheck) {
+    return { error: "That player is protected by Shadow Guard — choose a different target." };
+  }
+
+  const { error } = await supabase.from("vampire_bites").insert({
+    league_id: leagueId,
+    biting_member_id: member.id,
+    target_player_id: targetPlayerId,
+    round: vb.round,
+  });
+
+  if (error) {
+    if (error.code === "23505") {
+      return { error: "That player has already been bitten. Choose someone else." };
+    }
+    return { error: error.message };
+  }
+
+  revalidatePath(`/dashboard/league/${leagueId}/draft`);
+  return {};
+}
+
 // ── Draft Mechanic: Telepathy ─────────────────────────────────────────────────
 // Called after a Telepathy holder picks. Reveals the next manager's power for
 // this round (unless they have Shadow Guard, which blocks the reveal).

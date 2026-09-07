@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import TrendingPlayers from "@/components/TrendingPlayers";
-import { makeDraftPick, assignPowerToPick, assignVampireBite, swapForesightCoin, executeHeist, restoreHeistOrder, revealNextPower } from "./actions";
+import { makeDraftPick, assignPowerToPick, assignVampireBite, swapForesightCoin, executeHeist, restoreHeistOrder, revealNextPower, getBiteState, postDraftVampireBite } from "./actions";
 import { addToQueue, removeFromQueue, saveQueueOrder, executeAutodraft, forceAutopick, commissionerPick, getMemberPowers, commissionerVampireBite, commissionerForesightSwap, commissionerHeist } from "./queue-actions";
 import { addToWatchlist, removeFromWatchlist } from "./watchlist-actions";
 import { startDraft } from "../actions";
@@ -155,6 +155,7 @@ function VampireBiteModal({
   onSkip,
   submitting,
   forTeam,
+  softSkip,
 }: {
   picks: Pick[];
   memberMap: Record<string, Member>;
@@ -162,6 +163,8 @@ function VampireBiteModal({
   onSkip: () => void;
   submitting: boolean;
   forTeam?: string;
+  // Post-draft window: closing the modal does NOT forfeit the bite.
+  softSkip?: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<{ id: string; name: string } | null>(null);
@@ -254,11 +257,13 @@ function VampireBiteModal({
             className="rounded-md px-4 py-2.5 text-sm disabled:opacity-40"
             style={{ background: "#1c1c2b", color: "#f4f4f8" }}
           >
-            Skip
+            {softSkip ? "Close" : "Skip"}
           </button>
         </div>
         <p className="mt-2 text-center text-xs" style={{ color: "#f4f4f8" }}>
-          Skipping forfeits your Vampire Bite permanently.
+          {softSkip
+            ? "Closing keeps your bite — come back any time before Week 1."
+            : "Skipping forfeits your Vampire Bite permanently."}
         </p>
       </div>
     </div>
@@ -833,6 +838,10 @@ export default function DraftRoom({
   const [heistOriginalOrder, setHeistOriginalOrder] = useState<string[] | null>(null);
   // Telepathy
   const [telepathyReveal, setTelepathyReveal] = useState<{ powerName: string | null; cloaked: boolean } | null>(null);
+  // Post-draft Vampire Bite window
+  const [biteState, setBiteState] = useState<{ canBite: boolean; alreadyBitten: string[]; myTargetPlayerId: string | null } | null>(null);
+  const [showPostDraftBite, setShowPostDraftBite] = useState(false);
+  const [postBiteSubmitting, setPostBiteSubmitting] = useState(false);
   // Commissioner proxy — the on-clock member's powers (so the commissioner can
   // apply that team's interactive power on their behalf when drafting for a no-show)
   const [proxyPowers, setProxyPowers] = useState<PowerRow[]>([]);
@@ -1179,6 +1188,20 @@ export default function DraftRoom({
     // transition lands — powers appear without waiting for the next poll tick.
     if (draftStatus === "in_progress" && !powersLoadedRef.current) fetchMyPowers();
   }, [fetchQueue, fetchMyPowers, draftStatus]);
+
+  // Post-draft Vampire Bite: load who still holds an unused bite once the draft
+  // finishes. Vampire Bite used to be forfeited outright if the holder was
+  // auto-picked or missed the modal in their one round — this reopens it.
+  useEffect(() => {
+    if (!isDraftComplete) return;
+    let cancelled = false;
+    getBiteState(leagueId).then((s) => {
+      if (!cancelled && !s.error) {
+        setBiteState({ canBite: s.canBite, alreadyBitten: s.alreadyBitten, myTargetPlayerId: s.myTargetPlayerId });
+      }
+    });
+    return () => { cancelled = true; };
+  }, [isDraftComplete, leagueId]);
 
   // Sync watchlist player details whenever watchlistIds changes
   useEffect(() => {
@@ -1680,6 +1703,31 @@ export default function DraftRoom({
           submitting={vampireSubmitting}
         />
       )}
+      {showPostDraftBite && biteState && (
+        <VampireBiteModal
+          picks={picks.filter(
+            (p) => p.member_id !== myMemberId && !biteState.alreadyBitten.includes(p.player_id),
+          )}
+          memberMap={memberMap}
+          onSelect={async (targetPlayerId) => {
+            setPostBiteSubmitting(true);
+            const result = await postDraftVampireBite({ leagueId, targetPlayerId });
+            setPostBiteSubmitting(false);
+            if (result.error) {
+              // Not spent — the modal stays open so they can pick someone else.
+              setError(result.error);
+            } else {
+              setShowPostDraftBite(false);
+              setBiteState({ canBite: false, alreadyBitten: [...biteState.alreadyBitten, targetPlayerId], myTargetPlayerId: targetPlayerId });
+              setPowerResult({ type: "applied", message: "Vampire Bite locked in — 10% of their weekly score is yours all season." });
+              setTimeout(() => setPowerResult(null), 8000);
+            }
+          }}
+          onSkip={() => setShowPostDraftBite(false)}
+          submitting={postBiteSubmitting}
+          softSkip
+        />
+      )}
       {showForesightModal && (
         <ForesightCoinModal
           currentRound={foresightPickedRound}
@@ -2075,6 +2123,40 @@ export default function DraftRoom({
               Use Draft Heist
             </button>
           </div>
+        )}
+
+        {/* Post-draft Vampire Bite window — the bite was forfeited outright if you
+            were auto-picked or missed the modal in your one round. Now every
+            holder gets the choice once the board is final. */}
+        {isDraftComplete && biteState?.canBite && (
+          <div className="rounded-lg border px-5 py-4 flex items-center justify-between gap-3 flex-wrap"
+               style={{ borderColor: "#CC0000", background: "rgba(204,0,0,0.10)" }}>
+            <div className="min-w-0">
+              <p className="text-xs uppercase tracking-[0.2em] font-bold" style={{ color: "#ff8a8a" }}>
+                🧛 Vampire Bite — still yours to use
+              </p>
+              <p className="text-sm mt-0.5" style={{ color: "#f4f4f8" }}>
+                Choose any opponent&rsquo;s drafted player. 10% of their score drains to you every week, all season.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowPostDraftBite(true)}
+              disabled={postBiteSubmitting}
+              className="shrink-0 rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-50"
+              style={{ background: "#CC0000", color: "#f4f4f8" }}
+            >
+              Choose your target
+            </button>
+          </div>
+        )}
+        {isDraftComplete && biteState && !biteState.canBite && biteState.myTargetPlayerId && (
+          <p className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: "#CC0000", color: "#ff8a8a", background: "#1a0e16" }}>
+            🧛 Your Vampire Bite is locked in on{" "}
+            <span className="font-semibold">
+              {picks.find((p) => p.player_id === biteState.myTargetPlayerId)?.players?.full_name ?? "your target"}
+            </span>{" "}
+            — 10% of their weekly score drains to you all season.
+          </p>
         )}
 
         {isDraftComplete && (
