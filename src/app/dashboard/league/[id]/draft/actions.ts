@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { notifyNextPicker } from "@/lib/draft-notify";
+import { isLineupLocked } from "@/lib/nfl-utils";
 
 const POWER_SLUG_MAP: Record<string, string> = {
   "Gunslinger": "gunslinger",
@@ -283,11 +284,13 @@ export async function getBiteState(leagueId: string): Promise<{
   canBite: boolean;
   alreadyBitten: string[];
   myTargetPlayerId: string | null;
+  windowClosed: boolean;
   error?: string;
 }> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { canBite: false, alreadyBitten: [], myTargetPlayerId: null, error: "Not authenticated." };
+  const windowClosed = isLineupLocked(1);
+  if (!user) return { canBite: false, alreadyBitten: [], myTargetPlayerId: null, windowClosed, error: "Not authenticated." };
 
   const { data: member } = await supabase
     .from("league_members")
@@ -295,7 +298,7 @@ export async function getBiteState(leagueId: string): Promise<{
     .eq("league_id", leagueId)
     .eq("user_id", user.id)
     .maybeSingle();
-  if (!member) return { canBite: false, alreadyBitten: [], myTargetPlayerId: null, error: "Not a member of this league." };
+  if (!member) return { canBite: false, alreadyBitten: [], myTargetPlayerId: null, windowClosed, error: "Not a member of this league." };
 
   const [{ data: vb }, { data: bites }] = await Promise.all([
     supabase
@@ -313,9 +316,10 @@ export async function getBiteState(leagueId: string): Promise<{
 
   const mine = (bites ?? []).find((b) => b.biting_member_id === member.id) ?? null;
   return {
-    canBite: !!vb && !mine,
+    canBite: !!vb && !mine && !windowClosed,
     alreadyBitten: (bites ?? []).map((b) => b.target_player_id),
     myTargetPlayerId: mine?.target_player_id ?? null,
+    windowClosed,
   };
 }
 
@@ -338,6 +342,12 @@ export async function postDraftVampireBite(params: {
     .maybeSingle();
   if (league?.draft_status !== "completed") {
     return { error: "The post-draft bite window opens when the draft is complete." };
+  }
+
+  // Closes at Week 1 kickoff — biting after games have started would let you
+  // pick a target with results already on the board.
+  if (isLineupLocked(1)) {
+    return { error: "The Vampire Bite window closed at Week 1 kickoff." };
   }
 
   const { data: member } = await supabase

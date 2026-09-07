@@ -156,6 +156,7 @@ function VampireBiteModal({
   submitting,
   forTeam,
   softSkip,
+  errorText,
 }: {
   picks: Pick[];
   memberMap: Record<string, Member>;
@@ -165,6 +166,10 @@ function VampireBiteModal({
   forTeam?: string;
   // Post-draft window: closing the modal does NOT forfeit the bite.
   softSkip?: boolean;
+  // A rejected bite (already bitten / Shadow Guard / own player) is shown INSIDE
+  // the modal and the modal stays open, so the holder can pick someone else.
+  // It used to close on any error, which silently burned the power.
+  errorText?: string | null;
 }) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<{ id: string; name: string } | null>(null);
@@ -241,6 +246,13 @@ function VampireBiteModal({
             );
           })}
         </div>
+
+        {errorText && (
+          <p className="mt-3 rounded-md border px-3 py-2 text-sm font-semibold"
+             style={{ borderColor: "#CC0000", color: "#ff8a8a", background: "#1a0e16" }}>
+            {errorText} Pick a different player — your bite has NOT been used.
+          </p>
+        )}
 
         <div className="mt-4 flex gap-3">
           <button
@@ -839,9 +851,11 @@ export default function DraftRoom({
   // Telepathy
   const [telepathyReveal, setTelepathyReveal] = useState<{ powerName: string | null; cloaked: boolean } | null>(null);
   // Post-draft Vampire Bite window
-  const [biteState, setBiteState] = useState<{ canBite: boolean; alreadyBitten: string[]; myTargetPlayerId: string | null } | null>(null);
+  const [biteState, setBiteState] = useState<{ canBite: boolean; alreadyBitten: string[]; myTargetPlayerId: string | null; windowClosed: boolean } | null>(null);
   const [showPostDraftBite, setShowPostDraftBite] = useState(false);
   const [postBiteSubmitting, setPostBiteSubmitting] = useState(false);
+  // Rejected-bite message, rendered inside whichever bite modal is open.
+  const [biteError, setBiteError] = useState<string | null>(null);
   // Commissioner proxy — the on-clock member's powers (so the commissioner can
   // apply that team's interactive power on their behalf when drafting for a no-show)
   const [proxyPowers, setProxyPowers] = useState<PowerRow[]>([]);
@@ -1197,7 +1211,7 @@ export default function DraftRoom({
     let cancelled = false;
     getBiteState(leagueId).then((s) => {
       if (!cancelled && !s.error) {
-        setBiteState({ canBite: s.canBite, alreadyBitten: s.alreadyBitten, myTargetPlayerId: s.myTargetPlayerId });
+        setBiteState({ canBite: s.canBite, alreadyBitten: s.alreadyBitten, myTargetPlayerId: s.myTargetPlayerId, windowClosed: s.windowClosed });
       }
     });
     return () => { cancelled = true; };
@@ -1480,10 +1494,13 @@ export default function DraftRoom({
     const result = await commissionerVampireBite(leagueId, proxyVB.memberId, targetPlayerId, proxyVB.round);
     setProxySubmitting(false);
     const team = proxyVB.teamName;
-    setProxyVB(null);
+    // Only close on SUCCESS — see handleVampireBite. This path burned a proxy
+    // bite on 2026-09-07 when the chosen player was already bitten.
     if (result.error) {
-      setError(result.error);
+      setBiteError(result.error);
     } else {
+      setBiteError(null);
+      setProxyVB(null);
       setPowerResult({ type: "applied", message: `Vampire Bite locked in for ${team} — 10% of that player's weekly score drains to them all season.` });
       setTimeout(() => setPowerResult(null), 6000);
     }
@@ -1637,10 +1654,14 @@ export default function DraftRoom({
     setVampireSubmitting(true);
     const result = await assignVampireBite({ leagueId, targetPlayerId, round: currentRound });
     setVampireSubmitting(false);
-    setShowVampireBiteModal(false);
+    // Only close on SUCCESS. Closing unconditionally meant a rejected target
+    // (already bitten / Shadow Guard / your own player) silently burned the
+    // power with no second chance — it cost a real bite on 2026-09-07.
     if (result.error) {
-      setError(result.error);
+      setBiteError(result.error);
     } else {
+      setBiteError(null);
+      setShowVampireBiteModal(false);
       setPowerResult({ type: "applied", message: "Vampire Bite locked in -- 10% of their weekly score is yours all season." });
       setTimeout(() => setPowerResult(null), 6000);
     }
@@ -1695,8 +1716,10 @@ export default function DraftRoom({
           picks={picks}
           memberMap={memberMap}
           onSelect={handleVampireBite}
+          errorText={biteError}
           onSkip={() => {
             setShowVampireBiteModal(false);
+            setBiteError(null);
             setPowerResult({ type: "fizzled", message: "Vampire Bite skipped -- power forfeited." });
             setTimeout(() => setPowerResult(null), 5000);
           }}
@@ -1715,15 +1738,17 @@ export default function DraftRoom({
             setPostBiteSubmitting(false);
             if (result.error) {
               // Not spent — the modal stays open so they can pick someone else.
-              setError(result.error);
+              setBiteError(result.error);
             } else {
+              setBiteError(null);
               setShowPostDraftBite(false);
-              setBiteState({ canBite: false, alreadyBitten: [...biteState.alreadyBitten, targetPlayerId], myTargetPlayerId: targetPlayerId });
+              setBiteState({ canBite: false, alreadyBitten: [...biteState.alreadyBitten, targetPlayerId], myTargetPlayerId: targetPlayerId, windowClosed: biteState.windowClosed });
               setPowerResult({ type: "applied", message: "Vampire Bite locked in — 10% of their weekly score is yours all season." });
               setTimeout(() => setPowerResult(null), 8000);
             }
           }}
-          onSkip={() => setShowPostDraftBite(false)}
+          errorText={biteError}
+          onSkip={() => { setShowPostDraftBite(false); setBiteError(null); }}
           submitting={postBiteSubmitting}
           softSkip
         />
@@ -1791,9 +1816,11 @@ export default function DraftRoom({
           picks={picks}
           memberMap={memberMap}
           forTeam={proxyVB.teamName}
+          errorText={biteError}
           onSelect={handleProxyVampireBite}
           onSkip={() => {
             setProxyVB(null);
+            setBiteError(null);
             setPowerResult({ type: "fizzled", message: `Vampire Bite skipped for ${proxyVB.teamName} — power forfeited.` });
             setTimeout(() => setPowerResult(null), 5000);
           }}
@@ -2137,6 +2164,9 @@ export default function DraftRoom({
               </p>
               <p className="text-sm mt-0.5" style={{ color: "#f4f4f8" }}>
                 Choose any opponent&rsquo;s drafted player. 10% of their score drains to you every week, all season.
+              </p>
+              <p className="text-xs mt-1 font-semibold" style={{ color: "#FFD700" }}>
+                ⏳ Pick your target before Week 1 kickoff — after that the window closes.
               </p>
             </div>
             <button

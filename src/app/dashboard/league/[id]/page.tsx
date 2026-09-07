@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { randomizeFactions, setMyFaction, startDraft } from "./actions";
 import RenameTeam from "./RenameTeam";
 import NewsletterCard from "./NewsletterCard";
+import { isLineupLocked } from "@/lib/nfl-utils";
 
 interface MemberRow {
   id: string;
@@ -212,7 +213,7 @@ export default async function LeagueDetailPage({
                 </Link>
               </>
             )}
-            {league.draft_status !== "completed" && (
+            {league.draft_status !== "completed" ? (
               <Link
                 href={`/dashboard/league/${league.id}/draft`}
                 className="inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold"
@@ -220,7 +221,19 @@ export default async function LeagueDetailPage({
               >
                 Draft Room
               </Link>
-            )}
+            ) : !isLineupLocked(1) ? (
+              // The draft room stays reachable until Week 1 kickoff so managers
+              // who never used their Vampire Bite can still choose a target —
+              // it was silently forfeited during the draft if they were
+              // auto-picked or missed the modal.
+              <Link
+                href={`/dashboard/league/${league.id}/draft`}
+                className="inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold"
+                style={{ background: "#CC0000", color: "#f4f4f8" }}
+              >
+                🧛 Vampire Bite
+              </Link>
+            ) : null}
           </div>
         </header>
 
@@ -368,7 +381,15 @@ export default async function LeagueDetailPage({
           )}
 
           {league.draft_status === "completed" && (
-            <p className="text-sm text-white">The draft is complete. Good luck this season!</p>
+            <div className="flex flex-col gap-2">
+              <p className="text-sm text-white">The draft is complete. Good luck this season!</p>
+              {!isLineupLocked(1) && (
+                <p className="text-sm" style={{ color: "#ff8a8a" }}>
+                  🧛 <span className="font-semibold">Never used your Vampire Bite?</span> Open the Draft Room and
+                  choose a target before Week 1 kickoff — 10% of their score drains to you all season.
+                </p>
+              )}
+            </div>
           )}
         </section>
 
