@@ -8,6 +8,7 @@ import TokenChoicePicker from "./TokenChoicePicker";
 import DropButton from "./DropButton";
 import TokenAdvisor from "./TokenAdvisor";
 import StartSitAdvisor from "./StartSitAdvisor";
+import VampireBiteGate from "./VampireBiteGate";
 import { getCurrentNFLWeek, isLineupLocked, getWeekLockTime } from "@/lib/nfl-utils";
 
 interface GameScheduleRow { team: string; kickoff_utc: string; }
@@ -300,6 +301,60 @@ export default async function RosterPage({
     .eq("user_id", user.id)
     .maybeSingle();
   if (!me) redirect("/dashboard?error=" + encodeURIComponent("You're not a member of that league."));
+
+  // ─── Vampire Bite gate ─────────────────────────────────────────────────────
+  // Managers who closed the draft room the moment their last pick landed would
+  // never see the post-draft bite panel there, so an unused bite blocks the
+  // roster until it is spent. Auto-expires at Week 1 kickoff.
+  if (!isLineupLocked(1)) {
+    const [{ data: vbRow }, { data: bitesSoFar }] = await Promise.all([
+      supabase
+        .from("draft_power_assignments")
+        .select("round")
+        .eq("league_id", leagueId)
+        .eq("member_id", me.id)
+        .eq("power_id", 16)
+        .maybeSingle(),
+      supabase
+        .from("vampire_bites")
+        .select("target_player_id, biting_member_id")
+        .eq("league_id", leagueId),
+    ]);
+    const iHaveBitten = (bitesSoFar ?? []).some((b) => b.biting_member_id === me.id);
+
+    if (vbRow && !iHaveBitten) {
+      const bittenIds = new Set((bitesSoFar ?? []).map((b) => b.target_player_id));
+      const [{ data: allPicks }, { data: allMembers }] = await Promise.all([
+        supabase
+          .from("uff_draft_picks")
+          .select("player_id, member_id, players(full_name, position, team)")
+          .eq("league_id", leagueId)
+          .returns<{ player_id: string; member_id: string; players: { full_name: string; position: string | null; team: string | null } | null }[]>(),
+        supabase
+          .from("league_members")
+          .select("id, team_name")
+          .eq("league_id", leagueId)
+          .returns<{ id: string; team_name: string }[]>(),
+      ]);
+      // Only offer a legal target: not your own player, not already bitten.
+      const teamById = new Map((allMembers ?? []).map((m) => [m.id, m.team_name]));
+      const targets = (allPicks ?? [])
+        .filter((p) => p.member_id !== me.id && !bittenIds.has(p.player_id))
+        .map((p) => ({
+          playerId: p.player_id,
+          name: p.players?.full_name ?? p.player_id,
+          position: p.players?.position ?? null,
+          team: p.players?.team ?? null,
+          ownerTeam: teamById.get(p.member_id) ?? "—",
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      // Only gate when the draft actually produced targets.
+      if (targets.length > 0) {
+        return <VampireBiteGate leagueId={leagueId} targets={targets} />;
+      }
+    }
+  }
 
   const currentWeek = getCurrentNFLWeek();
   const viewWeek = weekParam ? Math.max(1, Math.min(parseInt(weekParam) || currentWeek, currentWeek)) : currentWeek;
