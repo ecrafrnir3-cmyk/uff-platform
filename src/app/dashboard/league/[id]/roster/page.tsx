@@ -327,9 +327,9 @@ export default async function RosterPage({
       const [{ data: allPicks }, { data: allMembers }] = await Promise.all([
         supabase
           .from("uff_draft_picks")
-          .select("player_id, member_id, players(full_name, position, team)")
+          .select("player_id, member_id, players(full_name, position, team, adp)")
           .eq("league_id", leagueId)
-          .returns<{ player_id: string; member_id: string; players: { full_name: string; position: string | null; team: string | null } | null }[]>(),
+          .returns<{ player_id: string; member_id: string; players: { full_name: string; position: string | null; team: string | null; adp: number | null } | null }[]>(),
         supabase
           .from("league_members")
           .select("id, team_name")
@@ -345,9 +345,17 @@ export default async function RosterPage({
           name: p.players?.full_name ?? p.player_id,
           position: p.players?.position ?? null,
           team: p.players?.team ?? null,
+          adp: p.players?.adp ?? null,
           ownerTeam: teamById.get(p.member_id) ?? "—",
         }))
-        .sort((a, b) => a.name.localeCompare(b.name));
+        // Best players first — you bite the biggest scorer you can reach, so
+        // rank by ADP (unranked players last) rather than alphabetically.
+        .sort((a, b) => {
+          if (a.adp == null && b.adp == null) return a.name.localeCompare(b.name);
+          if (a.adp == null) return 1;
+          if (b.adp == null) return -1;
+          return a.adp - b.adp;
+        });
 
       // Only gate when the draft actually produced targets.
       if (targets.length > 0) {

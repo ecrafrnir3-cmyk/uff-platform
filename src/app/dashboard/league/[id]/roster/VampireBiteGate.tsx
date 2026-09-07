@@ -8,6 +8,7 @@ export interface BiteTarget {
   name: string;
   position: string | null;
   team: string | null;
+  adp: number | null;
   ownerTeam: string;
 }
 
@@ -80,6 +81,10 @@ export default function VampireBiteGate({
           <p className="text-sm font-semibold" style={{ color: "#FFD700" }}>
             ⏳ This closes at Week 1 kickoff. Pick your target to continue to your roster.
           </p>
+          <p className="text-xs" style={{ color: "#8888aa" }}>
+            Ranked by draft ADP — the biggest names still un-bitten are at the top.
+            Anyone already bitten by another manager has been removed.
+          </p>
         </header>
 
         {error && (
@@ -120,7 +125,14 @@ export default function VampireBiteGate({
                     {t.position ?? "?"} · {t.team ?? "FA"} · {t.ownerTeam}
                   </p>
                 </div>
-                {isSel && <span className="ml-2 shrink-0 text-xs font-bold" style={{ color: "#CC0000" }}>TARGET</span>}
+                <div className="ml-2 shrink-0 text-right">
+                  {t.adp != null && (
+                    <span className="block text-xs tabular-nums" style={{ color: "#FFD700" }}>
+                      ADP {t.adp}
+                    </span>
+                  )}
+                  {isSel && <span className="text-xs font-bold" style={{ color: "#CC0000" }}>TARGET</span>}
+                </div>
               </button>
             );
           })}
