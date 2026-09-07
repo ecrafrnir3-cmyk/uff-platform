@@ -815,6 +815,9 @@ export default function DraftRoom({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [draftStatus, setDraftStatus] = useState(league.draft_status);
+  // Stamped by start_draft, so a client that rendered in the lobby has null here
+  // until the league row is re-read. It anchors the pick-#1 clock.
+  const [draftStartedAt, setDraftStartedAt] = useState<string | null>(league.draft_started_at ?? null);
   const [powerResult, setPowerResult] = useState<{ type: PowerResultType; message: string } | null>(null);
   const [showVampireBiteModal, setShowVampireBiteModal] = useState(false);
   const [vampireSubmitting, setVampireSubmitting] = useState(false);
@@ -878,6 +881,28 @@ export default function DraftRoom({
   const isProxyMode = isCommissioner && !isMyTurn && !isDraftComplete && !!currentMemberId && currentMemberId !== myMemberId;
   const proxyPowerThisRound = isProxyMode ? (proxyPowers.find((p) => p.round === currentRound)?.draft_powers ?? null) : null;
 
+  // ---- fetchMyPowers ---------------------------------------------------------
+  // Draft powers are created by start_draft AT the moment the draft starts, so
+  // every client sitting in the pre-draft lobby was handed an empty myPowers
+  // prop — and because the lobby→live transition happens via the poll with NO
+  // page reload, that empty list was never replaced. Round-1 powers then never
+  // attached (handlePick only calls assignPowerToPick when myPowerThisRound is
+  // truthy) and Foresight/Telepathy could not fire at all. Inaugural draft,
+  // 2026-09-02. Never clobbers a good list with an empty one.
+  const powersLoadedRef = useRef<boolean>(myPowers.length > 0);
+  const fetchMyPowers = useCallback(async () => {
+    const { data } = await supabase
+      .from("draft_power_assignments")
+      .select("round, draft_powers(id, name, category, description, tied_position)")
+      .eq("league_id", leagueId)
+      .eq("member_id", myMemberId)
+      .order("round", { ascending: true });
+    if (data && data.length) {
+      powersLoadedRef.current = true;
+      setMyPowersState(data as unknown as PowerRow[]);
+    }
+  }, [leagueId, myMemberId]);
+
   // ---- fetchPicks (used in effect below) -------------------------------------
   const fetchPicks = useCallback(async () => {
     const { data } = await supabase
@@ -887,14 +912,24 @@ export default function DraftRoom({
       .order("pick_no", { ascending: true });
     if (data) setPicks(data as unknown as Pick[]);
 
-    // Also sync draft_order and heist_state so ALL clients see heist swaps
+    // Also sync draft_order, heist_state and draft_started_at so ALL clients see
+    // heist swaps AND hold the real clock anchor. draft_started_at is stamped by
+    // start_draft — i.e. AFTER a lobby client rendered its props — so without
+    // this sync the pick-#1 deadline stays null on those clients, which silently
+    // disables the countdown, the self-autodraft AND the force-autopick safety
+    // net for the very first pick of the draft.
     const { data: leagueRow } = await supabase
       .from("uff_leagues")
-      .select("draft_status, draft_order, heist_state")
+      .select("draft_status, draft_order, heist_state, draft_started_at")
       .eq("id", leagueId)
       .maybeSingle();
     if (leagueRow) {
       setDraftStatus(leagueRow.draft_status);
+      if (leagueRow.draft_started_at) setDraftStartedAt(leagueRow.draft_started_at as string);
+      // Powers are dealt at draft start — pull them the moment the draft is live.
+      if (leagueRow.draft_status === "in_progress" && !powersLoadedRef.current) {
+        fetchMyPowers();
+      }
       // Always trust DB draft_order (swapped during heist, restored after)
       if (leagueRow.draft_order) {
         setDraftOrderState(leagueRow.draft_order as string[]);
@@ -909,7 +944,7 @@ export default function DraftRoom({
         setHeistOriginalOrder(null);
       }
     }
-  }, [leagueId]);
+  }, [leagueId, fetchMyPowers]);
 
   // ---- fetchQueue ------------------------------------------------------------
   const fetchQueue = useCallback(async () => {
@@ -1002,8 +1037,22 @@ export default function DraftRoom({
     }
     if (currentRound > prevRoundRef.current) {
       prevRoundRef.current = currentRound;
+      // Anchor the buffer to the SERVER clock, not to the moment this client
+      // happened to notice the round change. A backgrounded phone that wakes up
+      // mid-round used to start a fresh 30s buffer, which hides its own Draft
+      // buttons while its real 90s pick clock is already running — it could be
+      // blocked from picking on its own turn. Late arrivals now get whatever is
+      // genuinely left of the buffer, and nothing if it has already elapsed.
+      const anchorIso = picks.length > 0 ? picks[picks.length - 1].picked_at : draftStartedAt;
+      const remaining = anchorIso
+        ? Math.ceil((new Date(anchorIso).getTime() + 30_000 - Date.now()) / 1000)
+        : 30;
+      if (remaining <= 0) {
+        setRoundBufferActive(false);
+        return;
+      }
       setRoundBufferActive(true);
-      setRoundBufferTimeLeft(30);
+      setRoundBufferTimeLeft(Math.min(30, remaining));
       setBufferTelepathyReveal(null);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1085,8 +1134,13 @@ export default function DraftRoom({
       if (hasSearch) q = q.ilike("full_name", `%${search.trim()}%`);
       if (hasPos) q = q.eq("position", posFilter);
 
-      // Default (ALL + no search): show top 60 by ADP
-      const { data, error } = await q.order("adp", { ascending: true, nullsFirst: false }).limit(60);
+      // Fetch the whole ranked pool (486 players carry an ADP), not the top 60.
+      // Drafted players are filtered out client-side, and drafting roughly
+      // follows ADP — so a 60-row window emptied itself around pick 56-70 and a
+      // manager was left staring at a blank list with no message and no way to
+      // recover (inaugural draft 2026-09-02). A 224-pick draft can never exhaust
+      // the full pool, so the default view is now guaranteed to have players.
+      const { data, error } = await q.order("adp", { ascending: true, nullsFirst: false }).limit(500);
       if (cancelled) return;
       if (error || !data) {
         // Back off and retry rather than clobbering whatever we already show.
@@ -1121,7 +1175,10 @@ export default function DraftRoom({
   // Load queue on mount (and whenever myMemberId changes)
   useEffect(() => {
     if (draftStatus !== "not_started") fetchQueue();
-  }, [fetchQueue, draftStatus]);
+    // draftStatus is a dependency, so this also fires the instant the lobby→live
+    // transition lands — powers appear without waiting for the next poll tick.
+    if (draftStatus === "in_progress" && !powersLoadedRef.current) fetchMyPowers();
+  }, [fetchQueue, fetchMyPowers, draftStatus]);
 
   // Sync watchlist player details whenever watchlistIds changes
   useEffect(() => {
@@ -1139,7 +1196,7 @@ export default function DraftRoom({
   // Round-first picks get the 30s round buffer added, matching the buffer UI.
   const clockSecs = league.pick_clock_seconds ?? null;
   const lastPickAt = picks.length > 0 ? picks[picks.length - 1].picked_at : null;
-  const clockAnchorIso = lastPickAt ?? league.draft_started_at ?? null;
+  const clockAnchorIso = lastPickAt ?? draftStartedAt ?? null;
   const isRoundFirstPick = (currentPickNo - 1) % league.max_teams === 0;
   const pickDeadlineMs =
     clockSecs && clockAnchorIso && draftStatus === "in_progress" && !isDraftComplete
@@ -1576,18 +1633,16 @@ export default function DraftRoom({
         setError(result.error);
       } else {
         const swappedPowerName = myPowersState.find((p) => p.round === swapWithRound)?.draft_powers?.name ?? "Unknown";
-        // Swap locally so sidebar updates immediately
-        setMyPowersState((prev) => {
-          const next = prev.map((p) => ({ ...p }));
-          const currIdx = next.findIndex((p) => p.round === currentRound);
-          const swapIdx = next.findIndex((p) => p.round === swapWithRound);
-          if (currIdx !== -1 && swapIdx !== -1) {
-            const tmp = next[currIdx].draft_powers;
-            next[currIdx] = { ...next[currIdx], draft_powers: next[swapIdx].draft_powers };
-            next[swapIdx] = { ...next[swapIdx], draft_powers: tmp };
-          }
-          return next;
-        });
+        // Re-read the authoritative rows instead of hand-patching local state.
+        // The old optimistic swap looked up `currentRound`, but the modal opens
+        // AFTER the pick (and the board keeps advancing behind it), so whenever
+        // the board had rolled past the round the pick was made in — always, if
+        // the holder picked last in the round — it swapped the wrong two rows.
+        // That poisons myPowerThisRound for a LATER round, which then silently
+        // forfeits a power or raises "You do not hold Foresight Coin this round".
+        // swap_foresight_powers deletes and re-inserts both rows, so a refetch is
+        // the only way to be certain the client matches the database.
+        await fetchMyPowers();
         setPowerResult({ type: "applied", message: `Foresight Coin — swapped to Round ${swapWithRound}'s power: ${swappedPowerName}!` });
         setTimeout(() => setPowerResult(null), 6000);
       }
@@ -1739,7 +1794,9 @@ export default function DraftRoom({
           <p className="text-sm text-white">
             {isDraftComplete
               ? `Draft complete -- all ${totalPicks} picks locked in.`
-              : `Round ${currentRound} of ${league.draft_rounds} - Pick ${picks.length + 1} of ${totalPicks}`}
+              : `Round ${currentRound} of ${league.draft_rounds} · Pick ${currentPickNo} of ${totalPicks} · ${
+                  currentRound % 2 === 1 ? `order 1→${league.max_teams}` : `reversed ${league.max_teams}→1`
+                }`}
           </p>
         </header>
 
@@ -2108,10 +2165,16 @@ export default function DraftRoom({
               </div>
             </div>
             <div className="flex flex-col gap-1 max-h-[520px] overflow-y-auto pr-1">
-              {(search.trim().length > 0 || posFilter !== "ALL") && availablePlayers.length === 0 && (
-                <p className="py-8 text-center text-sm text-white">No available players match.</p>
+              {availablePlayers.length === 0 && (
+                <p className="py-8 text-center text-sm text-white">
+                  {search.trim().length > 0 || posFilter !== "ALL"
+                    ? "No available players match."
+                    : players.length === 0
+                    ? "Loading players…"
+                    : "Every ranked player is drafted — search by name to find anyone else."}
+                </p>
               )}
-              {availablePlayers.map((p) => {
+              {availablePlayers.slice(0, 120).map((p) => {
                 const inQueue = queuedIds.has(p.id);
                 const inWatch = watchlistIds.has(p.id);
                 return (
@@ -2171,6 +2234,11 @@ export default function DraftRoom({
                   </div>
                 );
               })}
+              {availablePlayers.length > 120 && (
+                <p className="py-2 text-center text-xs" style={{ color: "#8888aa" }}>
+                  Showing the top 120 of {availablePlayers.length} available — search by name to find anyone else.
+                </p>
+              )}
             </div>
           </section>
 
@@ -2415,11 +2483,21 @@ export default function DraftRoom({
 
             <div className="border-t pt-4 flex flex-col gap-2" style={{ borderColor: "#2a2a40" }}>
               <h3 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "#FFD700" }}>
-                Draft Order
+                Round {currentRound} Order
               </h3>
-              {activeDraftOrder.map((memberId, idx) => {
+              {/* Rendered in the order picks ACTUALLY happen this round. Showing
+                  the base 1→N order on every round is what made managers misread
+                  the snake and target a slot that picks after them, not before. */}
+              <p className="text-xs" style={{ color: "#8888aa" }}>
+                {currentRound % 2 === 1
+                  ? "Odd round — running down the order."
+                  : "Even round — snake reversed, running back up."}
+              </p>
+              {(currentRound % 2 === 0 ? [...activeDraftOrder].reverse() : activeDraftOrder).map((memberId, idx) => {
                 const m = memberMap[memberId];
                 const isPickingNow = !isDraftComplete && memberId === currentMemberId;
+                const thisRoundPickNo = (currentRound - 1) * league.max_teams + idx + 1;
+                const alreadyPicked = picks.some((p) => p.member_id === memberId && p.round === currentRound);
                 return (
                   <div
                     key={memberId}
@@ -2427,9 +2505,12 @@ export default function DraftRoom({
                     style={{
                       background: isPickingNow ? "rgba(255,215,0,0.08)" : "transparent",
                       border: isPickingNow ? "1px solid rgba(255,215,0,0.3)" : "1px solid transparent",
+                      opacity: alreadyPicked && !isPickingNow ? 0.45 : 1,
                     }}
                   >
-                    <span className="w-5 text-right text-xs" style={{ color: "#f4f4f8" }}>{idx + 1}.</span>
+                    <span className="w-8 text-right text-xs tabular-nums" style={{ color: "#8888aa" }}>
+                      #{thisRoundPickNo}
+                    </span>
                     <span
                       style={{
                         color: memberId === myMemberId ? "#8ab4ff" : "#f4f4f8",
@@ -2441,11 +2522,13 @@ export default function DraftRoom({
                         <span className="ml-1 text-xs text-white">(you)</span>
                       )}
                     </span>
-                    {isPickingNow && (
+                    {isPickingNow ? (
                       <span className="ml-auto text-xs font-bold" style={{ color: "#FFD700" }}>
                         PICKING
                       </span>
-                    )}
+                    ) : alreadyPicked ? (
+                      <span className="ml-auto text-xs" style={{ color: "#3DDC84" }}>done</span>
+                    ) : null}
                   </div>
                 );
               })}
