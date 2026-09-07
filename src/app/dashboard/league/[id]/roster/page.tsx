@@ -9,6 +9,7 @@ import DropButton from "./DropButton";
 import TokenAdvisor from "./TokenAdvisor";
 import StartSitAdvisor from "./StartSitAdvisor";
 import VampireBiteGate from "./VampireBiteGate";
+import { computeScore } from "@/lib/scoring";
 import { getCurrentNFLWeek, isLineupLocked, getWeekLockTime } from "@/lib/nfl-utils";
 
 interface GameScheduleRow { team: string; kickoff_utc: string; }
@@ -536,9 +537,22 @@ export default async function RosterPage({
   const scoringSettings = (league as unknown as { scoring_settings: Record<string, number> }).scoring_settings ?? {};
   if (Object.keys(scoringSettings).length > 0) {
     try {
-      const [sleeperRes, projRes] = await Promise.all([
+      // Projections come from our own player_projections table, NOT from
+      // /v1/projections/nfl/{season}/{week}. That endpoint answers 200 with
+      // ~7,600 players whose stat objects are all EMPTY, so every projection
+      // scored 0, hasAnyProj stayed false, and projections were silently never
+      // displayed — the UI for them has existed all along. The populated
+      // endpoint is /projections/nfl/{season}/{week}?season_type=&position[]=,
+      // which scripts/sync-projections.mjs pulls into the table weekly.
+      const [sleeperRes, { data: projRows }] = await Promise.all([
         fetch(`https://api.sleeper.app/v1/stats/nfl/2026/${week}?season_type=regular`, { next: { revalidate: 300 } }),
-        fetch(`https://api.sleeper.app/v1/projections/nfl/2026/${week}?season_type=regular`, { next: { revalidate: 3600 } }),
+        supabase
+          .from("player_projections")
+          .select("player_id, stats")
+          .eq("season", 2026)
+          .eq("week", week)
+          .in("player_id", (roster ?? []).map((r) => r.player_id))
+          .returns<{ player_id: string; stats: Record<string, number> }[]>(),
       ]);
 
       if (sleeperRes.ok) {
@@ -561,19 +575,14 @@ export default async function RosterPage({
         if (hasAnyPts) seasonPts = ptsMap;
       }
 
-      if (projRes.ok) {
-        const allProj: Record<string, Record<string, number>> = await projRes.json();
+      if (projRows && projRows.length > 0) {
+        const byPlayer = new Map(projRows.map((p) => [p.player_id, p.stats ?? {}]));
         const projMap: Record<string, number> = {};
         let hasAnyProj = false;
         for (const r of (roster ?? [])) {
-          const proj = allProj[r.player_id] ?? {};
-          let score = 0;
-          for (const [key, mult] of Object.entries(scoringSettings)) {
-            const val = proj[key];
-            if (val == null || val === 0) continue;
-            score += FLAG_KEYS_SCORE.has(key) ? mult : val * (mult as number);
-          }
-          const rounded = Math.round(score * 100) / 100;
+          // Scored through THIS league's scoring_settings, so the number shown
+          // is what the player would score in UFF — not a generic PPR figure.
+          const rounded = computeScore(byPlayer.get(r.player_id), scoringSettings);
           if (rounded > 0) { projMap[r.player_id] = rounded; hasAnyProj = true; }
         }
         if (hasAnyProj) projectedPts = projMap;
