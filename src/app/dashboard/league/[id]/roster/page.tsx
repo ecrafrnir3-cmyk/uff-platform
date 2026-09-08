@@ -545,7 +545,10 @@ export default async function RosterPage({
       // endpoint is /projections/nfl/{season}/{week}?season_type=&position[]=,
       // which scripts/sync-projections.mjs pulls into the table weekly.
       const [sleeperRes, { data: projRows }] = await Promise.all([
-        fetch(`https://api.sleeper.app/v1/stats/nfl/2026/${week}?season_type=regular`, { next: { revalidate: 300 } }),
+        // /stats/nfl/regular/... — the ?season_type= form returns rank fields
+        // only, no real stats, so season points always rendered blank
+        // (verified 2026-09-08).
+        fetch(`https://api.sleeper.app/v1/stats/nfl/regular/2026/${week}`, { next: { revalidate: 300 } }),
         supabase
           .from("player_projections")
           .select("player_id, stats")

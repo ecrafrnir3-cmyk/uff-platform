@@ -93,7 +93,11 @@ export async function computeWeekFeats(
   const season = (lg as { season?: string } | null)?.season ?? "2026";
   const settings = ((lg as { scoring_settings?: Record<string, number> } | null)?.scoring_settings ?? {}) as Record<string, number>;
 
-  const res = await fetch(`${SLEEPER_BASE}/stats/nfl/${season}/${week}?season_type=regular`);
+  // ⚠️ /stats/nfl/regular/{season}/{week} — NOT /stats/nfl/{season}/{week}?season_type=regular,
+  // which returns rank fields only and no real stats (verified 2026-09-08).
+  // Feats are detected from raw stat categories, so the old URL meant zero
+  // feats and a dead attribute layer all season.
+  const res = await fetch(`${SLEEPER_BASE}/stats/nfl/regular/${season}/${week}`);
   if (!res.ok) throw new Error(`Sleeper stats ${res.status}`);
   const allStats = (await res.json()) as Record<string, Record<string, number>>;
 

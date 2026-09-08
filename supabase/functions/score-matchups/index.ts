@@ -130,7 +130,14 @@ Deno.serve(async (req) => {
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
   const [statsRes, projRes] = await Promise.all([
-    fetch(`${SLEEPER_BASE}/stats/nfl/${season}/${week}?season_type=regular`),
+    // ⚠️ MUST be /stats/nfl/regular/{season}/{week}. The other form —
+    // /stats/nfl/{season}/{week}?season_type=regular — answers 200 with ~7,600
+    // players carrying ONLY rank fields (rank_ppr, pos_rank_ppr…) and NO real
+    // stats, even for weeks that were long since played. Verified against 2025
+    // week 1 on 2026-09-08: 0 players with rec/rush_yd/pass_yd on the old URL,
+    // 328 with real box scores on this one. Left unfixed, every player would
+    // have scored 0 and every Week-1 matchup would have finished 0-0.
+    fetch(`${SLEEPER_BASE}/stats/nfl/regular/${season}/${week}`),
     fetch(`${SLEEPER_BASE}/projections/nfl/${season}/${week}?season_type=regular`),
   ]);
 

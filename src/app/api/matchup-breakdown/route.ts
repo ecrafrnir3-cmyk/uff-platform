@@ -126,7 +126,9 @@ export async function POST(req: NextRequest) {
     let statsMap: Record<string, Record<string, number>> = {};
     try {
       const statsRes = await fetch(
-        `https://api.sleeper.app/v1/stats/nfl/${league.season}/${week}?season_type=regular`,
+        // /stats/nfl/regular/... — the ?season_type= form returns rank fields
+        // only, with no real stats (verified 2026-09-08).
+        `https://api.sleeper.app/v1/stats/nfl/regular/${league.season}/${week}`,
         { next: { revalidate: 300 } }
       );
       if (statsRes.ok) {
