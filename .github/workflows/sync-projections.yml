@@ -1,0 +1,32 @@
+name: Sync Projections (Weekly)
+
+# Runs Wednesday at 08:00 UTC — after the NFL week rolls (Wed 00:00 UTC) and
+# after finalize-week at 07:00 UTC, so it loads projections for the week that is
+# about to be played, well before Thursday-night lineup lock (Thu 00:20 UTC Fri).
+#
+# Projections feed the projected points shown on every roster/lineup page. They
+# are scored per-league through each league's own scoring_settings.
+on:
+  schedule:
+    - cron: "0 8 * * 3"
+  workflow_dispatch:      # manual trigger — also how you backfill a week
+    inputs:
+      week:
+        description: "NFL week to pull (blank = the current week)"
+        required: false
+        type: string
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger sync-projections cron route
+        # --fail-with-body: a non-200 fails the step AND prints the response,
+        # so a broken Sleeper pull is loud instead of silent. The route returns
+        # 502 when Sleeper yields no usable projections, which is the failure
+        # that went unnoticed for months on the /v1/projections endpoint.
+        run: |
+          curl -sS --fail-with-body -X POST "${{ secrets.NEXT_PUBLIC_APP_URL }}/api/cron/sync-projections" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d '{"week": ${{ github.event.inputs.week || 'null' }}}'
