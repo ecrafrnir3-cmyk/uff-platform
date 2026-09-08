@@ -4,6 +4,9 @@ const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const CRON_SECRET          = Deno.env.get('CRON_SECRET') ?? '';
 const SLEEPER_BASE         = 'https://api.sleeper.app/v1';
+// Projections live OFF /v1 and take explicit positions; the /v1 path returns
+// empty stat objects (see the fetch below).
+const SLEEPER_PROJ_BASE    = 'https://api.sleeper.app';
 
 const FLAG_KEYS = new Set([
   'pts_allow_0','pts_allow_1_6','pts_allow_7_13','pts_allow_14_20',
@@ -138,7 +141,13 @@ Deno.serve(async (req) => {
     // 328 with real box scores on this one. Left unfixed, every player would
     // have scored 0 and every Week-1 matchup would have finished 0-0.
     fetch(`${SLEEPER_BASE}/stats/nfl/regular/${season}/${week}`),
-    fetch(`${SLEEPER_BASE}/projections/nfl/${season}/${week}?season_type=regular`),
+    // Projections have the SAME trap on a different path: the /v1 form returns
+    // ~7,600 players with empty stat objects. The populated endpoint has no /v1
+    // and needs explicit positions — and it returns an ARRAY, not a map, so it
+    // is reshaped below. Stale/empty projections silently misfire Iron Will
+    // (picks the "lowest projected" starter) and Mulligan (compares pts to proj).
+    fetch(`${SLEEPER_PROJ_BASE}/projections/nfl/${season}/${week}?season_type=regular&order_by=pts_ppr` +
+          `&position[]=QB&position[]=RB&position[]=WR&position[]=TE&position[]=K&position[]=DEF`),
   ]);
 
   if (!statsRes.ok) {
@@ -148,8 +157,21 @@ Deno.serve(async (req) => {
   const allStats: Record<string, Record<string, number>> = await statsRes.json();
   // A failed projections fetch must not silently zero everyone's projections —
   // when projOk is false we skip projection writes and projection-driven tokens.
-  const projOk = projRes.ok;
-  const allProj:  Record<string, Record<string, number>> = projOk ? await projRes.json() : {};
+  // Reshape the projections ARRAY into the player_id → stats map the rest of the
+  // function expects. projOk requires ACTUAL DATA, not merely a 200 — a 200 with
+  // nothing in it is exactly how the old endpoint hid, and it would leave every
+  // projection at 0 while projOk claimed success.
+  const allProj: Record<string, Record<string, number>> = {};
+  if (projRes.ok) {
+    const projArr = await projRes.json().catch(() => []);
+    if (Array.isArray(projArr)) {
+      for (const r of projArr) {
+        const pid = r?.player_id != null ? String(r.player_id) : '';
+        if (pid && r?.stats) allProj[pid] = r.stats;
+      }
+    }
+  }
+  const projOk = Object.keys(allProj).length > 0;
 
   const { data: matchupRows, error: mErr } = await supabase
     .from('uff_matchups')
