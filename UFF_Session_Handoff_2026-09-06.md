@@ -1,6 +1,6 @@
 # 🏈 UFF Handoff Brief — Start Here (graph-driven · 2026-09-06)
 
-> **Start every UFF session here.** Built from the UFF Brain codebase graph (`graphify-out/` — **1156 nodes · 1760 edges · 148 communities**, AST, refreshed 2026-09-08 via `python -m graphify update .` — the code-only subcommand, no LLM key needed; the doc layer is one semantic pass behind). Hold the god-node functions as the architecture, the communities as the module map, the hyperedges as the systems, and the operational state below as your marching orders.
+> **Start every UFF session here.** Built from the UFF Brain codebase graph (`graphify-out/` — **1161 nodes · 1764 edges · 149 communities**, AST, refreshed 2026-09-09 via `python -m graphify update .` — the code-only subcommand, no LLM key needed; the doc layer is one semantic pass behind). Hold the god-node functions as the architecture, the communities as the module map, the hyperedges as the systems, and the operational state below as your marching orders.
 
 ## 🎯 The one thing to hold first
 **The draft is DONE and the engine is proven under real load. The job now is to RUN THE SEASON and build next year's draft from the post-mortem — not to rebuild the engine.** The platform is a large, mature codebase (draft room, scoring pipeline, waivers, factions, Story Engine, push, AI) that has survived a ~60-defect audit sweep **and a real 14-manager draft**. Remaining work is **operational** (run the season) plus the **Tier-1 rebuild list** in the deep dive, aimed at next year's draft. If you catch yourself refactoring something the draft already proved, stop.
@@ -9,6 +9,8 @@
 **"The First War" is drafted: 224/224 picks, 0 duplicate players, 0 skipped or doubled picks, all 14 rosters exactly 16, schedule generated.** Verified against the live DB after completion. The 2026-09-02 failure did not recur. Backend is live (`uff-platform` ACTIVE); playuff.com verified serving.
 
 **The mission is no longer "run the draft" — it is RUN THE SEASON, and build next year's draft from the post-mortem.**
+
+🚨 **Before anything else, know this (2026-09-08/09): a Week-1 scoring blocker was found and fixed.** The live engine was reading a Sleeper endpoint that returns **rank fields and no real stats**, so every Week-1 matchup would have finished **0-0**. Proven by replay (0 scored vs 385 on a real 2025 week), fixed in all four callers, **deployed as score-matchups v19**; a second identical trap in the projections fetch was silently misfiring the Iron Will and Mulligan tokens. **The remaining proof is the first live scoring run.** ⚠️ **Standing lesson: a 200 is not data — test the fetch, not just the math.** 🔑 **Edge functions deploy via the Supabase MCP `deploy_edge_function` tool, NOT the CLI** — `supabase login` fails in a non-TTY shell and the CLI rejects the new scoped tokens (only legacy full-account tokens work; deliberately not created).
 
 ▶️ **Read `docs/draft-deep-dive-2026-09-07.md` first.** Verdict: the engine is sound; everything remaining is product, and almost all of it is autodraft — which **can never draft a defense**, because all 32 carry a NULL `adp` and the fallback filters on `adp IS NOT NULL`.
 
