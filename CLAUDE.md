@@ -622,6 +622,51 @@ The group reported five problems from the killed 2026-09-02 inaugural draft. All
 
 **Graph refreshed** to **1156 nodes / 1760 edges / 148 communities** via `python -m graphify update .` — note the **`update` subcommand is code-only and needs no LLM key**, unlike `extract --update`, which stalls asking for one. Doc-layer semantic extraction is one pass behind.
 
+### Session 40 — 🚨 Week-1 scoring blocker; projections; token dead end (2026-09-08/09)
+**Found the worst defect of the cycle while answering a question about the Story Engine.** `score-matchups` fetched
+`/v1/stats/nfl/{season}/{week}?season_type=regular`, which answers **200 with ~7,600 players carrying ONLY rank fields
+(`rank_ppr`, `pos_rank_ppr`) and NO real stats** — even for weeks played long ago. Every player would have scored 0 and
+**every Week-1 matchup would have finished 0-0**, decided only by faction bonuses and powers: the same outcome as the
+empty-`scoring_settings` bug from the 09-02 audit, reached by a different route.
+
+**Proof** — replayed the engine's own `calcScore` with this league's real 35-key settings against 2025 wk1:
+`OLD → 7,628 players, 0 scored` · `NEW /v1/stats/nfl/regular/{season}/{week} → 2,312 players, 385 scored`. Restricted to
+the 224 players actually rostered: **175 score** (Josh Allen 38.76, Daniel Jones 29.48, Derrick Henry 29.2); **defenses
+score** (Rams 11, Jaguars 11); the feed's **32 `TEAM_*` aggregate rows are rostered by nobody**, so they can't contaminate
+a lineup. Fixed in all four callers (`37f0b42`): the engine, `story-engine/feats.ts` (feats read raw stat categories, so
+they'd have found none all season), `matchup-breakdown`, and the roster page's season points.
+
+⚠️ **The 09-02 audit RECORDED this endpoint quirk and the code was never changed** — the engine's math was validated by
+replaying *correctly-fetched* 2024 box scores, so its own fetch path was never exercised. **LESSON: a 200 is not data;
+test the fetch, not just the math.**
+
+**Second defect, found while deploying** (`a4c9242`): the projections fetch had the identical trap on a different path.
+Not cosmetic — `projOk` was true (it *was* a 200), so the guards that exist to avoid misfiring on absent projections never
+tripped: **Iron Will** (doubles the "lowest projected starter" — arbitrary at all-zero) and **Mulligan** (worst starter by
+`pts - proj` — degenerates to "lowest scorer"). Now uses the populated endpoint (no `/v1`, explicit `position[]`), reshapes
+its ARRAY response into the expected map, and derives `projOk` from **actual data** rather than a status code.
+**Deployed live as score-matchups v19** (`verify_jwt=false` preserved).
+
+**Projected points shipped** (`599de16`, `f364dd3` — see also Session 39): `player_projections` + `src/lib/scoring.ts` +
+a **Wed 08:00 UTC cron**, scored through each league's own settings.
+
+**🔑 Edge-function deploys go through the Supabase MCP, not the CLI.** `supabase login` refuses in a non-TTY shell
+(`LegacyLoginMissingTokenError`). A correctly-scoped Personal Access Token was created (uff-platform only, Edge Functions
+read-write, expires 2027-08-31) — **but the CLI rejects it**: `Invalid access token format. Must be like sbp_0102...1920`,
+on **both** stable 2.117.0 and `@beta`. The CLI only accepts **legacy = full-account** tokens, which would also expose
+`ustp-platform`; **recommended against and not created.** The scoped token sits unused in `.env.local` as
+`SUPABASE_ACCESS_TOKEN` (right credential if the Supabase MCP ever needs re-auth). `scripts/deploy-edge.mjs` exists but
+needs a legacy token.
+
+📌 **Remaining proof: Sunday's first live scoring run.** Verified by replay, not yet by production — but failure is now
+loud (502 on a bad stats fetch; `projOk` requires real data).
+
+🦸 **Faction bonus, for the record:** it is **team-level** (`pts += fb` once on the total, never on a player row) and counts
+the **entire 16-man active roster including bench**, applied on every 15-minute scoring run — not at week's end. Reveille
+3.5/wk, Blessed Defender 8.0 (a perfect 16/16 faction roster). ⚠️ The lineup page's **projected** total excludes it.
+
+**Graph refreshed** → 1161 nodes / 1764 edges / 149 communities (`python -m graphify update .` — the code-only subcommand).
+
 ### Next priorities (not yet built):
 - **Tier 1 of the deep dive**: (1) **roster-aware autodraft + an opt-in auto mode** — biggest single win, fixes both the illegal rosters and the 34 minutes of dead air; (2) **apply `supabase/migrations/20260907210000_pin_draft_power_rounds.sql`** (written, NOT applied, NOT committed) then re-run the 10-draft sim and mirror to the schema snapshot; (3) **decide Draft Heist** — fix the swap/restore server-side and atomic, or pull both it and Hero's Shield from the dealing pool.
 - **Two teams cannot field a legal Week-1 lineup**: The Fratelli's (0 DEF, 2 K) and Blake's Bad Boys (0 K, 1 DEF) — an obvious trade, or free agency.
