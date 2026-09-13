@@ -398,7 +398,7 @@ export default async function RosterPage({
       .eq("member_id", me.id)
       .order("round", { ascending: true })
       .returns<PowerRow[]>(),
-    supabase.from("uff_lineups").select("slot, player_id").eq("member_id", me.id).eq("week", week),
+    supabase.from("uff_lineups").select("slot, player_id, lineup_source").eq("member_id", me.id).eq("week", week),
     supabase
       .from("power_restore_chips")
       .select("id, earned_week, used")
@@ -628,6 +628,15 @@ export default async function RosterPage({
   const currentLineup: Record<string, string> = {};
   for (const entry of (lineupRows ?? [])) currentLineup[entry.slot] = entry.player_id;
 
+  // Where this week's lineup came from. The scoring engine saves a lineup for a
+  // team that never set one (OPEN-LOOPS #33), and the manager should be able to
+  // see that it isn't theirs.
+  const lineupRowsTyped = (lineupRows ?? []) as { slot: string; player_id: string; lineup_source?: string | null }[];
+  const engineLineupSource: "auto" | "carried" | null =
+    lineupRowsTyped.length > 0 && lineupRowsTyped.every((r) => r.lineup_source === "auto") ? "auto"
+    : lineupRowsTyped.length > 0 && lineupRowsTyped.every((r) => r.lineup_source === "carried") ? "carried"
+    : null;
+
   const activeRosterForLineup = activeRoster
     .filter((r) => r.players?.position)
     .map((r) => ({
@@ -783,6 +792,28 @@ export default async function RosterPage({
         {/* ── Start/Sit AI Advisor (current week only) ── */}
         {activeRosterForLineup.length > 0 && !me.eliminated_at && viewWeek === currentWeek && (
           <StartSitAdvisor leagueId={leagueId} />
+        )}
+
+        {/* ── Engine-built lineup notice (OPEN-LOOPS #33) ── */}
+        {engineLineupSource && activeRosterForLineup.length > 0 && (
+          <div
+            className="rounded-lg border px-4 py-3 text-sm"
+            style={{ borderColor: "rgba(255,215,0,0.35)", background: "rgba(255,215,0,0.06)", color: "#f4f4f8" }}
+          >
+            {engineLineupSource === "auto" ? (
+              <>
+                <span className="font-semibold" style={{ color: "#FFD700" }}>🤖 Auto lineup — </span>
+                no lineup was set for Week {week}, so UFF started the best projected players on this roster.
+                Set your own any time; each player locks at his kickoff.
+              </>
+            ) : (
+              <>
+                <span className="font-semibold" style={{ color: "#FFD700" }}>↩️ Carried over — </span>
+                no lineup was set for Week {week}, so last week&apos;s starters were kept.
+                Change it any time; each player locks at his kickoff.
+              </>
+            )}
+          </div>
         )}
 
         {/* ── Drag-and-Drop Lineup ── */}

@@ -3094,3 +3094,45 @@ BEGIN
     (p_league_id, p_acting_member_id, p_swap_round,    v_curr.power_id);
 END;
 $function$;
+
+-- persist_effective_lineup: migration 20260913190000 (OPEN-LOOPS #33). EXECUTE is
+-- service_role only (revoked from PUBLIC, anon, authenticated); called by score-matchups.
+CREATE OR REPLACE FUNCTION public.persist_effective_lineup(p_league_id uuid, p_member_id uuid, p_week integer, p_source text, p_slots jsonb)
+ RETURNS boolean LANGUAGE plpgsql SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_inserted integer;
+BEGIN
+  IF p_source NOT IN ('carried', 'auto') THEN
+    RAISE EXCEPTION 'persist_effective_lineup writes only carried or auto lineups (got %)', p_source;
+  END IF;
+
+  IF jsonb_typeof(p_slots) <> 'array' OR jsonb_array_length(p_slots) = 0 THEN
+    RETURN false;
+  END IF;
+
+  -- A lineup the manager saved always wins.
+  IF EXISTS (
+    SELECT 1 FROM public.uff_lineups
+     WHERE member_id = p_member_id AND week = p_week::smallint AND lineup_source = 'manual'
+  ) THEN
+    RETURN false;
+  END IF;
+
+  -- Replace only engine-written rows, never a manual one.
+  DELETE FROM public.uff_lineups
+   WHERE member_id = p_member_id AND week = p_week::smallint AND lineup_source <> 'manual';
+
+  -- Re-check inside the INSERT so a manual save that committed a moment ago is
+  -- never buried under an auto lineup.
+  INSERT INTO public.uff_lineups (league_id, member_id, player_id, week, slot, lineup_source)
+  SELECT p_league_id, p_member_id, r->>'player_id', p_week::smallint, r->>'slot', p_source
+    FROM jsonb_array_elements(p_slots) AS r
+   WHERE NOT EXISTS (
+     SELECT 1 FROM public.uff_lineups
+      WHERE member_id = p_member_id AND week = p_week::smallint AND lineup_source = 'manual'
+   );
+  GET DIAGNOSTICS v_inserted = ROW_COUNT;
+  RETURN v_inserted > 0;
+END;
+$function$;

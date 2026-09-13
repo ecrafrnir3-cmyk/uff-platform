@@ -8,6 +8,7 @@ const SLEEPER_BASE         = 'https://api.sleeper.app/v1';
 // empty stat objects (see the fetch below).
 const SLEEPER_PROJ_BASE    = 'https://api.sleeper.app';
 
+// @lineup-core:begin
 const FLAG_KEYS = new Set([
   'pts_allow_0','pts_allow_1_6','pts_allow_7_13','pts_allow_14_20',
   'pts_allow_21_27','pts_allow_28_34','pts_allow_35p',
@@ -47,6 +48,7 @@ function applyDraftPower(
     default:                     return 0;
   }
 }
+// @lineup-core:end
 
 // Powers counted toward Mirror Match opponent bonus (design doc spec)
 const MIRROR_MATCH_POWERS = new Set([
@@ -94,15 +96,145 @@ function resolveToken(tokenId: number, choice: string | null): TokenEffect | nul
 
 // ── Lineup fallbacks ─────────────────────────────────────────────────────────
 // A member with no saved lineup for the week must NOT score their whole roster
-// (audit: isStarter defaulted true with no lineup rows). Fallback order:
-//   1. this week's saved lineup;  2. most recent prior week's lineup (players
-//   still rostered);  3. auto-filled best legal lineup from the league's slot
-//   template (projections first, actual points as tiebreak/fallback).
+// (audit: isStarter defaulted true with no lineup rows). The engine builds an
+// effective lineup — saved → carried forward → auto-filled — and, since
+// 2026-09-13 (OPEN-LOOPS #33), SAVES it to uff_lineups. Before that it lived in
+// memory only: a team that never set a lineup scored nine players the roster
+// page, the matchup breakdown and Story Engine feats could not see; the pick was
+// re-chosen from live projections on every run with no kickoff lock; and it
+// ranked raw projections, so it would happily start a Power-Negated player.
+//
+// The pure core below is extracted and unit-tested by scripts/lineup-core-test.ts
+// (it runs this exact code, not a copy).
+// @lineup-core:begin
 const DEFAULT_LINEUP_SLOTS: Record<string, number> = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DEF: 1 };
 const SLOT_ELIGIBLE: Record<string, string[]> = {
   QB: ['QB'], RB: ['RB'], WR: ['WR'], TE: ['TE'],
   FLEX: ['RB', 'WR', 'TE'], K: ['K'], DEF: ['DEF', 'DST'], DST: ['DEF', 'DST'],
 };
+
+type LineupSource = 'manual' | 'carried' | 'auto';
+interface LineupRowIn { player_id: string; slot: string; source: LineupSource }
+interface SlotAssignment { slot: string; player_id: string }
+interface LineupPlan {
+  starters: string[];
+  persist: { source: 'carried' | 'auto'; slots: SlotAssignment[] } | null;
+}
+
+// Mirrors expandSlots() in src/app/dashboard/league/[id]/roster/page.tsx — the
+// slot keys the roster UI renders and set_lineup() validates. Keep them in step.
+function expandSlotKeys(template: Record<string, number>): string[] {
+  const order = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'K', 'DEF'];
+  const out: string[] = [];
+  for (const pos of order) {
+    const n = Number(template[pos] ?? 0);
+    if (n === 1) out.push(pos);
+    else for (let i = 1; i <= n; i++) out.push(`${pos}_${i}`);
+  }
+  return out;
+}
+
+function slotBaseOf(slot: string): string {
+  return slot.replace(/_\d+$/, '');
+}
+
+// Projected points WITH the player's draft power applied, so a Power-Negated
+// player ranks at half value and a Berserker Rage back gets his bonus. Time
+// Stone is an injury freeze, not a projection change; a restored Power Negation
+// no longer halves.
+function powerAdjustedProjection(
+  stats: Record<string, number> | undefined,
+  settings: Record<string, number>,
+  pe?: { power: string; restored: boolean },
+): number {
+  if (!stats) return 0;
+  const base = calcScore(stats, settings);
+  if (!pe || pe.power === 'time_stone' || pe.power === 'vampire_bite' ||
+      (pe.power === 'power_negation' && pe.restored)) return base;
+  return base + applyDraftPower(pe.power, stats, base, settings);
+}
+
+// Greedy fill in slot order — dedicated slots first, FLEX last — taking the best
+// eligible unused candidate for each. `preset` pins slots that are locked.
+function fillSlots(
+  slotKeys: string[],
+  candidatesBestFirst: string[],
+  posOf: (pid: string) => string,
+  preset: Record<string, string> = {},
+): SlotAssignment[] {
+  const assigned: Record<string, string> = {};
+  const used = new Set<string>();
+  for (const [slot, pid] of Object.entries(preset)) {
+    if (slotKeys.includes(slot)) { assigned[slot] = pid; used.add(pid); }
+  }
+  const order = [
+    ...slotKeys.filter((s) => slotBaseOf(s) !== 'FLEX'),
+    ...slotKeys.filter((s) => slotBaseOf(s) === 'FLEX'),
+  ];
+  for (const slot of order) {
+    if (assigned[slot]) continue;
+    const elig = SLOT_ELIGIBLE[slotBaseOf(slot)] ?? [slotBaseOf(slot)];
+    const pick = candidatesBestFirst.find((pid) => !used.has(pid) && elig.includes(posOf(pid)));
+    if (pick) { assigned[slot] = pick; used.add(pick); }
+  }
+  return slotKeys.filter((s) => assigned[s]).map((s) => ({ slot: s, player_id: assigned[s] }));
+}
+
+function planEffectiveLineup(input: {
+  slotKeys: string[];
+  roster: string[];
+  posOf: (pid: string) => string;
+  isKickedOff: (pid: string) => boolean;
+  thisWeek: LineupRowIn[];
+  priorCarry: SlotAssignment[] | null;
+  // Higher = better. 'stored' = the pre-kickoff projection synced on Wednesday;
+  // 'live' = Sleeper's current projection, only ever compared among players
+  // whose games have not started.
+  rankValue: (pid: string, basis: 'stored' | 'live') => number;
+}): LineupPlan {
+  const { slotKeys, roster, posOf, isKickedOff, thisWeek, priorCarry, rankValue } = input;
+  const rosterSet = new Set(roster);
+  const bestFirst = (basis: 'stored' | 'live') => (a: string, b: string) =>
+    (rankValue(b, basis) - rankValue(a, basis)) || (a < b ? -1 : a > b ? 1 : 0);
+
+  // 1) A lineup a manager chose — saved this week, or carried from one — is
+  //    played exactly as saved, and never overwritten.
+  if (thisWeek.length > 0 && thisWeek.some((r) => r.source !== 'auto')) {
+    return { starters: thisWeek.map((r) => r.player_id), persist: null };
+  }
+
+  // 2) An engine-built lineup already saved this week: every starter whose game
+  //    has kicked off is LOCKED, exactly like a manager's player. Only open slots
+  //    are re-picked, and only from players whose games have not started — so
+  //    nothing is ever chosen with a result already on the board.
+  if (thisWeek.length > 0) {
+    const locked: Record<string, string> = {};
+    for (const r of thisWeek) {
+      if (rosterSet.has(r.player_id) && isKickedOff(r.player_id)) locked[r.slot] = r.player_id;
+    }
+    const lockedIds = new Set(Object.values(locked));
+    const open = roster.filter((pid) => !lockedIds.has(pid) && !isKickedOff(pid)).sort(bestFirst('live'));
+    const slots = fillSlots(slotKeys, open, posOf, locked);
+    const unchanged = slots.length === thisWeek.length &&
+      slots.every((s) => thisWeek.some((r) => r.slot === s.slot && r.player_id === s.player_id));
+    return { starters: slots.map((s) => s.player_id), persist: unchanged ? null : { source: 'auto', slots } };
+  }
+
+  // 3) Nothing saved this week: carry forward the last lineup a manager chose,
+  //    keeping only players still on the roster.
+  if (priorCarry && priorCarry.length > 0) {
+    const slots = priorCarry.filter((s) => rosterSet.has(s.player_id) && slotKeys.includes(s.slot));
+    if (slots.length > 0) {
+      return { starters: slots.map((s) => s.player_id), persist: { source: 'carried', slots } };
+    }
+  }
+
+  // 4) Never set a lineup: build one from the PRE-KICKOFF projection, so even a
+  //    pick made mid-week cannot be informed by games already played.
+  const slots = fillSlots(slotKeys, [...roster].sort(bestFirst('stored')), posOf);
+  return { starters: slots.map((s) => s.player_id), persist: slots.length > 0 ? { source: 'auto', slots } : null };
+}
+// @lineup-core:end
 
 interface PlayerScore {
   pts:       number;
@@ -206,7 +338,7 @@ Deno.serve(async (req) => {
   // Every result is error-checked: writing scores computed from silently-empty
   // maps overwrote real points with zeros (audit U7). Fail loudly instead.
   const [
-    powersQ, bitesQ, rostersQ, lineupsQ, factionsQ, nflTeamsQ, tokensQ, historyQ, priorLineupsQ,
+    powersQ, bitesQ, rostersQ, lineupsQ, factionsQ, nflTeamsQ, tokensQ, historyQ, priorLineupsQ, scheduleQ,
   ] = await Promise.all([
     supabase
       .from('player_draft_powers')
@@ -219,7 +351,7 @@ Deno.serve(async (req) => {
       .in('member_id', memberIds)
       .is('dropped_at', null)
       .eq('slot', 'active'),
-    supabase.from('uff_lineups').select('member_id, player_id').in('member_id', memberIds).eq('week', week),
+    supabase.from('uff_lineups').select('member_id, player_id, slot, lineup_source').in('member_id', memberIds).eq('week', week),
     supabase.from('league_members').select('id, faction').in('id', memberIds),
     supabase.from('nfl_teams').select('abbr, faction'),
     supabase.from('weekly_token_assignments')
@@ -233,11 +365,17 @@ Deno.serve(async (req) => {
       .eq('season', season)
       .lt('week', week)
       .eq('is_complete', true),
-    // Prior weeks' lineups for the carry-forward fallback
+    // Prior weeks' lineups for the carry-forward fallback (slot + source so a
+    // carried lineup keeps its slots and an auto-pick is never carried)
     supabase.from('uff_lineups')
-      .select('member_id, player_id, week')
+      .select('member_id, player_id, week, slot, lineup_source')
       .in('member_id', memberIds)
       .lt('week', week),
+    // Per-team kickoffs: an engine-built lineup locks each starter at kickoff
+    supabase.from('uff_game_schedule')
+      .select('team, kickoff_utc')
+      .eq('season', Number(season))
+      .eq('week', week),
   ]);
 
   const queryErrors = [
@@ -245,7 +383,7 @@ Deno.serve(async (req) => {
     ['uff_roster_players', rostersQ.error], ['uff_lineups', lineupsQ.error],
     ['league_members', factionsQ.error],    ['nfl_teams', nflTeamsQ.error],
     ['weekly_token_assignments', tokensQ.error], ['win_history', historyQ.error],
-    ['prior_lineups', priorLineupsQ.error],
+    ['prior_lineups', priorLineupsQ.error], ['game_schedule', scheduleQ.error],
   ].filter(([, e]) => e != null);
   if (queryErrors.length > 0) {
     const msg = queryErrors.map(([name, e]) => `${name}: ${(e as { message: string }).message}`).join('; ');
@@ -307,18 +445,32 @@ Deno.serve(async (req) => {
     if (pl?.team)     playerTeamMap[r.player_id] = pl.team;
   }
 
-  const lineupMap: Record<string, Set<string>> = {};
+  // This week's saved lineup per member, with where it came from
+  const thisWeekByMember: Record<string, LineupRowIn[]> = {};
   for (const l of (lineupRows ?? [])) {
-    if (!lineupMap[l.member_id]) lineupMap[l.member_id] = new Set();
-    lineupMap[l.member_id].add(l.player_id);
+    (thisWeekByMember[l.member_id] ??= []).push({
+      player_id: l.player_id, slot: l.slot, source: (l.lineup_source ?? 'manual') as LineupSource,
+    });
   }
 
-  // Latest prior week's lineup per member (carry-forward source)
-  const priorByMember: Record<string, { week: number; ids: string[] }> = {};
-  for (const l of (priorLineupsQ.data ?? [])) {
-    const cur = priorByMember[l.member_id];
-    if (!cur || l.week > cur.week) priorByMember[l.member_id] = { week: l.week, ids: [l.player_id] };
-    else if (l.week === cur.week) cur.ids.push(l.player_id);
+  // Latest prior week's lineup per member that a MANAGER chose (manual, or carried
+  // from one). An engine auto-pick is never carried forward: an absent manager
+  // gets a fresh pick each week, not last week's.
+  const priorCarryByMember: Record<string, SlotAssignment[]> = {};
+  {
+    const latest: Record<string, number> = {};
+    for (const l of (priorLineupsQ.data ?? [])) {
+      if ((l.lineup_source ?? 'manual') === 'auto') continue;
+      const w = latest[l.member_id];
+      if (w === undefined || l.week > w) { latest[l.member_id] = l.week; priorCarryByMember[l.member_id] = []; }
+      if (l.week === latest[l.member_id]) priorCarryByMember[l.member_id].push({ slot: l.slot, player_id: l.player_id });
+    }
+  }
+
+  // Team -> kickoff (ms). A player with no scheduled game (bye) never locks.
+  const teamKickoff: Record<string, number> = {};
+  for (const g of (scheduleQ.data ?? [])) {
+    if (g.team && g.kickoff_utc) teamKickoff[g.team] = Date.parse(g.kickoff_utc);
   }
 
   const memberFactionMap: Record<string, string> = {};
@@ -392,55 +544,53 @@ Deno.serve(async (req) => {
     }
   }
 
-  // ── Effective lineups: saved → carried-forward → auto-filled ─────────────
+  // ── Effective lineups: saved → carried forward → auto-filled, and SAVED ────
+  // See the @lineup-core notes near the top of this file (OPEN-LOOPS #33). A
+  // brand-new auto lineup ranks on the pre-kickoff projections synced Wednesday
+  // by /api/cron/sync-projections, so a pick made mid-week can't see results.
+  const storedProjMap: Record<string, Record<string, number>> = {};
+  let storedProjectionsOk = true;
+  {
+    const allRosterIds = [...new Set(Object.values(rosterMap).flat())];
+    if (allRosterIds.length > 0) {
+      const { data: sp, error: spErr } = await supabase
+        .from('player_projections')
+        .select('player_id, stats')
+        .eq('season', Number(season))
+        .eq('week', week)
+        .in('player_id', allRosterIds);
+      for (const r of (sp ?? [])) storedProjMap[r.player_id] = (r.stats as Record<string, number>) ?? {};
+      // Degrade to live projections rather than halt scoring, but say so.
+      if (spErr || Object.keys(storedProjMap).length === 0) storedProjectionsOk = false;
+    }
+  }
+  const nowMs = Date.now();
+
   const effectiveLineupMap: Record<string, Set<string>> = {};
+  const lineupPersists: { leagueId: string; memberId: string; source: 'carried' | 'auto'; slots: SlotAssignment[] }[] = [];
   for (const matchup of typedMatchups) {
     const memberId = matchup.member_id;
     if (effectiveLineupMap[memberId]) continue;
-    if (lineupMap[memberId] && lineupMap[memberId].size > 0) {
-      effectiveLineupMap[memberId] = lineupMap[memberId];
-      continue;
-    }
-    const roster = rosterMap[memberId] ?? [];
-    const rosterSet = new Set(roster);
-
-    // 1) Carry forward the most recent prior lineup (only players still rostered)
-    const prior = priorByMember[memberId];
-    const carried = prior ? prior.ids.filter((pid) => rosterSet.has(pid)) : [];
-    if (carried.length > 0) {
-      effectiveLineupMap[memberId] = new Set(carried);
-      continue;
-    }
-
-    // 2) Never set a lineup — auto-fill the league's slot template, best first
-    const template = slotTemplateMap[matchup.league_id] ?? DEFAULT_LINEUP_SLOTS;
-    const settings = settingsMap[matchup.league_id] ?? {};
-    const ranked = roster.map((pid) => ({
-      pid,
-      pos: playerPosMap[pid] ?? '',
-      proj: calcScore(allProj[pid] ?? {}, settings),
-      pts:  calcScore(allStats[pid] ?? {}, settings),
-    }));
-    ranked.sort((a, b) => (projOk ? (b.proj - a.proj) || (b.pts - a.pts) : b.pts - a.pts));
-    const chosen = new Set<string>();
-    const fillSlot = (slotBase: string, count: number) => {
-      const elig = SLOT_ELIGIBLE[slotBase] ?? [slotBase];
-      let filled = 0;
-      for (const r of ranked) {
-        if (filled >= count) break;
-        if (chosen.has(r.pid)) continue;
-        if (elig.includes(r.pos)) { chosen.add(r.pid); filled++; }
-      }
-    };
-    // Dedicated slots first so FLEX takes leftovers
-    for (const [slotBase, count] of Object.entries(template)) {
-      const base = slotBase.toUpperCase();
-      if (base === 'FLEX') continue;
-      fillSlot(base, count as number);
-    }
-    const flexCount = Number(template['FLEX'] ?? template['flex'] ?? 0);
-    if (flexCount > 0) fillSlot('FLEX', flexCount);
-    effectiveLineupMap[memberId] = chosen;
+    const settings     = settingsMap[matchup.league_id] ?? {};
+    const leaguePowers = powerMap[matchup.league_id]    ?? {};
+    const plan = planEffectiveLineup({
+      slotKeys: expandSlotKeys(slotTemplateMap[matchup.league_id] ?? DEFAULT_LINEUP_SLOTS),
+      roster:   rosterMap[memberId] ?? [],
+      posOf:    (pid) => playerPosMap[pid] ?? '',
+      isKickedOff: (pid) => {
+        const ko = teamKickoff[playerTeamMap[pid] ?? ''];
+        return ko !== undefined && nowMs >= ko;
+      },
+      thisWeek:   thisWeekByMember[memberId] ?? [],
+      priorCarry: priorCarryByMember[memberId] ?? null,
+      rankValue: (pid, basis) => {
+        const live   = projOk ? allProj[pid] : undefined;
+        const stored = storedProjMap[pid];
+        return powerAdjustedProjection(basis === 'stored' ? (stored ?? live) : (live ?? stored), settings, leaguePowers[pid]);
+      },
+    });
+    effectiveLineupMap[memberId] = new Set(plan.starters);
+    if (plan.persist) lineupPersists.push({ leagueId: matchup.league_id, memberId, ...plan.persist });
   }
 
   // ── First pass: score ALL roster players (starters + bench) ──────────────
@@ -807,6 +957,23 @@ Deno.serve(async (req) => {
   );
   const writeErrors = writeResults.filter(r => r.error != null).map(r => r.error!.message);
 
+  // Save engine-built lineups so the roster page, the matchup breakdown and Story
+  // Engine feats all see the same starters the score came from. The RPC never
+  // overwrites a lineup a manager saved, even one that lands mid-run.
+  let lineupsPersisted = 0;
+  const lineupPersistErrors: string[] = [];
+  for (const lp of lineupPersists) {
+    const { data: wrote, error: lpErr } = await supabase.rpc('persist_effective_lineup', {
+      p_league_id: lp.leagueId,
+      p_member_id: lp.memberId,
+      p_week:      week,
+      p_source:    lp.source,
+      p_slots:     lp.slots,
+    });
+    if (lpErr) lineupPersistErrors.push(`${lp.memberId}: ${lpErr.message}`);
+    else if (wrote) lineupsPersisted++;
+  }
+
   // ── Apply Time Stone DB updates ───────────────────────────────────────────
   if (tsUpdates.length > 0) {
     await Promise.all(
@@ -828,8 +995,15 @@ Deno.serve(async (req) => {
     );
   }
 
+  if (lineupPersistErrors.length > 0) {
+    return new Response(
+      JSON.stringify({ error: `lineup persist failed for ${lineupPersistErrors.length} member(s)`, details: lineupPersistErrors.slice(0, 5), updated: typedMatchups.length }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+
   return new Response(
-    JSON.stringify({ updated: typedMatchups.length, week, season, projectionsApplied: projOk, tsUpdates: tsUpdates.length }),
+    JSON.stringify({ updated: typedMatchups.length, week, season, projectionsApplied: projOk, storedProjectionsOk, lineupsPersisted, tsUpdates: tsUpdates.length }),
     { status: 200, headers: { 'Content-Type': 'application/json' } }
   );
 });
