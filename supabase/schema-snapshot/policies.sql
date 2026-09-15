@@ -58,7 +58,8 @@ CREATE POLICY "chip owner can use their chip" ON public.power_restore_chips FOR 
 CREATE POLICY "league members can view chips" ON public.power_restore_chips FOR SELECT TO public USING ((EXISTS ( SELECT 1
    FROM league_members lm
   WHERE ((lm.league_id = power_restore_chips.league_id) AND (lm.user_id = auth.uid())))));
-CREATE POLICY "service role can insert chips" ON public.power_restore_chips FOR INSERT TO public WITH CHECK (true);
+-- "service role can insert chips" (FOR INSERT TO public WITH CHECK (true)) DROPPED 2026-09-15,
+-- migration 20260915130000_lock_down_anon_admin_functions: it let anyone forge chips. Finalize inserts as the function owner.
 CREATE POLICY "profiles are viewable by authenticated users" ON public.profiles FOR SELECT TO public USING ((auth.role() = 'authenticated'::text));
 CREATE POLICY "users can insert their own profile" ON public.profiles FOR INSERT TO public WITH CHECK ((( SELECT auth.uid() AS uid) = id));
 CREATE POLICY "users can update their own profile" ON public.profiles FOR UPDATE TO public USING ((( SELECT auth.uid() AS uid) = id));
@@ -157,9 +158,8 @@ CREATE POLICY "authenticated read weekly_token_assignments" ON public.weekly_tok
 CREATE POLICY "members can read league tokens" ON public.weekly_token_assignments FOR SELECT TO public USING ((EXISTS ( SELECT 1
    FROM league_members lm
   WHERE ((lm.league_id = weekly_token_assignments.league_id) AND (lm.user_id = auth.uid())))));
-CREATE POLICY "members insert own weekly_token_assignments" ON public.weekly_token_assignments FOR INSERT TO public WITH CHECK ((EXISTS ( SELECT 1
-   FROM league_members lm
-  WHERE ((lm.id = weekly_token_assignments.member_id) AND (lm.user_id = ( SELECT auth.uid() AS uid))))));
+-- "members insert own weekly_token_assignments" (FOR INSERT) DROPPED 2026-09-15, migration 20260915130000_lock_down_anon_admin_functions:
+-- a member could pre-insert their own next-week token so the real finalize award was silently skipped. Finalize inserts as the function owner.
 CREATE POLICY "members update own weekly_token_assignments" ON public.weekly_token_assignments FOR UPDATE TO public USING ((EXISTS ( SELECT 1
    FROM league_members lm
   WHERE ((lm.id = weekly_token_assignments.member_id) AND (lm.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
