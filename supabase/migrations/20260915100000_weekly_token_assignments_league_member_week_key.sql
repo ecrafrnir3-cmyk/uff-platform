@@ -1,0 +1,21 @@
+-- 2026-09-15 — Finalize Week failed: "there is no unique or exclusion constraint
+-- matching the ON CONFLICT specification".
+--
+-- finalize_week (the commissioner's button) and finalize_all_active_leagues (the
+-- Wednesday 07:00 UTC cron) both award next week's tokens with
+--   INSERT INTO weekly_token_assignments (league_id, member_id, week, token_id)
+--   ... ON CONFLICT (league_id, member_id, week) DO NOTHING
+-- but the live table's only unique key is (member_id, week). Postgres cannot resolve
+-- that ON CONFLICT target, so the button rolled back the whole finalize, and the cron
+-- would have swallowed the same error inside its per-league EXCEPTION block
+-- (finalized 0, skipped 1) while still answering HTTP 200.
+--
+-- league_members.id is a per-league membership row (0 ids span two leagues, checked
+-- 2026-09-15), so (member_id, week) being unique already makes
+-- (league_id, member_id, week) unique: this index cannot fail on existing data and
+-- changes nothing except letting the ON CONFLICT target resolve.
+--
+-- Verified in a rolled-back transaction on live data before applying: without the
+-- index finalize_week raises the error above; with it Week 1 finalizes 14/14.
+CREATE UNIQUE INDEX IF NOT EXISTS weekly_token_assignments_league_member_week_key
+  ON public.weekly_token_assignments (league_id, member_id, week);
