@@ -80,7 +80,12 @@ CREATE POLICY "members manage own active powers" ON public.team_active_powers FO
    FROM (draft_power_assignments dpa
      JOIN league_members lm ON ((lm.id = dpa.member_id)))
   WHERE ((dpa.id = team_active_powers.assignment_id) AND (lm.user_id = ( SELECT auth.uid() AS uid))))));
-CREATE POLICY "commissioner can manage announcements" ON public.uff_announcements FOR ALL TO public USING (true) WITH CHECK (true);
+-- "commissioner can manage announcements" (FOR ALL TO public USING (true) WITH CHECK (true)) REPLACED 2026-09-15,
+-- migration 20260915140000_scope_announcements_to_commissioner: anyone could post/edit/delete announcements.
+-- Also: anon lost INSERT/UPDATE/DELETE/TRUNCATE on uff_announcements; authenticated lost TRUNCATE.
+CREATE POLICY "commissioner can delete announcements" ON public.uff_announcements FOR DELETE TO authenticated USING (EXISTS ( SELECT 1 FROM uff_leagues ul WHERE ((ul.id = uff_announcements.league_id) AND (ul.commissioner_id = ( SELECT auth.uid() AS uid)))));
+CREATE POLICY "commissioner can edit announcements" ON public.uff_announcements FOR UPDATE TO authenticated USING (EXISTS ( SELECT 1 FROM uff_leagues ul WHERE ((ul.id = uff_announcements.league_id) AND (ul.commissioner_id = ( SELECT auth.uid() AS uid))))) WITH CHECK (EXISTS ( SELECT 1 FROM uff_leagues ul WHERE ((ul.id = uff_announcements.league_id) AND (ul.commissioner_id = ( SELECT auth.uid() AS uid)))));
+CREATE POLICY "commissioner can post announcements" ON public.uff_announcements FOR INSERT TO authenticated WITH CHECK (((author_id = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1 FROM uff_leagues ul WHERE ((ul.id = uff_announcements.league_id) AND (ul.commissioner_id = ( SELECT auth.uid() AS uid)))))));
 CREATE POLICY "league members can read announcements" ON public.uff_announcements FOR SELECT TO public USING ((league_id IN ( SELECT league_members.league_id
    FROM league_members
   WHERE (league_members.user_id = auth.uid()))));
