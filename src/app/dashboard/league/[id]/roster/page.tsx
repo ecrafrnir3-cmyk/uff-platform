@@ -637,6 +637,54 @@ export default async function RosterPage({
     : lineupRowsTyped.length > 0 && lineupRowsTyped.every((r) => r.lineup_source === "carried") ? "carried"
     : null;
 
+  // ── Nothing saved for this week yet: show the last lineup the manager chose ──
+  // The NFL week rolls Wednesday 00:00 UTC, but carrying a lineup forward happens
+  // inside score-matchups, and its cron skips Wednesday — so the roster read
+  // "0 / 9 starters set" for about a day every week, as if the lineup had vanished.
+  // This is a PREVIEW; nothing is written here. It mirrors the engine's own rule
+  // (planEffectiveLineup step 3: the latest week the manager chose, never an auto
+  // pick), so what is shown is what gets played if the manager does nothing.
+  let carriedPreviewWeek: number | null = null;
+  // Once any game of this week has kicked off the preview must stop. setLineup reads
+  // its baseline from uff_lineups, which is empty in exactly this window, so pressing
+  // the Save this banner asks for would drop every already-playing starter and save a
+  // SHORT lineup — permanently, since those rows default to manual and the engine then
+  // refuses to refill them. Showing nothing is the safe failure.
+  const weekKickoffs = (gameScheduleRows ?? [])
+    .map((g) => Date.parse(g.kickoff_utc))
+    .filter((t) => !Number.isNaN(t));
+  const weekHasStarted = weekKickoffs.length > 0 && Date.now() >= Math.min(...weekKickoffs);
+  if (lineupRowsTyped.length === 0 && viewWeek === currentWeek && week > 1 && !weekHasStarted) {
+    const { data: priorLineupRows } = await supabase
+      .from("uff_lineups")
+      .select("slot, player_id, week, lineup_source")
+      .eq("member_id", me.id)
+      .lt("week", week)
+      .neq("lineup_source", "auto")
+      .order("week", { ascending: false })
+      .returns<{ slot: string; player_id: string; week: number; lineup_source: string | null }[]>();
+    const latest = priorLineupRows?.[0]?.week ?? null;
+    if (latest != null) {
+      const activeIds = new Set(activeRoster.map((r) => r.player_id));
+      const slotKeys  = new Set(expandedSlots);
+      for (const r of priorLineupRows ?? []) {
+        // Anyone dropped, traded or IR'd since then just leaves his slot open.
+        if (r.week !== latest || !slotKeys.has(r.slot) || !activeIds.has(r.player_id)) continue;
+        currentLineup[r.slot] = r.player_id;
+      }
+      if (Object.keys(currentLineup).length > 0) carriedPreviewWeek = latest;
+    }
+  }
+
+  // The carry above only ever replays a lineup a MANAGER chose, exactly as the engine
+  // does. Someone who has never set one gets nothing back — and he is precisely the
+  // manager whose board is actually empty. He is told what will happen rather than
+  // shown nine invented names: the engine ranks on the pre-kickoff projection WITH
+  // draft powers, this page's projections carry neither, and player_projections is
+  // empty for a new week until sync-projections runs Wednesday 08:00 UTC.
+  const autoPickPending =
+    lineupRowsTyped.length === 0 && carriedPreviewWeek === null && viewWeek === currentWeek;
+
   const activeRosterForLineup = activeRoster
     .filter((r) => r.players?.position)
     .map((r) => ({
@@ -797,7 +845,7 @@ export default async function RosterPage({
         )}
 
         {/* ── Engine-built lineup notice (OPEN-LOOPS #33) ── */}
-        {engineLineupSource && activeRosterForLineup.length > 0 && (
+        {(engineLineupSource || carriedPreviewWeek !== null || autoPickPending) && activeRosterForLineup.length > 0 && (
           <div
             className="rounded-lg border px-4 py-3 text-sm"
             style={{ borderColor: "rgba(255,215,0,0.35)", background: "rgba(255,215,0,0.06)", color: "#f4f4f8" }}
@@ -808,11 +856,25 @@ export default async function RosterPage({
                 no lineup was set for Week {week}, so UFF started the best projected players on this roster.
                 Set your own any time; each player locks at his kickoff.
               </>
-            ) : (
+            ) : engineLineupSource === "carried" ? (
               <>
                 <span className="font-semibold" style={{ color: "#FFD700" }}>↩️ Carried over — </span>
                 no lineup was set for Week {week}, so last week&apos;s starters were kept.
                 Change it any time; each player locks at his kickoff.
+              </>
+            ) : carriedPreviewWeek !== null ? (
+              <>
+                <span className="font-semibold" style={{ color: "#FFD700" }}>↩️ Week {carriedPreviewWeek} lineup — </span>
+                nothing is saved for Week {week} yet, so these are the starters you finished Week {carriedPreviewWeek} with.
+                UFF will play these unless you change them; press <strong>Save Lineup</strong> to make it your own.
+                Each player locks at his kickoff.
+              </>
+            ) : (
+              <>
+                <span className="font-semibold" style={{ color: "#FFD700" }}>🤖 No lineup on file — </span>
+                nothing is saved for Week {week}, and you have never set one by hand, so there is nothing to carry over.
+                Leave it and UFF will start the best projected players on this roster. Set your own any time —
+                drag players into the slots, or press <strong>⚡ Start Best</strong>. Each player locks at his kickoff.
               </>
             )}
           </div>
