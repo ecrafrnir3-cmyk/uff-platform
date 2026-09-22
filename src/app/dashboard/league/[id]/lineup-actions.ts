@@ -57,6 +57,11 @@ export async function setLineup(formData: FormData) {
   // Merge locked players with existing lineup
   let finalSlots: { slot: string; player_id: string }[];
   const anyLocked = playerIds.some(isLocked);
+  // Slots whose requested change was refused because that game has already started.
+  // The manager is told; silently shipping a short lineup is what used to happen.
+  const refusedSlots: string[] = [];
+  let quickFeetRowId: string | null = null;
+  let quickFeetConsumed = false;
 
   if (anyLocked) {
     const { data: memberRow } = await supabase
@@ -67,7 +72,6 @@ export async function setLineup(formData: FormData) {
       .maybeSingle();
 
     let currentLineup: Record<string, string> = {};
-    let quickFeetRowId: string | null = null;
 
     if (memberRow?.id) {
       const [{ data: rows }, { data: qfToken }] = await Promise.all([
@@ -93,7 +97,6 @@ export async function setLineup(formData: FormData) {
 
     // Build merged lineup. Quick Feet allows one locked-slot change through.
     const merged: Record<string, string> = { ...newAssignments };
-    let quickFeetConsumed = false;
 
     // Re-lock: any slot whose current occupant has kicked off keeps them there
     for (const [slot, pid] of Object.entries(currentLineup)) {
@@ -104,27 +107,29 @@ export async function setLineup(formData: FormData) {
             quickFeetConsumed = true;
           } else {
             merged[slot] = pid;
+            refusedSlots.push(slot);
           }
         }
       }
     }
-    // Block a locked player from appearing in a new slot they did not occupy
-    for (const [slot, pid] of Object.entries(merged)) {
+    // A locked player cannot move INTO a slot he did not already hold. Put that
+    // slot's previous occupant back rather than deleting the slot: deleting it
+    // left the manager starting eight players, scoring 0 in the ninth, under a
+    // message that said "saved".
+    for (const [slot, pid] of Object.entries({ ...merged })) {
       if (isLocked(pid) && currentLineup[slot] !== pid) {
         if (quickFeetRowId && !quickFeetConsumed) {
           quickFeetConsumed = true;
-        } else {
-          delete merged[slot];
+          continue;
         }
+        const previous = currentLineup[slot];
+        const previousStartingElsewhere = previous
+          ? Object.entries(merged).some(([s, p]) => s !== slot && p === previous)
+          : false;
+        if (previous && !previousStartingElsewhere) merged[slot] = previous;
+        else delete merged[slot];
+        refusedSlots.push(slot);
       }
-    }
-
-    // Mark Quick Feet as used if the swap was exercised
-    if (quickFeetConsumed && quickFeetRowId) {
-      await supabase
-        .from("weekly_token_assignments")
-        .update({ status: "used", used_at: new Date().toISOString() })
-        .eq("id", quickFeetRowId);
     }
 
     finalSlots = Object.entries(merged).map(([slot, player_id]) => ({ slot, player_id }));
@@ -151,7 +156,26 @@ export async function setLineup(formData: FormData) {
     );
   }
 
+  // Quick Feet is spent only now that the lineup actually saved.
+  if (quickFeetConsumed && quickFeetRowId) {
+    await supabase
+      .from("weekly_token_assignments")
+      .update({ status: "used", used_at: new Date().toISOString() })
+      .eq("id", quickFeetRowId);
+  }
+
   revalidatePath(`/dashboard/league/${leagueId}/roster`);
   revalidatePath(`/dashboard/league/${leagueId}/matchups`);
+
+  const refused = [...new Set(refusedSlots)];
+  if (refused.length > 0) {
+    redirect(
+      `/dashboard/league/${leagueId}/roster?error=` +
+        encodeURIComponent(
+          `Lineup saved, but ${refused.length} change${refused.length > 1 ? "s were" : " was"} refused — ` +
+            `${refused.join(", ")}: those games have already kicked off.`
+        )
+    );
+  }
   redirect(`/dashboard/league/${leagueId}/roster?lineup=saved`);
 }

@@ -252,16 +252,21 @@ export default function DragDropLineup({
       return;
     }
 
-    // Both in starter slots → A goes to B's slot (must be eligible)
+    // Both in starter slots → a straight swap, and it has to be legal BOTH ways.
     if (!eligible(A.id, B.source)) {
       flashInvalid(B.source);
       return; // keep A selected, flash target
     }
+    if (!eligible(B.id, A.source)) {
+      // Half a swap used to go through: B was benched and A's slot left empty,
+      // with no warning. Refuse instead — bench him deliberately if that is the aim.
+      flashInvalid(A.source);
+      return;
+    }
     setAssignments((prev) => {
       const next = { ...prev };
       next[B.source] = A.id;
-      // B goes to A's slot if eligible, else bench (slot clears)
-      next[A.source] = eligible(B.id, A.source) ? B.id : "";
+      next[A.source] = B.id;
       return next;
     });
     setSelected(null);
@@ -284,14 +289,21 @@ export default function DragDropLineup({
   }
 
   // ── Move selected starter to bench ──────────────────────────────────────────
+  // A player whose game has kicked off cannot be benched: setLineup() puts him
+  // straight back, so refuse here rather than show a change that will not stick.
   function handleMoveToBench() {
     if (!selected || selected.source === "bench") return;
+    const p = activeRoster.find((r) => r.player_id === selected.id);
+    if (locked || (p && isPlayerLocked(p))) return;
     setAssignments((prev) => ({ ...prev, [selected.source]: "" }));
     setSelected(null);
   }
 
   // ── Remove a starter from their slot (× button) ─────────────────────────────
   function removeFromSlot(slot: string) {
+    const pid = assignments[slot];
+    const p = pid ? activeRoster.find((r) => r.player_id === pid) : null;
+    if (locked || (p && isPlayerLocked(p))) return;
     if (selected?.source === slot) setSelected(null);
     setAssignments((prev) => ({ ...prev, [slot]: "" }));
   }
@@ -374,6 +386,12 @@ export default function DragDropLineup({
         .filter((d) => d.getTime() > Date.now())
         .sort((a, b) => a.getTime() - b.getTime())[0]
     : null;
+
+  // The week's first game has kicked off. Editing stays per player (each starter
+  // locks at his own kickoff); this only drives the post-kickoff readouts.
+  const weekStarted = gameTimes
+    ? Object.values(gameTimes).some((t) => Date.now() >= new Date(t).getTime())
+    : locked;
 
   const nextKickoffDisplay = nextKickoff
     ? nextKickoff.toLocaleString("en-US", {
@@ -475,7 +493,7 @@ export default function DragDropLineup({
               ? <>⚡ <span style={{ color: "#FFD700" }}>Quick Feet active</span> — you can swap one player even after kickoff this week</>
               : gameTimes
                 ? nextKickoffDisplay
-                  ? <>Tap a player to move them &middot; Players lock at kickoff &middot; First game: <span style={{ color: "#f4f4f8" }}>{nextKickoffDisplay}</span></>
+                  ? <>Tap a player to move them &middot; Players lock at kickoff &middot; {weekStarted ? "Next game" : "First game"}: <span style={{ color: "#f4f4f8" }}>{nextKickoffDisplay}</span></>
                   : "Tap a player to select, then tap a slot or another player to swap"
                 : `Tap a player to select, then tap a slot or another player to swap · Locks ${lockDisplay}`}
         </div>
@@ -863,7 +881,7 @@ export default function DragDropLineup({
       </div>
 
       {/* ── OPTIMAL LINEUP (post-week analysis) ──────────────────────────────── */}
-      {locked && seasonPts && (() => {
+      {(locked || weekStarted) && seasonPts && (() => {
         // Compute optimal lineup using actual season pts
         const sortedByActual = [...activeRoster].sort((a, b) =>
           (seasonPts[b.player_id] ?? 0) - (seasonPts[a.player_id] ?? 0)

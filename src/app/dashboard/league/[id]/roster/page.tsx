@@ -651,6 +651,8 @@ export default async function RosterPage({
   // Build team -> kickoff map for per-player lock UI
   const gameTimes: Record<string, string> = {};
   for (const g of gameScheduleRows ?? []) gameTimes[g.team] = g.kickoff_utc;
+  // With real kickoffs on hand, each starter locks at HIS kickoff (see below).
+  const haveKickoffs = Object.keys(gameTimes).length > 0;
 
   const factionAccent = me.faction === "hero" ? HERO_COLOR : me.faction === "villain" ? VILLAIN_COLOR : "#2a2a40";
 
@@ -818,13 +820,19 @@ export default async function RosterPage({
 
         {/* ── Drag-and-Drop Lineup ── */}
         {activeRosterForLineup.length > 0 && (
+          // Each starter locks at HIS OWN kickoff — the rule score-matchups and
+          // setLineup() have always enforced. The whole-week clock used to be passed to
+          // `locked` as well, and it froze every slot ~5 minutes after the Thursday night
+          // kickoff: about 96 hours of Sunday and Monday games that the server would
+          // happily have accepted edits for. It survives only as a fallback for a week
+          // whose games are missing from uff_game_schedule.
           <DragDropLineup
             leagueId={leagueId}
             week={week}
             slots={expandedSlots}
             activeRoster={activeRosterForLineup}
             currentLineup={currentLineup}
-            locked={viewWeek < currentWeek || isLineupLocked(week)}
+            locked={viewWeek < currentWeek || (!haveKickoffs && isLineupLocked(week))}
             lockTime={getWeekLockTime(week).toISOString()}
             gameTimes={Object.keys(gameTimes).length > 0 ? gameTimes : undefined}
             seasonPts={seasonPts}
