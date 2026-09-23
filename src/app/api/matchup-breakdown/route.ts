@@ -1,29 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-
-const FLAG_KEYS = new Set([
-  "pts_allow_0","pts_allow_1_6","pts_allow_7_13","pts_allow_14_20",
-  "pts_allow_21_27","pts_allow_28_34","pts_allow_35p",
-]);
+import { scoreWithPower, POWER_LABELS } from "@/lib/scoring";
 
 interface LineupRow { slot: string; player_id: string; }
 interface RosterRow {
   player_id: string;
-  players: { full_name: string; position: string | null; team: string | null } | null;
+  players: {
+    full_name: string;
+    position: string | null;
+    team: string | null;
+    injury_status: string | null;
+  } | null;
+}
+interface PowerRow {
+  player_id: string;
+  power: string;
+  restored_at: string | null;
+  frozen_score: number | null;
+  freeze_broken_at: string | null;
 }
 
-function computeScore(
-  stats: Record<string, number>,
-  scoringSettings: Record<string, number>
-): number {
-  let score = 0;
-  for (const [key, mult] of Object.entries(scoringSettings)) {
-    const val = stats[key];
-    if (val == null || val === 0) continue;
-    score += FLAG_KEYS.has(key) ? mult : val * mult;
-  }
-  return Math.round(score * 100) / 100;
-}
+// Time Stone freezes an injured starter at a held score instead of paying a
+// bonus, so it is a substitution and scoreWithPower deliberately ignores it.
+// Mirrors TS_INJURED_STATUSES in the engine.
+const TS_INJURED = new Set(["Out", "Doubtful", "IR", "PUP", "Sus", "COV", "NA", "DNR"]);
 
 export async function POST(req: NextRequest) {
   try {
@@ -60,6 +60,7 @@ export async function POST(req: NextRequest) {
       { data: lineupA }, { data: lineupB },
       { data: rosterA }, { data: rosterB },
       { data: memberA }, { data: memberB },
+      { data: powerRows },
     ] = await Promise.all([
       supabase
         .from("uff_lineups")
@@ -75,13 +76,13 @@ export async function POST(req: NextRequest) {
         .returns<LineupRow[]>(),
       supabase
         .from("uff_roster_players")
-        .select("player_id, players(full_name, position, team)")
+        .select("player_id, players(full_name, position, team, injury_status)")
         .eq("member_id", member_a_id)
         .is("dropped_at", null)
         .returns<RosterRow[]>(),
       supabase
         .from("uff_roster_players")
-        .select("player_id, players(full_name, position, team)")
+        .select("player_id, players(full_name, position, team, injury_status)")
         .eq("member_id", member_b_id)
         .is("dropped_at", null)
         .returns<RosterRow[]>(),
@@ -95,32 +96,39 @@ export async function POST(req: NextRequest) {
         .select("team_name")
         .eq("id", member_b_id)
         .maybeSingle(),
+      // Tied-to-pick draft powers. The engine adds these to a player's score;
+      // without them this route returns a number the engine never used.
+      supabase
+        .from("player_draft_powers")
+        .select("player_id, power, restored_at, frozen_score, freeze_broken_at")
+        .eq("league_id", league_id)
+        .returns<PowerRow[]>(),
     ]);
 
     const startingA = new Set((lineupA ?? []).map(l => l.player_id));
     const startingB = new Set((lineupB ?? []).map(l => l.player_id));
 
     // Build player info maps
-    const nameMapA: Record<string, { name: string; pos: string; team: string }> = {};
-    for (const r of rosterA ?? []) {
-      if (r.players) {
-        nameMapA[r.player_id] = {
-          name: r.players.full_name,
-          pos: r.players.position ?? "?",
-          team: r.players.team ?? "FA",
-        };
+    type Info = { name: string; pos: string; team: string; injury: string | null };
+    const toInfo = (rows: RosterRow[] | null): Record<string, Info> => {
+      const map: Record<string, Info> = {};
+      for (const r of rows ?? []) {
+        if (r.players) {
+          map[r.player_id] = {
+            name: r.players.full_name,
+            pos: r.players.position ?? "?",
+            team: r.players.team ?? "FA",
+            injury: r.players.injury_status ?? null,
+          };
+        }
       }
-    }
-    const nameMapB: Record<string, { name: string; pos: string; team: string }> = {};
-    for (const r of rosterB ?? []) {
-      if (r.players) {
-        nameMapB[r.player_id] = {
-          name: r.players.full_name,
-          pos: r.players.position ?? "?",
-          team: r.players.team ?? "FA",
-        };
-      }
-    }
+      return map;
+    };
+    const nameMapA = toInfo(rosterA);
+    const nameMapB = toInfo(rosterB);
+
+    const powerMap: Record<string, PowerRow> = {};
+    for (const p of powerRows ?? []) powerMap[p.player_id] = p;
 
     // Fetch Sleeper stats for that week
     let statsMap: Record<string, Record<string, number>> = {};
@@ -170,22 +178,49 @@ export async function POST(req: NextRequest) {
 
     function buildBreakdown(
       startingIds: Set<string>,
-      nameMap: Record<string, { name: string; pos: string; team: string }>
+      nameMap: Record<string, Info>
     ) {
+      const haveSettings = Object.keys(scoringSettings).length > 0;
       return [...startingIds]
         .map(pid => {
           const info = nameMap[pid];
           const stats = statsMap[pid] ?? {};
-          const points = Object.keys(scoringSettings).length > 0
-            ? computeScore(stats, scoringSettings)
-            : 0;
+          const pe = powerMap[pid];
           const pos = info?.pos ?? "?";
+
+          // Base + tied-to-pick bonus, exactly as the engine scores it.
+          const scored = haveSettings
+            ? scoreWithPower(stats, scoringSettings, pe ? { power: pe.power, restored: pe.restored_at != null } : null)
+            : { base: 0, bonus: 0, total: 0, power: null as string | null };
+          const base = scored.base;
+          let { bonus, total, power } = scored;
+
+          // Time Stone substitutes a held score for an injured starter rather
+          // than adding to it. Only mirror the case the engine has already
+          // settled — a live freeze on a player who is still out. The engine
+          // also DERIVES a freeze the first time it sees an injured starter with
+          // no frozen_score; that path writes to the DB, so it is left to the
+          // engine and this route shows the raw score until it runs.
+          if (pe?.power === "time_stone" && pe.frozen_score != null &&
+              pe.freeze_broken_at == null && TS_INJURED.has(info?.injury ?? "")) {
+            total = pe.frozen_score;
+            bonus = Math.round((total - base) * 100) / 100;
+            power = "time_stone";
+          }
+
           return {
             player_id: pid,
             name: info?.name ?? "Unknown",
             pos,
             team: info?.team ?? "FA",
-            points,
+            points: total,
+            basePoints: base,
+            bonus,
+            power,
+            powerLabel: power ? (POWER_LABELS[power] ?? "Time Stone") : null,
+            // A player absent from the stats feed is not a zero — say so rather
+            // than rendering 0.00 next to a name that scored.
+            noData: haveSettings && Object.keys(stats).length === 0,
             statLine: formatStatLine(stats, pos),
           };
         })

@@ -4,12 +4,48 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { TOKEN_NAMES } from "@/lib/token-names";
 
-type BreakdownPlayer = { player_id: string; name: string; pos: string; team: string; points: number; statLine?: string };
+type BreakdownPlayer = {
+  player_id: string; name: string; pos: string; team: string; points: number; statLine?: string;
+  // points is the score the ENGINE used: base plus the player's draft-power
+  // bonus. basePoints/bonus are carried so the adjusted number can be shown as
+  // arithmetic instead of appearing out of nowhere.
+  basePoints?: number; bonus?: number; power?: string | null; powerLabel?: string | null;
+  noData?: boolean;
+};
 type BreakdownData = {
   hasData: boolean;
   a: { team_name: string; players: BreakdownPlayer[] };
   b: { team_name: string; players: BreakdownPlayer[] };
 };
+
+// One row of a matchup breakdown. Shared by both teams so the two columns
+// cannot drift apart.
+function BreakdownRow({ p }: { p: BreakdownPlayer }) {
+  const bonus = p.bonus ?? 0;
+  return (
+    <div className="flex items-start gap-1.5 text-xs">
+      <span className="shrink-0 w-6 rounded text-center font-bold text-xs leading-4 mt-0.5"
+        style={{ background: "#1c1c2b", color: "#8888aa" }}>
+        {p.pos}
+      </span>
+      <div className="flex-1 min-w-0">
+        <span className="truncate block" style={{ color: "#d4d4e8" }}>{p.name}</span>
+        {p.statLine && <span className="text-xs" style={{ color: "#6b6b8a" }}>{p.statLine}</span>}
+        {bonus !== 0 && p.powerLabel && (
+          <span className="text-xs block" style={{ color: "#e0b341" }}>
+            {(p.basePoints ?? 0).toFixed(2)} {bonus > 0 ? "+" : "−"} {Math.abs(bonus).toFixed(2)} {p.powerLabel}
+          </span>
+        )}
+        {p.noData && (
+          <span className="text-xs block" style={{ color: "#6b6b8a" }}>no stats reported</span>
+        )}
+      </div>
+      <span className="shrink-0 font-bold tabular-nums" style={{ color: p.points > 0 ? "#f4f4f8" : "#8888aa" }}>
+        {p.points.toFixed(2)}
+      </span>
+    </div>
+  );
+}
 
 const supabase = createClient();
 
@@ -408,19 +444,7 @@ export default function MatchupView({
                               {bd.data.a.team_name}
                             </p>
                             {bd.data.a.players.map(p => (
-                              <div key={p.player_id} className="flex items-start gap-1.5 text-xs">
-                                <span className="shrink-0 w-6 rounded text-center font-bold text-xs leading-4 mt-0.5"
-                                  style={{ background: "#1c1c2b", color: "#8888aa" }}>
-                                  {p.pos}
-                                </span>
-                                <div className="flex-1 min-w-0">
-                                  <span className="truncate block" style={{ color: "#d4d4e8" }}>{p.name}</span>
-                                  {p.statLine && <span className="text-xs" style={{ color: "#6b6b8a" }}>{p.statLine}</span>}
-                                </div>
-                                <span className="shrink-0 font-bold tabular-nums" style={{ color: p.points > 0 ? "#f4f4f8" : "#8888aa" }}>
-                                  {p.points.toFixed(2)}
-                                </span>
-                              </div>
+                              <BreakdownRow key={p.player_id} p={p} />
                             ))}
                           </div>
                           {/* Team B */}
@@ -429,19 +453,7 @@ export default function MatchupView({
                               {bd.data.b.team_name}
                             </p>
                             {bd.data.b.players.map(p => (
-                              <div key={p.player_id} className="flex items-start gap-1.5 text-xs">
-                                <span className="shrink-0 w-6 rounded text-center font-bold text-xs leading-4 mt-0.5"
-                                  style={{ background: "#1c1c2b", color: "#8888aa" }}>
-                                  {p.pos}
-                                </span>
-                                <div className="flex-1 min-w-0">
-                                  <span className="truncate block" style={{ color: "#d4d4e8" }}>{p.name}</span>
-                                  {p.statLine && <span className="text-xs" style={{ color: "#6b6b8a" }}>{p.statLine}</span>}
-                                </div>
-                                <span className="shrink-0 font-bold tabular-nums" style={{ color: p.points > 0 ? "#f4f4f8" : "#8888aa" }}>
-                                  {p.points.toFixed(2)}
-                                </span>
-                              </div>
+                              <BreakdownRow key={p.player_id} p={p} />
                             ))}
                           </div>
                         </div>
