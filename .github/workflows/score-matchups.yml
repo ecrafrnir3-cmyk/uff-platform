@@ -1,11 +1,23 @@
 name: Score Matchups (Live)
 
-# Runs every 15 min on game days (Thu-Tue UTC).
-# Wednesday is the only day with zero NFL games — safe to skip.
-# DOW: 0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat
+# Runs every 15 min, every day. The route decides whether there is anything to
+# score; this schedule no longer tries to.
+#
+# It used to skip Wednesday (DOW mask 0,1,2,4,5,6) because Wednesday has no NFL
+# games. That guarded the calendar, not the scheduler: GitHub delays scheduled
+# runs, and on 2026-09-23 the tick scheduled for Tuesday 23:45 UTC executed at
+# 00:25 UTC Wednesday — past the 00:00 UTC week rollover — so it scored the NEW
+# week, two days before its first kickoff, and wrote phantom points onto an
+# unplayed board (OPEN-LOOPS #54). A day mask cannot prevent that; only checking
+# the schedule can.
+#
+# /api/cron/score-matchups now skips unless a game in the target week has kicked
+# off, so the extra Wednesday ticks cost one cheap query each and nothing else —
+# and a week that ever does open on a Wednesday gets scored live instead of
+# waiting until Thursday.
 on:
   schedule:
-    - cron: "0,15,30,45 * * * 0,1,2,4,5,6"
+    - cron: "0,15,30,45 * * * *"
   workflow_dispatch: {}   # allow manual trigger for testing
 
 jobs:
