@@ -889,11 +889,22 @@ export default async function RosterPage({
           // happily have accepted edits for. It survives only as a fallback for a week
           // whose games are missing from uff_game_schedule.
           <DragDropLineup
+            // Remount on week change. Without a key, soft navigation between weeks
+            // reuses the component and keeps the previous week's board in state, so a
+            // manager can look at Week 3 while editing Week 2's assignments.
+            key={viewWeek}
             leagueId={leagueId}
             week={week}
             slots={expandedSlots}
             activeRoster={activeRosterForLineup}
             currentLineup={currentLineup}
+            // Is the board showing rows that exist in the database, or a preview?
+            // `unsaved` means nothing is stored for this week: the counter and the save
+            // bar must not claim the lineup is set. `engineSource` means rows DO exist
+            // but the engine wrote them, so saving unchanged is a real act — it claims
+            // them as manual and stops the engine re-picking.
+            unsaved={carriedPreviewWeek !== null || autoPickPending}
+            engineSource={engineLineupSource}
             locked={viewWeek < currentWeek || (!haveKickoffs && isLineupLocked(week))}
             lockTime={getWeekLockTime(week).toISOString()}
             gameTimes={Object.keys(gameTimes).length > 0 ? gameTimes : undefined}

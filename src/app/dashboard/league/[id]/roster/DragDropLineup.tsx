@@ -156,12 +156,18 @@ export default function DragDropLineup({
   cantCutPlayerIds = [],
   rawStats,
   readOnly = false,
+  unsaved = false,
+  engineSource = null,
 }: {
   leagueId: string;
   week: number;
   slots: string[];
   activeRoster: RosterPlayer[];
   currentLineup: Record<string, string>;
+  /** Nothing is stored for this week — the board is a preview, not a saved lineup. */
+  unsaved?: boolean;
+  /** Rows exist but the engine wrote them: "carried" from a prior week, or "auto"-picked. */
+  engineSource?: "auto" | "carried" | null;
   locked: boolean;
   lockTime: string;
   seasonPts?: Record<string, number>;
@@ -325,7 +331,23 @@ export default function DragDropLineup({
     const next: Record<string, string> = {};
     const usedIds = new Set<string>();
 
+    // Pin every slot whose current starter has already kicked off. The three priority
+    // passes below all exclude locked players, so rebuilding from scratch would offer
+    // to replace a man who is already playing — and the server refuses exactly that
+    // (setLineup re-locks his slot), so the board would show a lineup that cannot save.
+    // Fill around him instead, which is what the scoring engine does with its preset.
     for (const slot of slots) {
+      const pid = assignments[slot];
+      if (!pid) continue;
+      const held = activeRoster.find((p) => p.player_id === pid);
+      if (held && isPlayerLocked(held)) {
+        next[slot] = pid;
+        usedIds.add(pid);
+      }
+    }
+
+    for (const slot of slots) {
+      if (next[slot]) continue;   // already playing — pinned above
       const base = slotBase(slot);
       const eligiblePos = SLOT_ELIGIBLE[base] ?? [];
       // Priority: healthy + active game + not locked → healthy + not locked → not locked → anything
@@ -347,6 +369,12 @@ export default function DragDropLineup({
   const benchPlayers = activeRoster.filter((p) => !assignedIds.has(p.player_id));
   const filledCount  = Object.values(assignments).filter(Boolean).length;
   const emptySlots   = slots.length - filledCount;
+  // Has the manager actually moved anything since the board was loaded? Saving an
+  // unchanged engine lineup is not a no-op — it rewrites the rows as `manual`, which
+  // is how you stop an `auto` lineup being re-picked every scoring run. That is worth
+  // doing deliberately and worth never doing by accident, so the button says which.
+  const hasChanges = slots.some((s) => (assignments[s] ?? "") !== (currentLineup[s] ?? ""));
+  const claimOnly  = !unsaved && !hasChanges && engineSource !== null;
 
   // ── Lineup totals ────────────────────────────────────────────────────────────
   const starterActualTotal = slots.reduce((sum, slot) => {
@@ -473,10 +501,12 @@ export default function DragDropLineup({
               ⚡ Start Best
             </button>
           )}
-          <span className="text-xs" style={{ color: "#f4f4f8" }}>
+          <span className="text-xs" style={{ color: unsaved && !locked ? "#FFD700" : "#f4f4f8" }}>
             {locked
               ? `Locked ${lockDisplay}`
-              : `${filledCount} / ${slots.length} starters set`}
+              : unsaved
+                ? `${filledCount} / ${slots.length} shown — none saved yet`
+                : `${filledCount} / ${slots.length} starters set`}
           </span>
         </div>
       </div>
@@ -928,10 +958,16 @@ export default function DragDropLineup({
           className="flex items-center justify-between px-4 py-3 gap-3 flex-wrap"
           style={{ background: "#15151f", borderTop: "1px solid #2a2a40" }}
         >
-          <span className="text-xs" style={{ color: emptySlots > 0 ? "#FFD700" : "#3DDC84" }}>
+          <span className="text-xs" style={{ color: emptySlots > 0 || unsaved ? "#FFD700" : claimOnly ? "#8888aa" : "#3DDC84" }}>
             {emptySlots > 0
               ? `${emptySlots} slot${emptySlots !== 1 ? "s" : ""} empty — those score 0`
-              : "✓ Lineup complete"}
+              : unsaved
+                ? "Nothing is saved for this week yet — press Save Lineup to make these yours"
+                : claimOnly
+                  ? engineSource === "auto"
+                    ? "Auto-picked — saving claims it and stops the engine re-picking it"
+                    : "Carried over — saving claims it as your own"
+                  : "✓ Lineup complete"}
           </span>
           <form action={handleSave} className="flex items-center gap-2">
             <input type="hidden" name="leagueId" value={leagueId} />
@@ -947,7 +983,7 @@ export default function DragDropLineup({
               className="rounded-md px-5 py-2 text-sm font-bold disabled:opacity-40 transition-opacity hover:opacity-90"
               style={{ background: "#FFD700", color: "#0d0d1a" }}
             >
-              Save Lineup
+              {claimOnly ? "Claim This Lineup" : "Save Lineup"}
             </button>
           </form>
         </div>
