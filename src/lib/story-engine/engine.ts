@@ -342,9 +342,27 @@ export async function recomputeLeagueLegends(
       if (fA !== fB) {
         const heroC = fA === "hero" ? combatantOf(cA, snap) : combatantOf(cB, snap);
         const vilC = fA === "hero" ? combatantOf(cB, snap) : combatantOf(cA, snap);
+        // resolveBattle still supplies the sides and the force ratings — that is the
+        // story's texture and it is worth keeping.
         const o = resolveBattle([heroC], [vilC], seed);
-        if (o.winner === "hero") heroWins++;
-        else if (o.winner === "villain") villainWins++;
+
+        // ── THE FRONT FOLLOWS THE FIELD (Nate, 2026-09-24) ─────────────────────
+        // It used to follow `o.winner`: a seeded simulation over Legend and surge.
+        // That is why the stored front read −2 to the Dominion while the real
+        // cross-faction record was 3–3 — the front had never counted the games at
+        // all. Nate's rule: "bound to the real games, thats the whole point."
+        // So the winner of a War Battle is whoever actually outscored the other.
+        const ptsA = pair[0].points ?? 0;
+        const ptsB = pair[1].points ?? 0;
+        const winCid = ptsA === ptsB ? null : ptsA > ptsB ? cA : cB;
+        const loseCid = winCid == null ? null : winCid === cA ? cB : cA;
+        const winner: "hero" | "villain" | "draw" =
+          winCid == null ? "draw" : charById.get(winCid)!.faction;
+        if (winner === "hero") heroWins++;
+        else if (winner === "villain") villainWins++;
+
+        const hi = Math.max(ptsA, ptsB).toFixed(2);
+        const lo = Math.min(ptsA, ptsB).toFixed(2);
         battleRows.push({
           league_id: leagueId,
           week: wk,
@@ -353,18 +371,30 @@ export async function recomputeLeagueLegends(
           villain_side: o.villainSide,
           hero_force: o.heroForce,
           villain_force: o.villainForce,
-          winner: o.winner,
-          winner_character_id: o.winnerCharacterId,
+          winner,
+          winner_character_id: winCid,
           moves_war: true,
+          // The score goes in the narration so the canon is checkable against the
+          // board by anyone who doubts it.
           narration:
-            o.winner === "draw"
-              ? `${nameOf(heroC.character_id)} and ${nameOf(vilC.character_id)} fought the front to a standstill.`
-              : `${nameOf(o.winnerCharacterId)} drove ${nameOf(o.winner === "hero" ? vilC.character_id : heroC.character_id)} from the field.`,
+            winner === "draw"
+              ? `${nameOf(heroC.character_id)} and ${nameOf(vilC.character_id)} fought the front to a standstill at ${hi}.`
+              : `${nameOf(winCid)} drove ${nameOf(loseCid)} from the field, ${hi} to ${lo}.`,
         });
       } else {
         const o = resolveInternal(combatantOf(cA, snap), combatantOf(cB, snap), seed);
         const heroSide = fA === "hero" ? o.side : [];
         const villainSide = fA === "hero" ? [] : o.side;
+        // An internal duel never moved the front and still doesn't, but its winner
+        // should agree with the field too — the story cannot say one man bested
+        // another in a week the board says he lost.
+        const iPtsA = pair[0].points ?? 0;
+        const iPtsB = pair[1].points ?? 0;
+        const iDraw = iPtsA === iPtsB;
+        const iWin  = iDraw ? null : iPtsA > iPtsB ? cA : cB;
+        const iLose = iWin == null ? null : iWin === cA ? cB : cA;
+        const iHi = Math.max(iPtsA, iPtsB).toFixed(2);
+        const iLo = Math.min(iPtsA, iPtsB).toFixed(2);
         battleRows.push({
           league_id: leagueId,
           week: wk,
@@ -373,12 +403,12 @@ export async function recomputeLeagueLegends(
           villain_side: villainSide,
           hero_force: heroSide.reduce((s, x) => s + x.rating, 0),
           villain_force: villainSide.reduce((s, x) => s + x.rating, 0),
-          winner: o.draw ? "draw" : fA,
-          winner_character_id: o.winnerCharacterId,
+          winner: iDraw ? "draw" : fA,
+          winner_character_id: iWin,
           moves_war: false,
-          narration: o.draw
-            ? `${nameOf(cA)} and ${nameOf(cB)} settled nothing in the ${fA === "hero" ? "Vanguard" : "Dominion"} ranks.`
-            : `${nameOf(o.winnerCharacterId)} bested ${nameOf(o.winnerCharacterId === cA ? cB : cA)} in the ${fA === "hero" ? "Vanguard" : "Dominion"} ranks.`,
+          narration: iDraw
+            ? `${nameOf(cA)} and ${nameOf(cB)} settled nothing in the ${fA === "hero" ? "Vanguard" : "Dominion"} ranks, ${iHi} apiece.`
+            : `${nameOf(iWin)} bested ${nameOf(iLose)} in the ${fA === "hero" ? "Vanguard" : "Dominion"} ranks, ${iHi} to ${iLo}.`,
         });
       }
     }
@@ -405,8 +435,10 @@ export async function recomputeLeagueLegends(
       const heroC = fMeta.faction === "hero" ? freeC : rivalC;
       const vilC = fMeta.faction === "hero" ? rivalC : freeC;
       const o = resolveBattle([heroC], [vilC], seed);
-      if (o.winner === "hero") heroWins++;
-      else if (o.winner === "villain") villainWins++;
+      // An interloper is a Free Legend nobody manages, ambushing a claimed champion.
+      // It has NO fantasy game behind it, so under the field-follows rule it cannot
+      // move the front — it used to, which is part of how the stored front drifted to
+      // −2 while the real cross-faction record sat at 3–3. Kept as story colour only.
       battleRows.push({
         league_id: leagueId,
         week: wk,
@@ -417,8 +449,8 @@ export async function recomputeLeagueLegends(
         villain_force: o.villainForce,
         winner: o.winner,
         winner_character_id: o.winnerCharacterId,
-        moves_war: true,
-        narration: `${nameOf(fid)} came out of the field to ambush ${nameOf(rival)} — ${nameOf(o.winnerCharacterId)} held it.`,
+        moves_war: false,
+        narration: `${nameOf(fid)} came out of the field to ambush ${nameOf(rival)} — ${nameOf(o.winnerCharacterId)} held it. The front did not move.`,
       });
     }
 
