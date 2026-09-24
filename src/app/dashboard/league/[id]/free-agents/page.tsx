@@ -95,26 +95,37 @@ export default async function FreeAgentsPage({
 
   const rosteredIds = new Set((allRostered ?? []).map((r) => r.player_id));
 
-  // Fetch Sleeper projections for current week (best-effort - silent fail off-season)
+  // Projections for the current week, read from player_projections.
+  //
+  // This used to fetch https://api.sleeper.app/v1/projections/nfl/{season}/{week}
+  // ?season_type=regular directly. That URL is the dead form this repo has already
+  // fixed twice elsewhere (37f0b42, a4c9242): it answers 200 with ~7,600 players
+  // carrying only rank fields and no real stats. So projMap came back empty, the
+  // projection sort was a silent no-op, and the list stayed in ADP order — which is
+  // how Tom Brady (adp 192) and Drew Brees (adp 195) ended up on top of the QBs.
+  //
+  // sync-projections already loads this table every Wednesday from the working
+  // endpoint, so read it instead of re-fetching: one query, no external call, and the
+  // same numbers the rest of the app shows. `stats` is the raw Sleeper line, so the
+  // points are computed with THIS league's scoring rather than Sleeper's PPR default.
   const week = getCurrentNFLWeek();
   const season = league.season ?? "2026";
-  let projMap: Record<string, number> = {};
+  const projMap: Record<string, number> = {};
 
-  try {
-    const projRes = await fetch(
-      `https://api.sleeper.app/v1/projections/nfl/${season}/${week}?season_type=regular`,
-      { next: { revalidate: 3600 } } // cache 1hr
-    );
-    if (projRes.ok) {
-      const projData: Record<string, Record<string, number>> = await projRes.json();
-      const settings: Record<string, number> = league.scoring_settings ?? {};
-      for (const [playerId, stats] of Object.entries(projData)) {
-        const pts = calcProjected(stats, settings);
-        if (pts > 0) projMap[playerId] = pts;
-      }
+  // PostgREST caps an unbounded select at 1,000 rows and there are ~3,200 per week.
+  const { data: projRows } = await supabase
+    .from("player_projections")
+    .select("player_id, stats")
+    .eq("week", week)
+    .limit(5000);
+
+  {
+    const settings: Record<string, number> = league.scoring_settings ?? {};
+    for (const row of projRows ?? []) {
+      const stats = (row.stats ?? {}) as Record<string, number>;
+      const pts = calcProjected(stats, settings);
+      if (pts > 0) projMap[row.player_id] = pts;
     }
-  } catch {
-    // Off-season / network issue - projections unavailable, show 0
   }
 
   const hasProjections = Object.keys(projMap).length > 0;

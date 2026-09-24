@@ -137,17 +137,33 @@ export default function FreeAgents({
         .from("players")
         .select("id, full_name, position, team, status, injury_status, adp")
         .not("position", "is", null)
-        .not("position", "eq", "");
+        .not("position", "eq", "")
+        // Must be on an NFL roster to be worth adding. The players table holds every
+        // player Sleeper has ever carried — 4,266 rows, of which only ~894 have a
+        // team. Without this, Tom Brady (adp 192), Drew Brees (195), Todd Gurley and
+        // Antonio Brown all outranked hundreds of current players who simply have no
+        // ADP, because nulls sort last.
+        .not("team", "is", null);
 
       if (hasSearch) q = q.ilike("full_name", `%${search.trim()}%`);
       if (hasPos) q = q.eq("position", posFilter);
 
-      const { data } = await q.order("adp", { ascending: true, nullsFirst: false }).limit(300);
+      // The teamed pool is ~894, so this window holds all of it: nobody with a real
+      // projection gets cut before the sort below can rank him.
+      const { data } = await q.order("adp", { ascending: true, nullsFirst: false }).limit(1000);
       if (data) {
         const free = (data as Player[]).filter((p) => !rosteredSet.has(p.id));
-        if (hasProjections) {
-          free.sort((a, b) => (projMap[b.id] ?? 0) - (projMap[a.id] ?? 0));
-        }
+        // Projection first — that is the question a manager is actually asking. ADP
+        // breaks ties, then name, so the order is stable instead of arbitrary.
+        free.sort((a, b) => {
+          const pb = projMap[b.id] ?? -1;
+          const pa = projMap[a.id] ?? -1;
+          if (pb !== pa) return pb - pa;
+          const aa = a.adp ?? Number.POSITIVE_INFINITY;
+          const ab = b.adp ?? Number.POSITIVE_INFINITY;
+          if (aa !== ab) return aa - ab;
+          return a.full_name.localeCompare(b.full_name);
+        });
         setPlayers(free);
       }
     };

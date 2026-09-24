@@ -11,7 +11,10 @@ const BASE_NAV = [
   { label: "Matchups",      href: "/matchups" },
   { label: "Standings",     href: "/standings" },
   { label: "Free Agents",   href: "/free-agents" },
-  { label: "Players",       href: "/players" },
+  // "Players" removed from the nav 2026-09-24 at Nate's request — Free Agents
+  // already searches and filters the pool, so the tab was a second door to the
+  // same room. The /players route still exists, so an old link keeps working and
+  // restoring the tab is one line.
   { label: "Trade",         href: "/trade" },
   { label: "Trade Log",     href: "/trades" },
   { label: "Transactions",  href: "/transactions" },

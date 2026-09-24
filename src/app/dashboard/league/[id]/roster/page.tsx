@@ -912,6 +912,7 @@ export default async function RosterPage({
             projectedPts={viewWeek === currentWeek ? projectedPts : undefined}
             playerPowers={Object.keys(playerPowers).length > 0 ? playerPowers : undefined}
             irSlotsAvailable={viewWeek === currentWeek ? irSlotsTotal - irSlotsUsed : 0}
+            irSlotsTotal={irSlotsTotal}
             quickFeetAvailable={viewWeek === currentWeek && quickFeetAvailable}
             cantCutPlayerIds={[...cantCutSet]}
             rawStats={rawStats}

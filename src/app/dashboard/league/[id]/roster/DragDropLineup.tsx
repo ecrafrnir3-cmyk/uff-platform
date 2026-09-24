@@ -14,6 +14,65 @@ interface RosterPlayer {
   injury_status?: string;
 }
 
+// One IR control, used on starters and bench alike.
+//
+// It used to be rendered only on bench rows, and only when a slot was free. So an
+// injured STARTER had no IR button at all — the path was "drag him out of the lineup
+// first, then find the chip" — and when IR was full it rendered nothing at all, with
+// nothing on screen to say why. Between them those two silences made the feature look
+// like it did not exist.
+function IrChip({
+  leagueId,
+  playerId,
+  status,
+  injuryStatus,
+  irSlotsAvailable,
+  irSlotsTotal,
+  locked,
+}: {
+  leagueId: string;
+  playerId: string;
+  status?: string | null;
+  injuryStatus?: string | null;
+  irSlotsAvailable: number;
+  irSlotsTotal: number;
+  locked?: boolean;
+}) {
+  const eligible =
+    status === "Injured Reserve" ||
+    injuryStatus === "IR" || injuryStatus === "Out" ||
+    injuryStatus === "Doubtful" || injuryStatus === "PUP";
+  if (!eligible || locked) return null;
+
+  // Say it out loud rather than vanishing.
+  if (irSlotsAvailable <= 0) {
+    return (
+      <span
+        className="rounded px-2 py-0.5 text-xs font-semibold flex-shrink-0"
+        title={`Your IR is full (${irSlotsTotal} of ${irSlotsTotal} used). Move someone off IR before adding another.`}
+        style={{ background: "rgba(136,136,170,0.15)", color: "#8888aa" }}
+      >
+        IR full
+      </span>
+    );
+  }
+
+  return (
+    <form action={moveToIR} onClick={(e) => e.stopPropagation()}>
+      <input type="hidden" name="leagueId" value={leagueId} />
+      <input type="hidden" name="playerId" value={playerId} />
+      <button
+        type="submit"
+        className="rounded px-2 py-0.5 text-xs font-semibold flex-shrink-0"
+        title="Move to Injured Reserve — frees his roster spot and takes him out of your lineup"
+        style={{ background: "rgba(204,0,0,0.2)", color: "#ff8a8a" }}
+      >
+        → IR
+      </button>
+    </form>
+  );
+}
+
 function InjuryBadge({ injuryStatus }: { injuryStatus: string | undefined }) {
   if (!injuryStatus) return null;
   const map: Record<string, { label: string; bg: string; color: string }> = {
@@ -152,6 +211,7 @@ export default function DragDropLineup({
   gameTimes,
   playerPowers,
   irSlotsAvailable = 0,
+  irSlotsTotal = 0,
   quickFeetAvailable = false,
   cantCutPlayerIds = [],
   rawStats,
@@ -175,6 +235,8 @@ export default function DragDropLineup({
   gameTimes?: Record<string, string>;
   playerPowers?: Record<string, { emoji: string; name: string }>;
   irSlotsAvailable?: number;
+  /** Total IR spots, so a full IR can say so instead of hiding the control. */
+  irSlotsTotal?: number;
   quickFeetAvailable?: boolean;
   cantCutPlayerIds?: string[];
   rawStats?: Record<string, Record<string, number>>;
@@ -682,6 +744,17 @@ export default function DragDropLineup({
                     );
                     return null;
                   })()}
+                  {/* An injured STARTER can go straight to IR from here — no need to
+                      bench him first and hunt for the control. */}
+                  <IrChip
+                    leagueId={leagueId}
+                    playerId={player.player_id}
+                    status={player.status}
+                    injuryStatus={player.injury_status}
+                    irSlotsAvailable={irSlotsAvailable}
+                    irSlotsTotal={irSlotsTotal}
+                    locked={playerLocked}
+                  />
                   {playerLocked ? (
                     <span
                       className="flex-shrink-0 text-sm"
@@ -880,20 +953,14 @@ export default function DragDropLineup({
                       &#128274;
                     </span>
                   )}
-                  {/* Move to IR — player must have an injury designation and slots must be open */}
-                  {(p.status === "Injured Reserve" || p.injury_status === "IR" || p.injury_status === "Out" || p.injury_status === "Doubtful") && irSlotsAvailable > 0 && (
-                    <form action={moveToIR} onClick={(e) => e.stopPropagation()}>
-                      <input type="hidden" name="leagueId" value={leagueId} />
-                      <input type="hidden" name="playerId" value={p.player_id} />
-                      <button
-                        type="submit"
-                        className="rounded px-2 py-0.5 text-xs font-semibold flex-shrink-0"
-                        style={{ background: "rgba(204,0,0,0.2)", color: "#ff8a8a" }}
-                      >
-                        → IR
-                      </button>
-                    </form>
-                  )}
+                  <IrChip
+                    leagueId={leagueId}
+                    playerId={p.player_id}
+                    status={p.status}
+                    injuryStatus={p.injury_status}
+                    irSlotsAvailable={irSlotsAvailable}
+                    irSlotsTotal={irSlotsTotal}
+                  />
                   {/* Drop button */}
                   <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
                     <DropButton
