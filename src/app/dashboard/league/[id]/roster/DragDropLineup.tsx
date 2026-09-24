@@ -1019,6 +1019,58 @@ export default function DragDropLineup({
         );
       })()}
 
+      {/* ── INJURED RESERVE TARGET ───────────────────────────────────────────────
+          Despite this component's name there is no drag-and-drop in it — moving a
+          player is tap-him, tap-where-he-goes. The IR panel further down the page is
+          a plain list with no drop target and, when empty, just says "No players on
+          IR". So a manager trying to move an injured man to IR had nowhere to put
+          him: the only path was a small chip on his bench row, which is exactly the
+          "I can't figure out how to do it" this is meant to end.
+
+          Same gesture as the rest of the board: tap the player, then tap here. */}
+      {!locked && !readOnly && irSlotsTotal > 0 && (() => {
+        const sel = selected ? activeRoster.find((p) => p.player_id === selected.id) : null;
+        const eligibleForIr = !!sel && (
+          sel.status === "Injured Reserve" ||
+          sel.injury_status === "IR"   || sel.injury_status === "Out" ||
+          sel.injury_status === "Doubtful" || sel.injury_status === "PUP"
+        );
+        const roomLeft = irSlotsAvailable > 0;
+        const ready = eligibleForIr && roomLeft;
+        return (
+          <div className="px-4 py-3" style={{ borderTop: "1px solid #2a2a40", background: "#10101c" }}>
+            <form action={moveToIR}>
+              <input type="hidden" name="leagueId" value={leagueId} />
+              <input type="hidden" name="playerId" value={selected?.id ?? ""} />
+              <button
+                type="submit"
+                disabled={!ready}
+                className="w-full rounded-lg border px-4 py-3 text-left transition-opacity disabled:cursor-default"
+                style={{
+                  borderColor: ready ? "#CC0000" : "#2a2a40",
+                  background:  ready ? "rgba(204,0,0,0.12)" : "transparent",
+                  color:       ready ? "#ff8a8a" : "#6b6b8a",
+                  borderStyle: ready ? "solid" : "dashed",
+                }}
+              >
+                <span className="font-bold uppercase tracking-wider text-xs">
+                  🏥 Injured Reserve — {irSlotsTotal - irSlotsAvailable} / {irSlotsTotal} used
+                </span>
+                <span className="block mt-0.5 text-xs">
+                  {!roomLeft
+                    ? "IR is full — move someone off IR first."
+                    : !sel
+                      ? "Tap an injured player above, then tap here to move him to IR."
+                      : ready
+                        ? `Move ${sel.full_name} to Injured Reserve — frees his roster spot and takes him out of your lineup.`
+                        : `${sel.full_name} can't use an IR slot — only players listed Out, Doubtful, IR or PUP qualify.`}
+                </span>
+              </button>
+            </form>
+          </div>
+        );
+      })()}
+
       {/* ── SAVE BAR ──────────────────────────────────────────────────────────── */}
       {!locked && !readOnly && (
         <div
