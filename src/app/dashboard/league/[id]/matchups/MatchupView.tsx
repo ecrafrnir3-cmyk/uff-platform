@@ -12,11 +12,51 @@ type BreakdownPlayer = {
   basePoints?: number; bonus?: number; power?: string | null; powerLabel?: string | null;
   noData?: boolean;
 };
+// The team-level terms. Nine starters never summed to the board, and for two days
+// that looked like a scoring bug: the engine also adds a faction bonus, the vampire
+// siphon and the week's token bonus, none of which belong to any one player. Shown
+// here so the card reconciles — and so a residual, if there ever is one, is visible
+// rather than arguable.
+type BreakdownTotals = {
+  starters: number; factionBonus: number; siphon: number; token: number;
+  modelled: number; board: number | null; unexplained: number | null;
+};
 type BreakdownData = {
   hasData: boolean;
-  a: { team_name: string; players: BreakdownPlayer[] };
-  b: { team_name: string; players: BreakdownPlayer[] };
+  a: { team_name: string; players: BreakdownPlayer[]; totals?: BreakdownTotals };
+  b: { team_name: string; players: BreakdownPlayer[]; totals?: BreakdownTotals };
 };
+
+function TotalsFooter({ t }: { t: BreakdownTotals }) {
+  const row = (label: string, v: number, sign = true) => (
+    <div className="flex justify-between gap-2">
+      <span style={{ color: "#6b6b8a" }}>{label}</span>
+      <span className="tabular-nums" style={{ color: "#8888aa" }}>
+        {sign && v > 0 ? "+" : ""}{v.toFixed(2)}
+      </span>
+    </div>
+  );
+  return (
+    <div className="mt-2 pt-2 text-xs flex flex-col gap-0.5" style={{ borderTop: "1px solid #2a2a40" }}>
+      {row("Starters", t.starters, false)}
+      {t.factionBonus !== 0 && row("Faction bonus", t.factionBonus)}
+      {t.siphon !== 0 && row("Vampire siphon", t.siphon)}
+      {t.token !== 0 && row("Token", t.token)}
+      <div className="flex justify-between gap-2 mt-0.5 font-bold">
+        <span style={{ color: "#d4d4e8" }}>Total</span>
+        <span className="tabular-nums" style={{ color: "#f4f4f8" }}>{t.modelled.toFixed(2)}</span>
+      </div>
+      {t.board != null && t.unexplained != null && Math.abs(t.unexplained) >= 0.01 && (
+        <div className="flex justify-between gap-2" title="The board is the engine's number and is authoritative. A gap here means the stat feed has moved since the week was scored.">
+          <span style={{ color: "#FFD700" }}>Board says</span>
+          <span className="tabular-nums" style={{ color: "#FFD700" }}>
+            {t.board.toFixed(2)} ({t.unexplained > 0 ? "+" : ""}{t.unexplained.toFixed(2)})
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // One row of a matchup breakdown. Shared by both teams so the two columns
 // cannot drift apart.
@@ -446,6 +486,7 @@ export default function MatchupView({
                             {bd.data.a.players.map(p => (
                               <BreakdownRow key={p.player_id} p={p} />
                             ))}
+                            {bd.data.a.totals && <TotalsFooter t={bd.data.a.totals} />}
                           </div>
                           {/* Team B */}
                           <div className="flex flex-col gap-1.5">
@@ -455,6 +496,7 @@ export default function MatchupView({
                             {bd.data.b.players.map(p => (
                               <BreakdownRow key={p.player_id} p={p} />
                             ))}
+                            {bd.data.b.totals && <TotalsFooter t={bd.data.b.totals} />}
                           </div>
                         </div>
                       )}

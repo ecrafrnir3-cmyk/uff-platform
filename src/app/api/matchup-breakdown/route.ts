@@ -5,6 +5,7 @@ import { scoreWithPower, POWER_LABELS } from "@/lib/scoring";
 interface LineupRow { slot: string; player_id: string; }
 interface RosterRow {
   player_id: string;
+  slot: string | null;
   players: {
     full_name: string;
     position: string | null;
@@ -61,6 +62,8 @@ export async function POST(req: NextRequest) {
       { data: rosterA }, { data: rosterB },
       { data: memberA }, { data: memberB },
       { data: powerRows },
+      { data: boardRows }, { data: factionRows },
+      { data: nflTeamRows }, { data: biteRows },
     ] = await Promise.all([
       supabase
         .from("uff_lineups")
@@ -76,15 +79,17 @@ export async function POST(req: NextRequest) {
         .returns<LineupRow[]>(),
       supabase
         .from("uff_roster_players")
-        .select("player_id, players(full_name, position, team, injury_status)")
+        .select("player_id, slot, players(full_name, position, team, injury_status)")
         .eq("member_id", member_a_id)
         .is("dropped_at", null)
+        .eq("slot", "active")
         .returns<RosterRow[]>(),
       supabase
         .from("uff_roster_players")
-        .select("player_id, players(full_name, position, team, injury_status)")
+        .select("player_id, slot, players(full_name, position, team, injury_status)")
         .eq("member_id", member_b_id)
         .is("dropped_at", null)
+        .eq("slot", "active")
         .returns<RosterRow[]>(),
       supabase
         .from("league_members")
@@ -103,6 +108,28 @@ export async function POST(req: NextRequest) {
         .select("player_id, power, restored_at, frozen_score, freeze_broken_at")
         .eq("league_id", league_id)
         .returns<PowerRow[]>(),
+      // ── The team-level terms, so the card can be made to add up ──────────────
+      // Nine starters never summed to the board and the gap looked like a scoring
+      // bug for two days. It is not: the engine also adds a FACTION BONUS (0.5 per
+      // same-faction active player, up to +8.00), the VAMPIRE SIPHON (0.1 × the
+      // bitten player's score) and the week's TOKEN bonus. All three attach to the
+      // team rather than to any player, so no per-player list can ever reconcile
+      // without them shown alongside.
+      supabase
+        .from("uff_matchups")
+        .select("member_id, points, token_bonus")
+        .eq("league_id", league_id)
+        .eq("week", week)
+        .in("member_id", [member_a_id, member_b_id]),
+      supabase
+        .from("league_members")
+        .select("id, faction")
+        .in("id", [member_a_id, member_b_id]),
+      supabase.from("nfl_teams").select("abbr, faction"),
+      supabase
+        .from("vampire_bites")
+        .select("biting_member_id, target_player_id")
+        .eq("league_id", league_id),
     ]);
 
     const startingA = new Set((lineupA ?? []).map(l => l.player_id));
@@ -227,18 +254,66 @@ export async function POST(req: NextRequest) {
         .sort((a, b) => b.points - a.points);
     }
 
+    // ── Team-level terms ───────────────────────────────────────────────────────
+    // Mirrors the engine: faction bonus 0.5 per same-faction active player, vampire
+    // siphon 0.1 × the bitten player's score (skipped when the target holds Shadow
+    // Guard), plus the week's token bonus. `board` is what the engine actually wrote,
+    // so any residual is visible instead of being argued about.
+    const teamFaction: Record<string, string | null> = {};
+    for (const f of factionRows ?? []) teamFaction[f.id] = f.faction ?? null;
+    const nflFaction: Record<string, string> = {};
+    for (const t of nflTeamRows ?? []) if (t.abbr && t.faction) nflFaction[t.abbr] = t.faction;
+    const board: Record<string, { points: number; token: number }> = {};
+    for (const b of boardRows ?? []) {
+      board[b.member_id] = { points: Number(b.points ?? 0), token: Number(b.token_bonus ?? 0) };
+    }
+
+    const scoreOf = (pid: string) => {
+      const pe = powerMap[pid];
+      return scoreWithPower(statsMap[pid] ?? {}, scoringSettings,
+        pe ? { power: pe.power, restored: pe.restored_at != null } : null).total;
+    };
+
+    function teamTotals(memberId: string, roster: RosterRow[] | null, players: { points: number }[]) {
+      const starters = Math.round(players.reduce((s, p) => s + p.points, 0) * 100) / 100;
+      const mf = teamFaction[memberId];
+      let factionBonus = 0;
+      for (const r of roster ?? []) {
+        const t = r.players?.team ?? "";
+        if (mf && t && nflFaction[t] === mf) factionBonus += 0.5;
+      }
+      let siphon = 0;
+      for (const bite of biteRows ?? []) {
+        if (bite.biting_member_id !== memberId) continue;
+        if (powerMap[bite.target_player_id]?.power === "shadow_guard") continue;
+        siphon += scoreOf(bite.target_player_id) * 0.1;
+      }
+      const token = board[memberId]?.token ?? 0;
+      const modelled = Math.round((starters + factionBonus + siphon + token) * 100) / 100;
+      const actual = board[memberId]?.points ?? null;
+      return {
+        starters,
+        factionBonus: Math.round(factionBonus * 100) / 100,
+        siphon: Math.round(siphon * 100) / 100,
+        token: Math.round(token * 100) / 100,
+        modelled,
+        board: actual,
+        unexplained: actual == null ? null : Math.round((actual - modelled) * 100) / 100,
+      };
+    }
+
     const hasData = startingA.size > 0 || startingB.size > 0;
 
     return NextResponse.json({
       hasData,
-      a: {
-        team_name: memberA?.team_name ?? "Team A",
-        players: buildBreakdown(startingA, nameMapA),
-      },
-      b: {
-        team_name: memberB?.team_name ?? "Team B",
-        players: buildBreakdown(startingB, nameMapB),
-      },
+      a: (() => {
+        const players = buildBreakdown(startingA, nameMapA);
+        return { team_name: memberA?.team_name ?? "Team A", players, totals: teamTotals(member_a_id, rosterA, players) };
+      })(),
+      b: (() => {
+        const players = buildBreakdown(startingB, nameMapB);
+        return { team_name: memberB?.team_name ?? "Team B", players, totals: teamTotals(member_b_id, rosterB, players) };
+      })(),
     });
   } catch (err) {
     console.error("Matchup breakdown error:", err);
