@@ -1,3 +1,8 @@
+-- 🛑 DO NOT APPLY AS WRITTEN (banner added 2026-09-21 by the Mind).
+-- This migration would RE-ENABLE DRAFT HEIST: it lacks the guard that keeps the heist off.
+-- See OPEN-LOOPS.md #32. It is committed and public, so `supabase db push` WILL pick it up.
+-- Decide the Heist question first (REVEILLE), then rewrite this file with the guard.
+--
 -- Pin five more draft powers to round ranges (2026-09-07)
 --
 -- The weight+jitter ranking in start_draft clusters powers into the SAME round

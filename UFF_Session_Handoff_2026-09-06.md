@@ -1,5 +1,12 @@
 # 🏈 UFF Handoff Brief — Start Here (graph-driven · 2026-09-06)
 
+> 🛑 **STOP — BANNER ADDED 2026-09-21 BY THE MIND. Three instructions in this file are unsafe today; read `MEMORY.md`'s UFF card and `OPEN-LOOPS.md` #32/#33 first.**
+> 1. 🛑 **Do NOT apply `20260907210000_pin_draft_power_rounds.sql`** (named below under “Open right now” and “What's next” #3). It would **re-enable Draft Heist** and it lacks the guard (#32). It **is committed and public**, so a `supabase db push` would apply it — whatever the repo's own `CLAUDE.md` says.
+> 2. 🛑 **Do NOT deploy edge functions via the Supabase MCP** as this file says. The rule is `node scripts/deploy-edge.mjs <fn> --no-verify-jwt` with a **LEGACY** `sbp_` token (#33).
+> 3. ⚠️ **The Status, What's-next AND Resume sections are stale** — the two illegal rosters were fixed 2026-09-09, the draft is done, Week 1 is final, and `score-matchups` is **v21**. The node counts below are stale too — read `graphify-out/graph.json`.
+> 🛑 **Finalize is cron-only — never press the Matchups Finalize button** (no games-over guard, no undo, skips the Story Engine).
+
+
 > **Start every UFF session here.** Built from the UFF Brain codebase graph (`graphify-out/` — **1161 nodes · 1764 edges · 149 communities**, AST, refreshed 2026-09-09 via `python -m graphify update .` — the code-only subcommand, no LLM key needed; the doc layer is one semantic pass behind). Hold the god-node functions as the architecture, the communities as the module map, the hyperedges as the systems, and the operational state below as your marching orders.
 
 ## 🎯 The one thing to hold first

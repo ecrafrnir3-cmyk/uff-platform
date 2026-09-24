@@ -45,3 +45,6 @@ next-env.d.ts
 # local tooling
 graphify-out/
 .claude/
+
+# supabase CLI scratch (was untracked in a PUBLIC repo)
+supabase/.temp/
