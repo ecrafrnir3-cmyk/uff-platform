@@ -95,8 +95,8 @@ export function scoreWithPower(
   // because five teams' boards matched their un-negated totals. That was a bad
   // comparison, not a bug: the model behind it left out the FACTION BONUS (0.5 per
   // same-faction active player, up to +8.00 a team) and the vampire siphon. Once
-  // both are included, 13 of 14 week-2 boards match to the cent WITH the halving
-  // applied — Blessed Defender 110.32 board, 110.32 modelled — and six teams are
+  // both are included, 14 of 14 week-2 boards match to the cent WITH the halving
+  // applied — Blessed Defender 110.32 board, 110.32 modelled — and five teams are
   // off by 3.20 to 11.25 without it. The power works.
   //
   // Lesson worth keeping: when a total does not reconcile, suspect the model before
