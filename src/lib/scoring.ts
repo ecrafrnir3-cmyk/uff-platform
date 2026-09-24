@@ -88,21 +88,20 @@ export function scoreWithPower(
   const none = { base, bonus: 0, total: base, power: null };
   if (!stats || !settings || !pe) return none;
   if (pe.power === "time_stone" || pe.power === "vampire_bite") return none;
-  // POWER NEGATION IS DELIBERATELY NOT SHOWN, even unrestored.
+  // Power Negation IS shown, and a restored one correctly stops halving — the same
+  // rule the engine uses.
   //
-  // The engine's code path halves a negated player (-base/2) whenever
-  // restored_at is null, but the finalized boards say it never fires. Week 2,
-  // five teams carried a Power Negation on a starter; for every one of them the
-  // board matches the total WITHOUT the halving and misses badly with it —
-  // Blessed Defender 110.32 board vs 110.92 un-negated vs 99.67 negated, and
-  // the same pattern on Angel in Disguise, BoneSnapp, Reveille and Fratelli's.
-  // So either an activation gate exists that this table does not express, or the
-  // power is silently dead (OPEN-LOOPS #64).
+  // It was briefly excluded here (2026-09-24) on the belief that it never fired,
+  // because five teams' boards matched their un-negated totals. That was a bad
+  // comparison, not a bug: the model behind it left out the FACTION BONUS (0.5 per
+  // same-faction active player, up to +8.00 a team) and the vampire siphon. Once
+  // both are included, 13 of 14 week-2 boards match to the cent WITH the halving
+  // applied — Blessed Defender 110.32 board, 110.32 modelled — and six teams are
+  // off by 3.20 to 11.25 without it. The power works.
   //
-  // Until that is settled, showing the penalty would put a number on screen that
-  // no board contains — and it is the one bonus that TAKES points away, so the
-  // cost of being wrong lands on a manager's best player. Omit it.
-  if (pe.power === "power_negation") return none;
+  // Lesson worth keeping: when a total does not reconcile, suspect the model before
+  // the mechanic. A missing team-level term can imitate a missing per-player one.
+  if (pe.power === "power_negation" && pe.restored) return none;
   const bonus = Math.round(applyDraftPower(pe.power, stats, base, settings) * 100) / 100;
   if (bonus === 0) return { base, bonus: 0, total: base, power: pe.power };
   return { base, bonus, total: Math.round((base + bonus) * 100) / 100, power: pe.power };
