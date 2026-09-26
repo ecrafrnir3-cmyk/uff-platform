@@ -1291,14 +1291,14 @@ DECLARE
   v_buffer_secs     int := 0;
   v_deadline        timestamptz;
   v_player_id       text;
-  -- power-attach locals (mirrors client assignPowerToPick)
-  v_pw_name         text;
-  v_pw_cat          text;
-  v_pw_tied         text;
-  v_pw_slug         text;
-  v_pos             text;
-  v_member_user     uuid;
-  v_owner           uuid;
+  -- power-attach locals
+  v_pw_name     text;
+  v_pw_cat      text;
+  v_pw_tied     text;
+  v_pw_slug     text;
+  v_pos         text;
+  v_member_user uuid;
+  v_owner       uuid;
 BEGIN
   IF auth.uid() IS NULL THEN
     RAISE EXCEPTION 'Not authenticated';
@@ -1308,7 +1308,6 @@ BEGIN
     RAISE EXCEPTION 'You are not in this league';
   END IF;
 
-  -- FOR UPDATE serializes with make_draft_pick and concurrent force calls
   SELECT draft_status, draft_order, max_teams, draft_rounds, commissioner_id,
          pick_clock_seconds, draft_started_at
   INTO v_draft_status, v_draft_order, v_max_teams, v_draft_rounds, v_commissioner_id,
@@ -1375,13 +1374,12 @@ BEGIN
   -- ── Attach the round's draft power to the auto-picked player ────────────────
   -- Mirrors the client assignPowerToPick + self-autodraft rules so a manager who
   -- is force-autopicked while offline keeps the power they were dealt for this
-  -- round instead of silently losing it (the client safety-net path never ran
-  -- assignPowerToPick). Never attaches the interactive powers (Vampire Bite /
-  -- Foresight Coin / Draft Heist) or the draft-mechanic powers; a position-tied
-  -- power attaches only when the picked player's position matches (otherwise it
-  -- fizzles, exactly like a mismatched manual/self-autodraft pick). The power is
-  -- credited to the ON-THE-CLOCK member (the offline manager), never to
-  -- auth.uid() (the peer client that fired the safety-net force).
+  -- round instead of silently losing it. Never attaches the interactive powers
+  -- (Vampire Bite / Foresight Coin / Draft Heist) or the draft-mechanic powers;
+  -- a position-tied power attaches only when the picked player's position matches
+  -- (otherwise it fizzles, exactly like a mismatched manual/self-autodraft pick).
+  -- The power is credited to the ON-THE-CLOCK member (the offline manager), never
+  -- to auth.uid() (the peer client that fired the safety-net force).
   SELECT dp.name, dp.category, dp.tied_position
     INTO v_pw_name, v_pw_cat, v_pw_tied
   FROM draft_power_assignments dpa
@@ -1421,9 +1419,9 @@ BEGIN
     WHERE id = p_league_id;
 
     BEGIN
-      PERFORM generate_schedule(p_league_id, v_commissioner_id);
+      PERFORM generate_schedule_internal(p_league_id);
     EXCEPTION WHEN OTHERS THEN
-      NULL;
+      RAISE WARNING 'Draft complete for league % but the schedule was not generated: % (the commissioner can press Generate schedule)', p_league_id, SQLERRM;
     END;
   END IF;
 
@@ -1440,70 +1438,14 @@ CREATE OR REPLACE FUNCTION public.generate_schedule(p_league_id uuid, p_user_id 
 AS $function$
 DECLARE
   v_commissioner_id uuid;
-  v_season          text;
-  v_member_ids      uuid[];
-  v_n               int;
-  v_teams           uuid[];
-  v_dummy           uuid := gen_random_uuid();
-  v_week            int;
-  v_matchup_id      int;
-  v_home            uuid;
-  v_away            uuid;
-  v_existing        int;
-  i                 int;
-  j                 int;
-  tmp               uuid;
 BEGIN
-  SELECT commissioner_id, season INTO v_commissioner_id, v_season
-  FROM uff_leagues WHERE id = p_league_id;
-
+  SELECT commissioner_id INTO v_commissioner_id FROM uff_leagues WHERE id = p_league_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'League not found'; END IF;
   IF auth.uid() IS NULL OR auth.uid() <> v_commissioner_id THEN
     RAISE EXCEPTION 'Only the commissioner can generate the schedule';
   END IF;
 
-  IF p_weeks < 1 OR p_weeks > 18 THEN
-    RAISE EXCEPTION 'season_weeks must be between 1 and 18';
-  END IF;
-
-  SELECT COUNT(*) INTO v_existing FROM uff_matchups WHERE league_id = p_league_id;
-  IF v_existing > 0 THEN RAISE EXCEPTION 'Schedule already exists for this league'; END IF;
-
-  SELECT ARRAY_AGG(id ORDER BY joined_at) INTO v_member_ids
-  FROM league_members WHERE league_id = p_league_id;
-
-  v_n := array_length(v_member_ids, 1);
-  IF v_n < 2 THEN RAISE EXCEPTION 'Need at least 2 teams to generate a schedule'; END IF;
-
-  IF v_n % 2 = 1 THEN
-    v_teams := v_member_ids || ARRAY[v_dummy];
-  ELSE
-    v_teams := v_member_ids;
-  END IF;
-
-  UPDATE uff_leagues SET season_weeks = p_weeks WHERE id = p_league_id;
-
-  v_matchup_id := 1;
-  FOR v_week IN 1..p_weeks LOOP
-    FOR i IN 1..(array_length(v_teams, 1) / 2) LOOP
-      v_home := v_teams[i];
-      v_away := v_teams[array_length(v_teams, 1) - i + 1];
-
-      IF v_home != v_dummy AND v_away != v_dummy THEN
-        INSERT INTO uff_matchups (matchup_id, league_id, week, season, member_id, points)
-        VALUES
-          (v_matchup_id, p_league_id, v_week::smallint, v_season, v_home, 0),
-          (v_matchup_id, p_league_id, v_week::smallint, v_season, v_away, 0);
-        v_matchup_id := v_matchup_id + 1;
-      END IF;
-    END LOOP;
-
-    tmp := v_teams[array_length(v_teams, 1)];
-    FOR j IN REVERSE array_length(v_teams, 1)..3 LOOP
-      v_teams[j] := v_teams[j - 1];
-    END LOOP;
-    v_teams[2] := tmp;
-  END LOOP;
+  PERFORM generate_schedule_internal(p_league_id, p_weeks);
 END;
 $function$
 ;
@@ -1625,9 +1567,9 @@ BEGIN
     WHERE id = p_league_id;
 
     BEGIN
-      PERFORM generate_schedule(p_league_id, v_commissioner_id);
+      PERFORM generate_schedule_internal(p_league_id);
     EXCEPTION WHEN OTHERS THEN
-      NULL;
+      RAISE WARNING 'Draft complete for league % but the schedule was not generated: % (the commissioner can press Generate schedule)', p_league_id, SQLERRM;
     END;
   END IF;
 
@@ -3035,8 +2977,9 @@ BEGIN
   IF v_pick_count + 1 >= v_total_picks THEN
     UPDATE uff_leagues SET draft_status = 'completed', status = 'active' WHERE id = p_league_id;
     BEGIN
-      PERFORM generate_schedule(p_league_id, v_commissioner_id);
-    EXCEPTION WHEN OTHERS THEN NULL;
+      PERFORM generate_schedule_internal(p_league_id);
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING 'Draft complete for league % but the schedule was not generated: % (the commissioner can press Generate schedule)', p_league_id, SQLERRM;
     END;
   END IF;
 
@@ -3290,6 +3233,84 @@ BEGIN
   RETURNING id INTO v_member_id;
 
   RETURN jsonb_build_object('league_id', v_league_id, 'member_id', v_member_id);
+END;
+$function$
+;
+
+-- Added 2026-09-26 by 20260926190000 (#76).
+CREATE OR REPLACE FUNCTION public.generate_schedule_internal(p_league_id uuid, p_weeks smallint DEFAULT NULL::smallint)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_commissioner_id uuid;
+  v_season          text;
+  v_weeks_cfg       smallint;
+  v_member_ids      uuid[];
+  v_n               int;
+  v_teams           uuid[];
+  v_dummy           uuid := gen_random_uuid();
+  v_week            int;
+  v_matchup_id      int;
+  v_home            uuid;
+  v_away            uuid;
+  v_existing        int;
+  i                 int;
+  j                 int;
+  tmp               uuid;
+BEGIN
+  SELECT commissioner_id, season, season_weeks INTO v_commissioner_id, v_season, v_weeks_cfg
+  FROM uff_leagues WHERE id = p_league_id;
+
+  IF NOT FOUND THEN RAISE EXCEPTION 'League not found'; END IF;
+  -- No caller check here on purpose: this function is not executable by app roles.
+  -- generate_schedule (commissioner only) and the three draft-pick functions call it.
+  p_weeks := COALESCE(p_weeks, v_weeks_cfg, 14);
+
+  IF p_weeks < 1 OR p_weeks > 18 THEN
+    RAISE EXCEPTION 'season_weeks must be between 1 and 18';
+  END IF;
+
+  SELECT COUNT(*) INTO v_existing FROM uff_matchups WHERE league_id = p_league_id;
+  IF v_existing > 0 THEN RAISE EXCEPTION 'Schedule already exists for this league'; END IF;
+
+  SELECT ARRAY_AGG(id ORDER BY joined_at) INTO v_member_ids
+  FROM league_members WHERE league_id = p_league_id;
+
+  v_n := array_length(v_member_ids, 1);
+  IF v_n < 2 THEN RAISE EXCEPTION 'Need at least 2 teams to generate a schedule'; END IF;
+
+  IF v_n % 2 = 1 THEN
+    v_teams := v_member_ids || ARRAY[v_dummy];
+  ELSE
+    v_teams := v_member_ids;
+  END IF;
+
+  UPDATE uff_leagues SET season_weeks = p_weeks WHERE id = p_league_id;
+
+  v_matchup_id := 1;
+  FOR v_week IN 1..p_weeks LOOP
+    FOR i IN 1..(array_length(v_teams, 1) / 2) LOOP
+      v_home := v_teams[i];
+      v_away := v_teams[array_length(v_teams, 1) - i + 1];
+
+      IF v_home != v_dummy AND v_away != v_dummy THEN
+        INSERT INTO uff_matchups (matchup_id, league_id, week, season, member_id, points)
+        VALUES
+          (v_matchup_id, p_league_id, v_week::smallint, v_season, v_home, 0),
+          (v_matchup_id, p_league_id, v_week::smallint, v_season, v_away, 0);
+        v_matchup_id := v_matchup_id + 1;
+      END IF;
+    END LOOP;
+
+    tmp := v_teams[array_length(v_teams, 1)];
+    FOR j IN REVERSE array_length(v_teams, 1)..3 LOOP
+      v_teams[j] := v_teams[j - 1];
+    END LOOP;
+    v_teams[2] := tmp;
+  END LOOP;
 END;
 $function$
 ;
