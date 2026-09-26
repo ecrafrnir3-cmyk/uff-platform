@@ -152,24 +152,19 @@ export async function useRestoreChip(formData: FormData): Promise<void> {
     redirect(`/dashboard/league/${leagueId}/roster?error=` + encodeURIComponent("That chip has already been used."));
   }
 
-  // Set restored_at on the negated player's power row
-  const { error: restoreError } = await supabase
-    .from("player_draft_powers")
-    .update({ restored_at: new Date().toISOString() })
-    .eq("league_id", leagueId)
-    .eq("player_id", playerId)
-    .eq("power", "power_negation")
-    .is("restored_at", null);
+  // Restore the player and spend the chip in ONE transaction, as the function owner:
+  // the chip row is locked, must be unused and yours, and the restore must actually
+  // match a negated player of yours (OPEN-LOOPS #77, audit A1-10). Neither table
+  // accepts a direct write from a manager any more.
+  const { error: restoreError } = await supabase.rpc("use_restore_chip", {
+    p_league_id: leagueId,
+    p_chip_id: chipId,
+    p_player_id: playerId,
+  });
 
   if (restoreError) {
     redirect(`/dashboard/league/${leagueId}/roster?error=` + encodeURIComponent(restoreError.message));
   }
-
-  // Mark chip as used
-  await supabase
-    .from("power_restore_chips")
-    .update({ used: true, used_at: new Date().toISOString(), used_on_player_id: playerId })
-    .eq("id", chipId);
 
   rosterPaths(leagueId).forEach((p) => revalidatePath(p));
   redirect(`/dashboard/league/${leagueId}/roster?restored=1`);

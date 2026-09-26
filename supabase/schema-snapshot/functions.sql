@@ -63,8 +63,13 @@ BEGIN
     INTO v_max_adds_week, v_max_adds_season
     FROM uff_leagues WHERE id = p_league_id;
 
+  -- The week is required so every add is counted against the caps (audit A1-06)
+  IF p_week IS NULL THEN
+    RAISE EXCEPTION 'Week is required to add a player';
+  END IF;
+
   -- Per-week limit
-  IF p_week IS NOT NULL AND v_max_adds_week > 0 THEN
+  IF v_max_adds_week > 0 THEN
     SELECT COUNT(*) INTO v_week_adds
       FROM uff_roster_players WHERE member_id = v_member_id AND week_added = p_week;
     IF v_week_adds >= v_max_adds_week THEN
@@ -138,8 +143,13 @@ BEGIN
     RAISE EXCEPTION 'Active roster is full (% players). Drop someone first.', v_max_active;
   END IF;
 
+  -- The week is required so every add is counted against the caps (audit A1-06)
+  IF p_week IS NULL THEN
+    RAISE EXCEPTION 'Week is required to add a player';
+  END IF;
+
   -- Per-week limit (0 = unlimited)
-  IF p_week IS NOT NULL AND v_max_adds_week > 0 THEN
+  IF v_max_adds_week > 0 THEN
     SELECT COUNT(*) INTO v_week_adds
       FROM uff_roster_players WHERE member_id = v_member_id AND week_added = p_week;
     IF v_week_adds >= v_max_adds_week THEN
@@ -373,6 +383,9 @@ BEGIN
       WHERE member_id = v_trade.receiver_id AND player_id = pid AND dropped_at IS NULL
     )
   ) THEN RAISE EXCEPTION 'Receiver no longer has one or more requested players — trade cannot be completed'; END IF;
+
+  -- Deadline, roster cap/minimum and IR capacity, enforced here, not only in the app (audit A1-14)
+  PERFORM check_trade_rules(v_trade);
 
   SELECT user_id INTO v_proposer_user_id FROM league_members WHERE id = v_trade.proposer_id;
   SELECT user_id INTO v_receiver_user_id FROM league_members WHERE id = v_trade.receiver_id;
@@ -2259,6 +2272,9 @@ BEGIN
     )
   ) THEN RAISE EXCEPTION 'You no longer have one or more of the requested players'; END IF;
 
+  -- Deadline, roster cap/minimum and IR capacity, enforced here, not only in the app (audit A1-14)
+  PERFORM check_trade_rules(v_trade);
+
   -- Check if commissioner review is enabled for this league
   SELECT commissioner_review INTO v_commissioner_review
     FROM uff_leagues WHERE id = v_trade.league_id;
@@ -2758,36 +2774,28 @@ CREATE OR REPLACE FUNCTION public.swap_foresight_powers(p_league_id uuid, p_curr
  SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-DECLARE
-  v_member_id uuid;
-  v_curr record;
-  v_swap record;
+DECLARE v_member_id uuid; v_curr record; v_swap record; v_status text; v_rounds smallint; v_last_round smallint;
 BEGIN
-  SELECT id INTO v_member_id FROM league_members
-   WHERE league_id = p_league_id AND user_id = auth.uid();
+  SELECT id INTO v_member_id FROM league_members WHERE league_id = p_league_id AND user_id = auth.uid();
   IF v_member_id IS NULL THEN RAISE EXCEPTION 'Not a member of this league'; END IF;
-
-  IF p_swap_round <= p_current_round OR p_swap_round > 16 THEN
-    RAISE EXCEPTION 'Foresight Coin can only swap with a future round';
+  -- Only during the draft, only on the round this manager just picked, only the next two
+  -- rounds (the rulebook's peek window), bounded by the league's rounds (audit A1-13)
+  SELECT draft_status, draft_rounds INTO v_status, v_rounds FROM uff_leagues WHERE id = p_league_id;
+  IF v_status IS DISTINCT FROM 'in_progress' THEN RAISE EXCEPTION 'Foresight Coin can only be used during the draft'; END IF;
+  SELECT max(round) INTO v_last_round FROM uff_draft_picks WHERE league_id = p_league_id AND member_id = v_member_id;
+  IF v_last_round IS NULL OR v_last_round <> p_current_round THEN
+    RAISE EXCEPTION 'Foresight Coin can only be used on the round you just picked';
   END IF;
-
+  IF p_swap_round <= p_current_round OR p_swap_round > p_current_round + 2 OR p_swap_round > v_rounds THEN
+    RAISE EXCEPTION 'Foresight Coin can only swap with one of your next two rounds';
+  END IF;
   SELECT id, power_id INTO v_curr FROM draft_power_assignments
    WHERE league_id = p_league_id AND member_id = v_member_id AND round = p_current_round FOR UPDATE;
   SELECT id, power_id INTO v_swap FROM draft_power_assignments
    WHERE league_id = p_league_id AND member_id = v_member_id AND round = p_swap_round FOR UPDATE;
+  IF v_curr.id IS NULL OR v_swap.id IS NULL THEN RAISE EXCEPTION 'Power assignments not found'; END IF;
+  IF v_curr.power_id != 1 THEN RAISE EXCEPTION 'You do not hold Foresight Coin this round'; END IF;
 
-  IF v_curr.id IS NULL OR v_swap.id IS NULL THEN
-    RAISE EXCEPTION 'Power assignments not found';
-  END IF;
-
-  -- Foresight Coin is power_id 1; the caller must hold it in the current round
-  IF v_curr.power_id != 1 THEN
-    RAISE EXCEPTION 'You do not hold Foresight Coin this round';
-  END IF;
-
-  -- Swap via DELETE + re-INSERT. The UNIQUE(member_id, power_id) constraint is
-  -- non-deferrable and checked per-row, so an in-place UPDATE swap (even a single
-  -- CASE statement) violates it mid-statement. Delete both, then re-insert swapped.
   DELETE FROM draft_power_assignments WHERE id IN (v_curr.id, v_swap.id);
   INSERT INTO draft_power_assignments (league_id, member_id, round, power_id) VALUES
     (p_league_id, v_member_id, p_current_round, v_swap.power_id),
@@ -3138,15 +3146,25 @@ END;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.commissioner_foresight_swap(p_league_id uuid, p_acting_member_id uuid, p_current_round smallint, p_swap_round smallint)
- RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
 AS $function$
-DECLARE v_curr record; v_swap record;
+DECLARE v_curr record; v_swap record; v_status text; v_rounds smallint; v_last_round smallint;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM uff_leagues WHERE id = p_league_id AND commissioner_id = auth.uid()) THEN
     RAISE EXCEPTION 'Only the commissioner can act for another manager';
   END IF;
-  IF p_swap_round <= p_current_round OR p_swap_round > 16 THEN
-    RAISE EXCEPTION 'Foresight Coin can only swap with a future round';
+  -- Same rules as swap_foresight_powers (audit A1-13)
+  SELECT draft_status, draft_rounds INTO v_status, v_rounds FROM uff_leagues WHERE id = p_league_id;
+  IF v_status IS DISTINCT FROM 'in_progress' THEN RAISE EXCEPTION 'Foresight Coin can only be used during the draft'; END IF;
+  SELECT max(round) INTO v_last_round FROM uff_draft_picks WHERE league_id = p_league_id AND member_id = p_acting_member_id;
+  IF v_last_round IS NULL OR v_last_round <> p_current_round THEN
+    RAISE EXCEPTION 'Foresight Coin can only be used on the round that manager just picked';
+  END IF;
+  IF p_swap_round <= p_current_round OR p_swap_round > p_current_round + 2 OR p_swap_round > v_rounds THEN
+    RAISE EXCEPTION 'Foresight Coin can only swap with one of the next two rounds';
   END IF;
   SELECT id, power_id INTO v_curr FROM draft_power_assignments
    WHERE league_id = p_league_id AND member_id = p_acting_member_id AND round = p_current_round FOR UPDATE;
@@ -3383,6 +3401,216 @@ BEGIN
     END LOOP;
     v_teams[2] := tmp;
   END LOOP;
+END;
+$function$
+;
+
+-- Added 2026-09-26 by 20260926210000 and 20260926220000 (#77 audit oranges).
+CREATE OR REPLACE FUNCTION public.current_nfl_week()
+ RETURNS integer
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT GREATEST(1, LEAST(18, (floor(extract(epoch FROM (now() - '2026-09-09 00:00:00+00'::timestamptz)) / 604800))::int + 1));
+$function$
+;
+CREATE OR REPLACE FUNCTION public.check_trade_rules(p_trade uff_trades)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_deadline   smallint;
+  v_cap        int;
+  v_slots      jsonb;
+  v_ir_spots   int;
+  v_min        int;
+  v_active_p   int; v_active_r   int;
+  v_ir_p       int; v_ir_r       int;
+  v_out_p_act  int; v_out_p_ir   int;
+  v_out_r_act  int; v_out_r_ir   int;
+  v_post_p     int; v_post_r     int;
+  v_post_ir_p  int; v_post_ir_r  int;
+BEGIN
+  SELECT trade_deadline_week, draft_rounds, lineup_slots, ir_spots
+    INTO v_deadline, v_cap, v_slots, v_ir_spots
+    FROM uff_leagues WHERE id = p_trade.league_id;
+
+  IF v_deadline IS NOT NULL AND current_nfl_week() > v_deadline THEN
+    RAISE EXCEPTION 'Trade deadline has passed (Week %). This trade can no longer be accepted.', v_deadline;
+  END IF;
+
+  SELECT coalesce(sum(value::int), 9) INTO v_min
+    FROM jsonb_each_text(coalesce(v_slots, '{"QB":1,"RB":2,"WR":2,"TE":1,"FLEX":1,"K":1,"DEF":1}'::jsonb));
+
+  -- Players move with their slot, so count what leaves and arrives per slot.
+  SELECT count(*) FILTER (WHERE slot = 'active'), count(*) FILTER (WHERE slot = 'ir')
+    INTO v_active_p, v_ir_p FROM uff_roster_players WHERE member_id = p_trade.proposer_id AND dropped_at IS NULL;
+  SELECT count(*) FILTER (WHERE slot = 'active'), count(*) FILTER (WHERE slot = 'ir')
+    INTO v_active_r, v_ir_r FROM uff_roster_players WHERE member_id = p_trade.receiver_id AND dropped_at IS NULL;
+  SELECT count(*) FILTER (WHERE slot = 'active'), count(*) FILTER (WHERE slot = 'ir')
+    INTO v_out_p_act, v_out_p_ir FROM uff_roster_players
+   WHERE member_id = p_trade.proposer_id AND dropped_at IS NULL AND player_id = ANY(p_trade.proposer_player_ids);
+  SELECT count(*) FILTER (WHERE slot = 'active'), count(*) FILTER (WHERE slot = 'ir')
+    INTO v_out_r_act, v_out_r_ir FROM uff_roster_players
+   WHERE member_id = p_trade.receiver_id AND dropped_at IS NULL AND player_id = ANY(p_trade.receiver_player_ids);
+
+  v_post_p    := v_active_p - v_out_p_act + v_out_r_act;
+  v_post_r    := v_active_r - v_out_r_act + v_out_p_act;
+  v_post_ir_p := v_ir_p     - v_out_p_ir  + v_out_r_ir;
+  v_post_ir_r := v_ir_r     - v_out_r_ir  + v_out_p_ir;
+
+  IF v_post_p > v_cap THEN
+    RAISE EXCEPTION 'This trade would leave the proposer over the %-player roster limit (%). Adjust the players involved and re-propose.', v_cap, v_post_p;
+  ELSIF v_post_r > v_cap THEN
+    RAISE EXCEPTION 'This trade would leave the receiver over the %-player roster limit (%). Adjust the players involved and re-propose.', v_cap, v_post_r;
+  ELSIF v_post_p < v_min THEN
+    RAISE EXCEPTION 'This trade would leave the proposer under the %-starter minimum (%). Adjust the players involved and re-propose.', v_min, v_post_p;
+  ELSIF v_post_r < v_min THEN
+    RAISE EXCEPTION 'This trade would leave the receiver under the %-starter minimum (%). Adjust the players involved and re-propose.', v_min, v_post_r;
+  ELSIF v_post_ir_p > v_ir_spots THEN
+    RAISE EXCEPTION 'This trade would leave the proposer over the %-slot IR limit (%).', v_ir_spots, v_post_ir_p;
+  ELSIF v_post_ir_r > v_ir_spots THEN
+    RAISE EXCEPTION 'This trade would leave the receiver over the %-slot IR limit (%).', v_ir_spots, v_post_ir_r;
+  END IF;
+END;
+$function$
+;
+CREATE OR REPLACE FUNCTION public.league_members_lock_faction_after_draft()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  -- The app client arrives as 'authenticated' (or 'anon'); SECURITY DEFINER functions run
+  -- as postgres and pass through (randomize_unassigned_factions checks not_started itself).
+  IF current_user IN ('authenticated', 'anon')
+     AND NEW.faction IS DISTINCT FROM OLD.faction
+     AND (SELECT draft_status FROM public.uff_leagues WHERE id = NEW.league_id) <> 'not_started'
+  THEN
+    RAISE EXCEPTION 'Factions are locked once the draft starts.';
+  END IF;
+  RETURN NEW;
+END;
+$function$
+;
+CREATE OR REPLACE FUNCTION public.assign_vampire_bite(p_league_id uuid, p_target_player_id text, p_round integer DEFAULT NULL::integer)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_member_id  uuid;
+  v_status     text;
+  v_season     int;
+  v_round      int;
+  v_last_round int;
+  v_first_kick timestamptz;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated.';
+  END IF;
+  SELECT id INTO v_member_id FROM league_members WHERE league_id = p_league_id AND user_id = auth.uid();
+  IF v_member_id IS NULL THEN
+    RAISE EXCEPTION 'Not a member of this league.';
+  END IF;
+
+  SELECT draft_status, season::int INTO v_status, v_season FROM uff_leagues WHERE id = p_league_id;
+
+  -- Must have been dealt Vampire Bite; p_round, when given, must be that round
+  SELECT round INTO v_round
+    FROM draft_power_assignments
+   WHERE league_id = p_league_id AND member_id = v_member_id AND power_id = 16;
+  IF v_round IS NULL THEN
+    RAISE EXCEPTION 'You weren''t dealt Vampire Bite.';
+  END IF;
+  IF p_round IS NOT NULL AND p_round <> v_round THEN
+    RAISE EXCEPTION 'You don''t hold Vampire Bite this round.';
+  END IF;
+
+  -- When: during the draft, right after the pick in that round; or after the draft, before
+  -- the season's first kickoff.
+  IF v_status = 'in_progress' THEN
+    SELECT max(round) INTO v_last_round FROM uff_draft_picks WHERE league_id = p_league_id AND member_id = v_member_id;
+    IF v_last_round IS NULL OR v_last_round <> v_round THEN
+      RAISE EXCEPTION 'Vampire Bite is used right after your pick in the round you hold it.';
+    END IF;
+  ELSIF v_status = 'completed' THEN
+    SELECT min(kickoff_utc) INTO v_first_kick FROM uff_game_schedule WHERE season = v_season AND week = 1;
+    IF v_first_kick IS NULL OR now() >= v_first_kick THEN
+      RAISE EXCEPTION 'The Vampire Bite window closed at Week 1 kickoff.';
+    END IF;
+  ELSE
+    RAISE EXCEPTION 'Vampire Bite can be used during the draft or before Week 1 kickoff.';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM vampire_bites WHERE league_id = p_league_id AND biting_member_id = v_member_id) THEN
+    RAISE EXCEPTION 'You''ve already used your Vampire Bite.';
+  END IF;
+  IF EXISTS (SELECT 1 FROM uff_roster_players
+             WHERE league_id = p_league_id AND player_id = p_target_player_id AND member_id = v_member_id AND dropped_at IS NULL) THEN
+    RAISE EXCEPTION 'You can''t bite your own player — choose an opponent''s player.';
+  END IF;
+  IF EXISTS (SELECT 1 FROM player_draft_powers
+             WHERE league_id = p_league_id AND player_id = p_target_player_id AND power = 'shadow_guard') THEN
+    RAISE EXCEPTION 'That player is protected by Shadow Guard — the bite fizzles. Choose a different target.';
+  END IF;
+
+  INSERT INTO vampire_bites (league_id, biting_member_id, target_player_id, round)
+  VALUES (p_league_id, v_member_id, p_target_player_id, v_round);
+EXCEPTION WHEN unique_violation THEN
+  RAISE EXCEPTION 'That player has already been bitten. Choose someone else.';
+END;
+$function$
+;
+CREATE OR REPLACE FUNCTION public.use_restore_chip(p_league_id uuid, p_chip_id uuid, p_player_id text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_member_id uuid;
+  v_chip      power_restore_chips%ROWTYPE;
+  n           int;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated.';
+  END IF;
+  SELECT id INTO v_member_id FROM league_members WHERE league_id = p_league_id AND user_id = auth.uid();
+  IF v_member_id IS NULL THEN
+    RAISE EXCEPTION 'Not a member of this league.';
+  END IF;
+
+  -- Lock the chip: two submits cannot both spend it
+  SELECT * INTO v_chip FROM power_restore_chips
+   WHERE id = p_chip_id AND league_id = p_league_id AND member_id = v_member_id
+     FOR UPDATE;
+  IF v_chip.id IS NULL THEN
+    RAISE EXCEPTION 'Restore chip not found.';
+  END IF;
+  IF v_chip.used THEN
+    RAISE EXCEPTION 'That chip has already been used.';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM uff_roster_players
+                 WHERE league_id = p_league_id AND member_id = v_member_id AND player_id = p_player_id AND dropped_at IS NULL) THEN
+    RAISE EXCEPTION 'That player is not on your roster.';
+  END IF;
+
+  UPDATE player_draft_powers
+     SET restored_at = now()
+   WHERE league_id = p_league_id AND player_id = p_player_id
+     AND power = 'power_negation' AND restored_at IS NULL;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n = 0 THEN
+    RAISE EXCEPTION 'That player has no Power Negation to restore.';
+  END IF;
+
+  UPDATE power_restore_chips
+     SET used = true, used_at = now(), used_on_player_id = p_player_id
+   WHERE id = p_chip_id;
 END;
 $function$
 ;

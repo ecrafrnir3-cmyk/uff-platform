@@ -3,6 +3,8 @@
 -- Hand-aligned 2026-09-26 with 20260926170000 (#77 / A1-02): the two player_draft_powers write
 -- policies; every other policy is as generated.
 -- Hand-aligned again 2026-09-26 with 20260926180000 (#77 / A1-01): league_members INSERT policy.
+-- Hand-aligned again 2026-09-26 with 20260926210000 + 20260926220000: six member write policies dropped
+-- (draft_power_assignments x2, uff_trades, uff_draft_picks, vampire_bites, power_restore_chips).
 -- 67 policies (65 @ 2026-08-17 + 2 push-subscription policies @ 2026-08-24).
 
 CREATE POLICY "authenticated read draft_power_assignments" ON public.draft_power_assignments FOR SELECT TO authenticated USING (true);
@@ -11,14 +13,6 @@ CREATE POLICY "commissioner manage league draft_power_assignments" ON public.dra
   WHERE ((ul.id = draft_power_assignments.league_id) AND (ul.commissioner_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM uff_leagues ul
   WHERE ((ul.id = draft_power_assignments.league_id) AND (ul.commissioner_id = ( SELECT auth.uid() AS uid))))));
-CREATE POLICY "members insert own draft_power_assignments" ON public.draft_power_assignments FOR INSERT TO public WITH CHECK ((EXISTS ( SELECT 1
-   FROM league_members lm
-  WHERE ((lm.id = draft_power_assignments.member_id) AND (lm.user_id = ( SELECT auth.uid() AS uid))))));
-CREATE POLICY "members update own draft_power_assignments" ON public.draft_power_assignments FOR UPDATE TO public USING ((EXISTS ( SELECT 1
-   FROM league_members lm
-  WHERE ((lm.id = draft_power_assignments.member_id) AND (lm.user_id = ( SELECT auth.uid() AS uid)))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM league_members lm
-  WHERE ((lm.id = draft_power_assignments.member_id) AND (lm.user_id = ( SELECT auth.uid() AS uid))))));
 CREATE POLICY "public read draft_powers" ON public.draft_powers FOR SELECT TO public USING (true);
 CREATE POLICY "Members manage own draft queue" ON public.draft_queue FOR ALL TO public USING ((member_id IN ( SELECT league_members.id
    FROM league_members
@@ -127,9 +121,6 @@ CREATE POLICY "league members can view player powers" ON public.player_draft_pow
 CREATE POLICY "service role can delete player powers" ON public.player_draft_powers FOR DELETE TO public USING ((auth.role() = 'service_role'::text));
 CREATE POLICY "players are publicly readable" ON public.players FOR SELECT TO anon, authenticated USING (true);
 CREATE POLICY "authenticated read power_restore_chips" ON public.power_restore_chips FOR SELECT TO authenticated USING (true);
-CREATE POLICY "chip owner can use their chip" ON public.power_restore_chips FOR UPDATE TO public USING ((EXISTS ( SELECT 1
-   FROM league_members lm
-  WHERE ((lm.id = power_restore_chips.member_id) AND (lm.user_id = auth.uid())))));
 CREATE POLICY "league members can view chips" ON public.power_restore_chips FOR SELECT TO public USING ((EXISTS ( SELECT 1
    FROM league_members lm
   WHERE ((lm.league_id = power_restore_chips.league_id) AND (lm.user_id = auth.uid())))));
@@ -176,9 +167,6 @@ CREATE POLICY "commissioner manage league draft picks" ON public.uff_draft_picks
    FROM uff_leagues ul
   WHERE ((ul.id = uff_draft_picks.league_id) AND (ul.commissioner_id = ( SELECT auth.uid() AS uid))))));
 CREATE POLICY "draft picks are readable by authenticated users" ON public.uff_draft_picks FOR SELECT TO authenticated USING (true);
-CREATE POLICY "members make own draft picks" ON public.uff_draft_picks FOR INSERT TO public WITH CHECK ((EXISTS ( SELECT 1
-   FROM league_members lm
-  WHERE ((lm.id = uff_draft_picks.member_id) AND (lm.user_id = ( SELECT auth.uid() AS uid))))));
 CREATE POLICY "Public read game schedule" ON public.uff_game_schedule FOR SELECT TO public USING (true);
 CREATE POLICY "commissioner can update their league" ON public.uff_leagues FOR UPDATE TO public USING ((( SELECT auth.uid() AS uid) = commissioner_id));
 CREATE POLICY "leagues are viewable by authenticated users" ON public.uff_leagues FOR SELECT TO public USING ((auth.role() = 'authenticated'::text));
@@ -213,9 +201,6 @@ CREATE POLICY "rosters are readable by authenticated users" ON public.uff_roster
 CREATE POLICY "league members can view trades" ON public.uff_trades FOR SELECT TO public USING ((EXISTS ( SELECT 1
    FROM league_members lm
   WHERE ((lm.league_id = uff_trades.league_id) AND (lm.user_id = auth.uid())))));
-CREATE POLICY "proposer can create trade" ON public.uff_trades FOR INSERT TO public WITH CHECK ((EXISTS ( SELECT 1
-   FROM league_members lm
-  WHERE ((lm.id = uff_trades.proposer_id) AND (lm.user_id = auth.uid())))));
 CREATE POLICY "bids visibility" ON public.uff_waiver_bids FOR SELECT TO public USING (((member_id IN ( SELECT league_members.id
    FROM league_members
   WHERE (league_members.user_id = auth.uid()))) OR ((status <> 'pending'::text) AND (league_id IN ( SELECT league_members.league_id
@@ -228,9 +213,6 @@ CREATE POLICY "members can manage own watchlist" ON public.uff_watchlist FOR ALL
   WHERE (league_members.user_id = auth.uid())))) WITH CHECK ((member_id IN ( SELECT league_members.id
    FROM league_members
   WHERE (league_members.user_id = auth.uid()))));
-CREATE POLICY "league members can insert vampire bites" ON public.vampire_bites FOR INSERT TO public WITH CHECK ((EXISTS ( SELECT 1
-   FROM league_members
-  WHERE ((league_members.league_id = vampire_bites.league_id) AND (league_members.user_id = auth.uid())))));
 CREATE POLICY "league members can view vampire bites" ON public.vampire_bites FOR SELECT TO public USING ((EXISTS ( SELECT 1
    FROM league_members
   WHERE ((league_members.league_id = vampire_bites.league_id) AND (league_members.user_id = auth.uid())))));

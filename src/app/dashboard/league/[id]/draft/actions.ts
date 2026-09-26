@@ -254,19 +254,16 @@ export async function assignVampireBite(params: {
     return { error: "That player is protected by Shadow Guard — the bite fizzles. Choose a different target." };
   }
 
-  const { error } = await supabase.from("vampire_bites").insert({
-    league_id: leagueId,
-    biting_member_id: member.id,
-    target_player_id: targetPlayerId,
-    round,
+  // The bite is recorded by assign_vampire_bite, which re-checks every rule above in
+  // one transaction as the function owner (OPEN-LOOPS #77, audit A1-07); the table no
+  // longer accepts a direct insert from a manager.
+  const { error } = await supabase.rpc("assign_vampire_bite", {
+    p_league_id: leagueId,
+    p_target_player_id: targetPlayerId,
+    p_round: round,
   });
 
-  if (error) {
-    if (error.code === "23505") {
-      return { error: "That player has already been bitten. Choose someone else." };
-    }
-    return { error: error.message };
-  }
+  if (error) return { error: error.message };
 
   revalidatePath(`/dashboard/league/${leagueId}/draft`);
   return {};
@@ -401,19 +398,16 @@ export async function postDraftVampireBite(params: {
     return { error: "That player is protected by Shadow Guard — choose a different target." };
   }
 
-  const { error } = await supabase.from("vampire_bites").insert({
-    league_id: leagueId,
-    biting_member_id: member.id,
-    target_player_id: targetPlayerId,
-    round: vb.round,
+  // The bite is recorded by assign_vampire_bite, which re-checks every rule above in
+  // one transaction as the function owner (OPEN-LOOPS #77, audit A1-07); the table no
+  // longer accepts a direct insert from a manager.
+  const { error } = await supabase.rpc("assign_vampire_bite", {
+    p_league_id: leagueId,
+    p_target_player_id: targetPlayerId,
+    p_round: null,
   });
 
-  if (error) {
-    if (error.code === "23505") {
-      return { error: "That player has already been bitten. Choose someone else." };
-    }
-    return { error: error.message };
-  }
+  if (error) return { error: error.message };
 
   revalidatePath(`/dashboard/league/${leagueId}/draft`);
   return {};
