@@ -1,5 +1,7 @@
 -- UFF RLS policy snapshot: every policy in schema public (project synfuvgdamhjboobjmls)
 -- Generated 2026-08-17. NOT a migration — disaster-recovery source of truth (audit item 13).
+-- Hand-aligned 2026-09-26 with 20260926170000 (#77 / A1-02): the two player_draft_powers write
+-- policies; every other policy is as generated.
 -- 67 policies (65 @ 2026-08-17 + 2 push-subscription policies @ 2026-08-24).
 
 CREATE POLICY "authenticated read draft_power_assignments" ON public.draft_power_assignments FOR SELECT TO authenticated USING (true);
@@ -38,14 +40,72 @@ CREATE POLICY "public read leagues" ON public.leagues FOR SELECT TO public USING
 CREATE POLICY "public read matchups" ON public.matchups FOR SELECT TO public USING (true);
 CREATE POLICY "public read nfl_teams" ON public.nfl_teams FOR SELECT TO public USING (true);
 CREATE POLICY "public read oracle_recaps" ON public.oracle_recaps FOR SELECT TO public USING (true);
-CREATE POLICY "league members can insert player powers" ON public.player_draft_powers FOR INSERT TO public WITH CHECK ((EXISTS ( SELECT 1
-   FROM league_members
-  WHERE ((league_members.league_id = player_draft_powers.league_id) AND (league_members.user_id = auth.uid())))));
-CREATE POLICY "league members can update player powers" ON public.player_draft_powers FOR UPDATE TO public USING ((EXISTS ( SELECT 1
-   FROM league_members
-  WHERE ((league_members.league_id = player_draft_powers.league_id) AND (league_members.user_id = auth.uid()))))) WITH CHECK ((EXISTS ( SELECT 1
-   FROM league_members
-  WHERE ((league_members.league_id = player_draft_powers.league_id) AND (league_members.user_id = auth.uid())))));
+CREATE POLICY "manager attaches own dealt power to own pick" ON public.player_draft_powers
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    drafted_by_user_id = (SELECT auth.uid())
+    AND restored_at IS NULL AND frozen_score IS NULL AND last_healthy_score IS NULL
+    AND prev_healthy_score IS NULL AND freeze_broken_at IS NULL
+    -- the player is this manager's own pick, in this round
+    AND EXISTS (
+      SELECT 1 FROM public.uff_draft_picks dp
+      JOIN public.league_members lm ON lm.id = dp.member_id
+      WHERE dp.league_id = player_draft_powers.league_id
+        AND dp.player_id = player_draft_powers.player_id
+        AND dp.round     = player_draft_powers.round
+        AND lm.user_id   = (SELECT auth.uid())
+    )
+    -- and still on this manager's active roster
+    AND EXISTS (
+      SELECT 1 FROM public.uff_roster_players rp
+      JOIN public.league_members lm ON lm.id = rp.member_id
+      WHERE rp.league_id  = player_draft_powers.league_id
+        AND rp.player_id  = player_draft_powers.player_id
+        AND rp.dropped_at IS NULL
+        AND lm.user_id    = (SELECT auth.uid())
+    )
+    -- and the power is the one dealt to this manager for this round, attachable under the
+    -- draft rules (mirrors force_autopick and commissioner_draft_pick exactly)
+    AND EXISTS (
+      SELECT 1 FROM public.draft_power_assignments dpa
+      JOIN public.draft_powers   dpw ON dpw.id = dpa.power_id
+      JOIN public.league_members lm  ON lm.id  = dpa.member_id
+      JOIN public.players        p   ON p.id   = player_draft_powers.player_id
+      WHERE dpa.league_id = player_draft_powers.league_id
+        AND dpa.round     = player_draft_powers.round
+        AND lm.user_id    = (SELECT auth.uid())
+        AND lower(regexp_replace(dpw.name, '[^a-zA-Z0-9]+', '_', 'g')) = player_draft_powers.power
+        AND dpw.name NOT IN ('Vampire Bite', 'Foresight Coin', 'Draft Heist')
+        AND dpw.category IS DISTINCT FROM 'draft_mechanic'
+        AND (   dpw.tied_position IS NULL
+             OR dpw.tied_position = 'ANY'
+             OR (dpw.tied_position = 'WR/RB/TE' AND p.position IN ('WR', 'RB', 'TE'))
+             OR (dpw.tied_position = 'D/ST'     AND p.position = 'DEF')
+             OR  dpw.tied_position = p.position)
+    )
+  );
+CREATE POLICY "roster owner can update the power row" ON public.player_draft_powers
+  FOR UPDATE TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.uff_roster_players rp
+      JOIN public.league_members lm ON lm.id = rp.member_id
+      WHERE rp.league_id  = player_draft_powers.league_id
+        AND rp.player_id  = player_draft_powers.player_id
+        AND rp.dropped_at IS NULL
+        AND lm.user_id    = (SELECT auth.uid())
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.uff_roster_players rp
+      JOIN public.league_members lm ON lm.id = rp.member_id
+      WHERE rp.league_id  = player_draft_powers.league_id
+        AND rp.player_id  = player_draft_powers.player_id
+        AND rp.dropped_at IS NULL
+        AND lm.user_id    = (SELECT auth.uid())
+    )
+  );
 CREATE POLICY "league members can view player powers" ON public.player_draft_powers FOR SELECT TO public USING ((EXISTS ( SELECT 1
    FROM league_members
   WHERE ((league_members.league_id = player_draft_powers.league_id) AND (league_members.user_id = auth.uid())))));

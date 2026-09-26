@@ -3188,3 +3188,34 @@ BEGIN
   RETURN v_inserted > 0;
 END;
 $function$;
+
+-- Added 2026-09-26 by 20260926170000 (#77 / A1-02).
+CREATE OR REPLACE FUNCTION public.player_draft_powers_guard_manager_updates()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  -- The app client arrives as 'authenticated' (or 'anon'). SECURITY DEFINER functions run
+  -- as postgres and the scoring engine as service_role; both pass through untouched.
+  IF current_user IN ('authenticated', 'anon') THEN
+    IF NEW.league_id          IS DISTINCT FROM OLD.league_id
+    OR NEW.player_id          IS DISTINCT FROM OLD.player_id
+    OR NEW.power              IS DISTINCT FROM OLD.power
+    OR NEW.round              IS DISTINCT FROM OLD.round
+    OR NEW.drafted_by_user_id IS DISTINCT FROM OLD.drafted_by_user_id
+    OR NEW.created_at         IS DISTINCT FROM OLD.created_at
+    OR NEW.frozen_score       IS DISTINCT FROM OLD.frozen_score
+    OR NEW.last_healthy_score IS DISTINCT FROM OLD.last_healthy_score
+    OR NEW.prev_healthy_score IS DISTINCT FROM OLD.prev_healthy_score
+    OR NEW.freeze_broken_at   IS DISTINCT FROM OLD.freeze_broken_at
+    THEN
+      RAISE EXCEPTION 'A manager can only restore a power; everything else on this row is set by the draft and the scoring engine';
+    END IF;
+    IF OLD.restored_at IS NOT NULL AND NEW.restored_at IS DISTINCT FROM OLD.restored_at THEN
+      RAISE EXCEPTION 'A restored power stays restored';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$function$
+;
