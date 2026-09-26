@@ -2446,6 +2446,12 @@ DECLARE
   v_player_pos text;
   v_slot_base  text;
   v_eligible   text[];
+  v_season     int;
+  v_old        jsonb;
+  v_new        jsonb;
+  v_out_count  int := 0;
+  v_out_player text;
+  v_qf_id      uuid;
 BEGIN
   IF auth.uid() IS NOT NULL AND auth.uid() <> p_user_id THEN
     RAISE EXCEPTION 'You can only act for your own team';
@@ -2497,6 +2503,72 @@ BEGIN
       RAISE EXCEPTION 'Position % cannot be placed in % slot', v_player_pos, v_slot;
     END IF;
   END LOOP;
+
+  -- A finalized week is untouchable (matchup-breakdown and Story Engine feats read it)
+  IF EXISTS (
+    SELECT 1 FROM public.uff_matchups m
+    WHERE m.league_id = p_league_id AND m.member_id = v_member_id
+      AND m.week = p_week::smallint AND m.is_complete
+  ) THEN
+    RAISE EXCEPTION 'Week % is final and its lineup can no longer be changed', p_week;
+  END IF;
+
+  -- Per-player game-time lock: a player is locked once his team's game this week has
+  -- kicked off. The app applies the same rule for the UI; this is the backstop for a
+  -- direct call, and the place Quick Feet is spent.
+  SELECT season::int INTO v_season FROM public.uff_leagues WHERE id = p_league_id;
+
+  SELECT coalesce(jsonb_object_agg(slot, player_id), '{}'::jsonb) INTO v_old
+    FROM public.uff_lineups WHERE member_id = v_member_id AND week = p_week::smallint;
+  SELECT coalesce(jsonb_object_agg(r->>'slot', r->>'player_id'), '{}'::jsonb) INTO v_new
+    FROM jsonb_array_elements(p_slots) AS r;
+
+  -- 1. A locked player who was not already starting cannot come in — Quick Feet or not:
+  --    the late injury swap's replacement must not have played yet.
+  FOR v_player_id IN SELECT DISTINCT n.value FROM jsonb_each_text(v_new) AS n LOOP
+    IF NOT EXISTS (SELECT 1 FROM jsonb_each_text(v_old) AS o WHERE o.value = v_player_id)
+       AND EXISTS (
+         SELECT 1 FROM public.uff_game_schedule g
+         JOIN public.players p ON p.id = v_player_id
+         WHERE g.season = v_season AND g.week = p_week AND g.team = p.team
+           AND g.kickoff_utc <= now()
+       )
+    THEN
+      RAISE EXCEPTION 'Player % has already kicked off this week and cannot be started', v_player_id;
+    END IF;
+  END LOOP;
+
+  -- 2. A locked starter can be taken out only with Quick Feet, once per week.
+  FOR v_player_id IN SELECT DISTINCT o.value FROM jsonb_each_text(v_old) AS o LOOP
+    IF NOT EXISTS (SELECT 1 FROM jsonb_each_text(v_new) AS n WHERE n.value = v_player_id)
+       AND EXISTS (
+         SELECT 1 FROM public.uff_game_schedule g
+         JOIN public.players p ON p.id = v_player_id
+         WHERE g.season = v_season AND g.week = p_week AND g.team = p.team
+           AND g.kickoff_utc <= now()
+       )
+    THEN
+      v_out_count  := v_out_count + 1;
+      v_out_player := v_player_id;
+    END IF;
+  END LOOP;
+
+  IF v_out_count > 1 THEN
+    RAISE EXCEPTION 'Quick Feet lets one locked player out per week; this save takes out %', v_out_count;
+  ELSIF v_out_count = 1 THEN
+    SELECT id INTO v_qf_id
+      FROM public.weekly_token_assignments
+     WHERE league_id = p_league_id AND member_id = v_member_id
+       AND week = p_week::smallint AND token_id = 13 AND status = 'pending'
+     FOR UPDATE;
+    IF v_qf_id IS NULL THEN
+      RAISE EXCEPTION 'Player % has already kicked off this week and is locked in your lineup', v_out_player;
+    END IF;
+    -- Spent here, in the same transaction as the save (audit A2-06)
+    UPDATE public.weekly_token_assignments
+       SET status = 'used', used_at = now()
+     WHERE id = v_qf_id;
+  END IF;
 
   -- Atomic replace
   DELETE FROM public.uff_lineups

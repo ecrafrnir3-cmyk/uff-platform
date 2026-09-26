@@ -71,7 +71,7 @@ export async function setLineup(formData: FormData) {
       .eq("user_id", user.id)
       .maybeSingle();
 
-    let currentLineup: Record<string, string> = {};
+    const currentLineup: Record<string, string> = {};
 
     if (memberRow?.id) {
       const [{ data: rows }, { data: qfToken }] = await Promise.all([
@@ -95,33 +95,31 @@ export async function setLineup(formData: FormData) {
       quickFeetRowId = qfToken?.id ?? null;
     }
 
-    // Build merged lineup. Quick Feet allows one locked-slot change through.
+    // Build merged lineup. The rule (Nate, 2026-09-26, the rulebook reading): Quick Feet
+    // is a late injury swap — it lets ONE locked starter out per week, and the player
+    // coming in must not have kicked off. A locked starter may still change slots. The
+    // database enforces the same rule inside set_lineup and spends the token there.
     const merged: Record<string, string> = { ...newAssignments };
+    const wasStarting = new Set(Object.values(currentLineup));
 
-    // Re-lock: any slot whose current occupant has kicked off keeps them there
+    // Re-lock: a locked starter who is being taken OUT of the lineup (not just moved)
+    // needs Quick Feet; otherwise he stays in his slot.
     for (const [slot, pid] of Object.entries(currentLineup)) {
-      if (isLocked(pid)) {
-        const newPid = newAssignments[slot];
-        if (newPid !== pid) {
-          if (quickFeetRowId && !quickFeetConsumed) {
-            quickFeetConsumed = true;
-          } else {
-            merged[slot] = pid;
-            refusedSlots.push(slot);
-          }
-        }
+      if (!isLocked(pid)) continue;
+      if (Object.values(newAssignments).includes(pid)) continue; // still starting, maybe elsewhere
+      if (quickFeetRowId && !quickFeetConsumed) {
+        quickFeetConsumed = true;
+      } else {
+        merged[slot] = pid;
+        refusedSlots.push(slot);
       }
     }
-    // A locked player cannot move INTO a slot he did not already hold. Put that
-    // slot's previous occupant back rather than deleting the slot: deleting it
-    // left the manager starting eight players, scoring 0 in the ninth, under a
-    // message that said "saved".
+    // A locked player who was not starting cannot come IN — Quick Feet or not. Put that
+    // slot's previous occupant back rather than deleting the slot: deleting it left the
+    // manager starting eight players, scoring 0 in the ninth, under a message that said
+    // "saved". A locked starter changing slots is fine: he is starting either way.
     for (const [slot, pid] of Object.entries({ ...merged })) {
-      if (isLocked(pid) && currentLineup[slot] !== pid) {
-        if (quickFeetRowId && !quickFeetConsumed) {
-          quickFeetConsumed = true;
-          continue;
-        }
+      if (isLocked(pid) && currentLineup[slot] !== pid && !wasStarting.has(pid)) {
         const previous = currentLineup[slot];
         const previousStartingElsewhere = previous
           ? Object.entries(merged).some(([s, p]) => s !== slot && p === previous)
@@ -156,13 +154,9 @@ export async function setLineup(formData: FormData) {
     );
   }
 
-  // Quick Feet is spent only now that the lineup actually saved.
-  if (quickFeetConsumed && quickFeetRowId) {
-    await supabase
-      .from("weekly_token_assignments")
-      .update({ status: "used", used_at: new Date().toISOString() })
-      .eq("id", quickFeetRowId);
-  }
+  // Quick Feet is spent inside set_lineup, in the same transaction as the save
+  // (OPEN-LOOPS #77, audit A2-06); the token table no longer accepts a status
+  // update from the app. quickFeetConsumed above only shapes the UI decision.
 
   revalidatePath(`/dashboard/league/${leagueId}/roster`);
   revalidatePath(`/dashboard/league/${leagueId}/matchups`);
