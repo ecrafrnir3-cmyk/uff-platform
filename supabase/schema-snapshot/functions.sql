@@ -3,6 +3,8 @@
 -- disaster-recovery source of truth so the game rules live in git (audit item 13).
 -- Hand-aligned 2026-09-26 (not regenerated) with 20260924150000, 20260924170000 (#55)
 -- and 20260926120000 (#72); every other function is as generated.
+-- Hand-aligned again 2026-09-26 with 20260926160000 (#77): the six fail-closed bodies, taken
+-- from live pg_get_functiondef (commissioner_draft_pick had been stale since 2026-09-07).
 
 CREATE OR REPLACE FUNCTION public.add_and_drop_player(p_league_id uuid, p_user_id uuid, p_add_player_id text, p_drop_player_id text, p_week smallint DEFAULT NULL::smallint)
  RETURNS void
@@ -1060,11 +1062,7 @@ BEGIN
    WHERE id = p_league_id;
 
   IF NOT FOUND THEN RAISE EXCEPTION 'League not found'; END IF;
-  IF auth.uid() IS NOT NULL THEN
-    IF auth.uid() != v_commissioner_id THEN
-      RAISE EXCEPTION 'Only the commissioner can finalize a week';
-    END IF;
-  ELSIF v_commissioner_id != p_user_id THEN
+  IF auth.uid() IS NULL OR auth.uid() <> v_commissioner_id THEN
     RAISE EXCEPTION 'Only the commissioner can finalize a week';
   END IF;
 
@@ -1573,9 +1571,9 @@ DECLARE
   v_current_member_id uuid;
   v_already_picked  int;
 BEGIN
-  -- Session-verified identity: a direct RPC call cannot pick as someone else.
-  -- Service-role callers (no auth.uid()) keep the explicit-id path.
-  IF auth.uid() IS NOT NULL AND auth.uid() != p_user_id THEN
+  -- Session-verified identity, fail closed: a direct RPC call cannot pick as
+  -- someone else, and a caller with no session is refused (OPEN-LOOPS #77).
+  IF auth.uid() IS NULL OR auth.uid() <> p_user_id THEN
     RAISE EXCEPTION 'You can only make picks as yourself';
   END IF;
 
@@ -2166,7 +2164,7 @@ BEGIN
     RAISE EXCEPTION 'League not found';
   END IF;
 
-  IF v_commissioner_id != p_user_id THEN
+  IF auth.uid() IS NULL OR auth.uid() <> v_commissioner_id THEN
     RAISE EXCEPTION 'Only the commissioner can randomize factions';
   END IF;
 
@@ -2232,6 +2230,7 @@ CREATE OR REPLACE FUNCTION public.reset_waiver_priority(p_league_id uuid, p_seas
  RETURNS void
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public'
 AS $function$
 DECLARE
   v_commissioner_id uuid;
@@ -2240,7 +2239,7 @@ DECLARE
 BEGIN
   SELECT commissioner_id INTO v_commissioner_id FROM uff_leagues WHERE id = p_league_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'League not found'; END IF;
-  IF auth.uid() IS NOT NULL AND auth.uid() != v_commissioner_id THEN
+  IF auth.uid() IS NULL OR auth.uid() <> v_commissioner_id THEN
     RAISE EXCEPTION 'Only the commissioner can reset waiver priority';
   END IF;
 
@@ -2594,11 +2593,7 @@ BEGIN
   FROM uff_leagues WHERE id = p_league_id;
 
   IF NOT FOUND THEN RAISE EXCEPTION 'League not found'; END IF;
-  IF auth.uid() IS NOT NULL THEN
-    IF auth.uid() != v_commissioner_id THEN
-      RAISE EXCEPTION 'Only the commissioner can start the draft';
-    END IF;
-  ELSIF v_commissioner_id != p_user_id THEN
+  IF auth.uid() IS NULL OR auth.uid() <> v_commissioner_id THEN
     RAISE EXCEPTION 'Only the commissioner can start the draft';
   END IF;
   IF v_draft_status != 'not_started' THEN RAISE EXCEPTION 'Draft has already started'; END IF;
@@ -2948,6 +2943,7 @@ DECLARE
   v_slot            int;
   v_member_id       uuid;
   v_already         int;
+  -- power-attach locals (same rules as force_autopick)
   v_pw_name     text;
   v_pw_cat      text;
   v_pw_tied     text;
@@ -2962,7 +2958,9 @@ BEGIN
 
   IF NOT FOUND THEN RAISE EXCEPTION 'League not found'; END IF;
 
-  IF auth.uid() IS NOT NULL AND auth.uid() != v_commissioner_id THEN
+  -- Commissioner-only, fail closed: a caller with no session (anon, or the SQL
+  -- console as postgres) is refused, never waved through (OPEN-LOOPS #77).
+  IF auth.uid() IS NULL OR auth.uid() <> v_commissioner_id THEN
     RAISE EXCEPTION 'Only the commissioner can draft for another manager';
   END IF;
 
@@ -2980,6 +2978,8 @@ BEGIN
   v_member_id := (v_draft_order->>(v_slot - 1))::uuid;
   IF v_member_id IS NULL THEN RAISE EXCEPTION 'No member on the clock'; END IF;
 
+  -- The commissioner can only pick for the manager who is actually on the clock,
+  -- so a proxy pick can never jump the draft order.
   IF v_member_id != p_target_member_id THEN
     RAISE EXCEPTION 'That manager is not on the clock';
   END IF;
@@ -2996,6 +2996,11 @@ BEGIN
   DELETE FROM draft_queue
   WHERE member_id = v_member_id AND league_id = p_league_id AND player_id = p_player_id;
 
+  -- Attach the round's draft power to the picked player, crediting the ON-THE-CLOCK
+  -- member (the one being proxy-drafted for) — identical rules to force_autopick:
+  -- skip interactive powers (Vampire Bite / Foresight Coin / Draft Heist) and
+  -- draft_mechanic powers; a position-tied power attaches only on a matching
+  -- position (else it fizzles); never overwrite another manager's power.
   SELECT dp.name, dp.category, dp.tied_position
     INTO v_pw_name, v_pw_cat, v_pw_tied
   FROM draft_power_assignments dpa
