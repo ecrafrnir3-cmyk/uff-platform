@@ -1,17 +1,24 @@
-# 🛑 UNSENT DRAFT — league announcement, written 2026-09-24
+# ✅ SENT — league announcement, 2026-09-26
 
-**Status: NOT SENT.** Drafted at the close of the 2026-09-24 REVEILLE session, for Nate to
-send (or edit first) as the Supreme Commissioner. Nate chose option 1 of `OPEN-LOOPS.md` #65 —
-recompute the war front from the real games — and option 1 came with the condition that the
-change be announced rather than made quietly. This is that announcement.
+**Status: SENT 2026-09-26** to all 14 managers, individually (the Gmail tool rejects `bcc` as both a
+comma-string and an array, and `to` must be a single raw address). Written 2026-09-24 and held until
+Nate said send. Sent from Nate's account, signed **The Supreme Commissioner**.
 
-Send to all 14 managers. **Individually** — the Gmail tool rejects `bcc` as both a
-comma-string and an array, and `to` must be a single raw address.
+Why it exists: Nate chose option 1 of `OPEN-LOOPS.md` #65 — recompute the war front from the real
+games — and option 1 carried the condition that the change be announced rather than made quietly,
+because managers had been shown the Dominion ahead for a week.
 
-Facts in here that were verified before it was written: the stored front read −2; the real
-cross-faction record is 3–3; the four interloper rows were the entire discrepancy; records,
-standings, points and Restore Chips were not touched by the recompute.
+**✍️ Re-checked against LIVE data immediately before sending (2026-09-26), not just before writing:**
+`alliance_war` still held only weeks 1-2 (front **+1** then **0**) and there were **no week-3 story
+rows**, so "it says 0 now" and "the line is where it started" were both still true at send time.
 
+**One line was corrected before sending.** The draft closed with *"Week 3 kicks off tonight"* — true
+on the 24th, stale by the 26th. At send time Week 3 was mid-flight: 0 of 14 matchups complete, points
+2.00-41.00, Thursday played and the Sunday slate still ahead. The closing line says that instead.
+
+Recipients (14): Angel in Disguise, Bengals Heroes, Blake's Bad Boys, BoneSnapp, Creedontop,
+Elizabeth, Gridiron Guardian, Pillars of Light, Reveille, Thanos, The Blessed Defender,
+The Dark Night, The Fratelli's, Tittie twisters.
 ---
 
 SUBJECT: The front moved back to zero — and here's why
@@ -62,6 +69,7 @@ Two weeks of everything you've got, and the line is where it started. Both
 sides threw their best and neither one gained a yard. That's not a
 correction, that's a deadlock — and it's the truer story anyway.
 
-Week 3 kicks off tonight. Somebody go take some ground.
+Week 3 is already underway - Thursday is in the books and the Sunday slate is
+still ahead of you. Somebody go take some ground.
 
 — The Supreme Commissioner
