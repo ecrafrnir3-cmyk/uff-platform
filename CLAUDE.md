@@ -274,10 +274,11 @@ Muted text: #d4d4e8
 
 ## State stamp
 
-Stamped 2026-09-25 from the repository alone. Full history is in `docs/session-log.md`; the plan of record is `docs/draft-fix-plan-2026-09-07.md`.
+Stamped 2026-09-26 at the close of the audit day (Session 41 in `docs/session-log.md`). The plan of record is `docs/draft-fix-plan-2026-09-07.md`.
 
-- Newest migration: `supabase/migrations/20260924190000_lineup_follows_the_roster.sql` — its header says it enforces "a player who is not on your active roster is not in your lineup" once, in a trigger, instead of in every function that moves a roster row.
-- Newest commit on `main`: `Correct the #64 reconciliation numbers in scoring.ts (14/14, not 13/14)`.
+- Newest migration: `supabase/migrations/20260926233000_rate_limit_hit_service_role_only.sql`. The eleven migrations dated 2026-09-26 are all applied live (Session 41 lists them).
+- Newest code commit on `main`: `a808395` — `#77 audit: the remaining 25 findings … plus a schema snapshot generator`.
+- `supabase/schema-snapshot/` is generated from the live database by `node scripts/snapshot-schema.mjs`; regenerate and commit after every migration.
 
 Production state (what is live, what is scored, what is open) is tracked outside this repo in One Mind's `OPEN-LOOPS.md` and `MEMORY.md`, which a cloud session cannot see. Do not infer production state from this file.
 
@@ -290,6 +291,9 @@ Production state (what is live, what is scored, what is open) is tracked outside
 - A guard written `IF auth.uid() IS NOT NULL THEN …` opens the function to anonymous callers. Guards fail closed.
 - Dollar-quote tags must pair. `ON CONFLICT` needs a live unique index. New tables are born with RLS off; turn it on in the same migration.
 - The repository is public.
+- Run `node scripts/snapshot-schema.mjs` after every migration and commit the four snapshot files; never hand-edit them.
+- Joining a league, lineups, trades, bites, chips and the trade block go through RPCs (`join_league`, `set_lineup`, `propose_trade`, `assign_vampire_bite`, `use_restore_chip`, `set_trade_block`); direct writes by the app roles are revoked or limited to the owner's rows by policy. Every new function: `REVOKE EXECUTE … FROM PUBLIC, anon` and a guard of the form `IF auth.uid() IS NULL OR …`.
+- The tables `leagues`, `matchups`, `rosters`, `oracle_recaps` and `sleeper_users` no longer exist (empty legacy twins, dropped 2026-09-26). The live tables are the `uff_`-prefixed ones plus `league_members` and the power/token tables.
 
 ## graphify
 
