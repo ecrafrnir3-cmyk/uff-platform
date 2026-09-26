@@ -6,10 +6,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { sendPushToUser } from "@/lib/push";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { validateSubscription, ENDPOINT_MAX } from "@/lib/push-validate";
+import { persistPushSubscription } from "@/lib/push-store";
 
 // Keep at most this many devices per user; prune the oldest beyond it so no
 // single account can accumulate an unbounded fan-out target set.
-const MAX_SUBS_PER_USER = 10;
 
 /**
  * Persist (or refresh) a device's push subscription for the signed-in user.
@@ -27,41 +27,14 @@ export async function savePushSubscription(sub: {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated." };
 
-  // Rate-limit the write path itself so it can't be scripted into a fan-out
-  // amplifier (sendPushToUser iterates every row).
-  const { allowed } = checkRateLimit(`${user.id}:push-save`, 10);
-  if (!allowed) return { error: "Too many attempts — try again in a minute." };
-
   const v = validateSubscription(sub);
   if (!v.ok) return { error: v.error };
 
   const userAgent = (await headers()).get("user-agent")?.slice(0, 512) ?? null;
 
-  const admin = createAdminClient();
-  const { error } = await admin.from("uff_push_subscriptions").upsert(
-    {
-      user_id: user.id,
-      endpoint: v.value.endpoint,
-      p256dh: v.value.p256dh,
-      auth: v.value.auth,
-      user_agent: userAgent,
-    },
-    { onConflict: "endpoint" }
-  );
-  if (error) return { error: error.message };
-
-  // Enforce the per-user cap: keep the newest MAX, delete the rest.
-  const { data: rows } = await admin
-    .from("uff_push_subscriptions")
-    .select("id")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
-  if (rows && rows.length > MAX_SUBS_PER_USER) {
-    const overflow = rows.slice(MAX_SUBS_PER_USER).map((r) => r.id as string);
-    await admin.from("uff_push_subscriptions").delete().in("id", overflow);
-  }
-
-  return {};
+  // Rate limit, upsert and the per-user device cap live in one place shared with the
+  // service worker's re-subscribe route (audit A3-09).
+  return persistPushSubscription(user.id, v.value, userAgent);
 }
 
 /** Remove this device's subscription for the signed-in user. */
@@ -96,7 +69,7 @@ export async function sendTestPush(): Promise<{ error?: string }> {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Not authenticated." };
 
-  const { allowed } = checkRateLimit(`${user.id}:push-test`, 5);
+  const { allowed } = await checkRateLimit(`${user.id}:push-test`, 5);
   if (!allowed) return { error: "Slow down — try again in a minute." };
 
   const result = await sendPushToUser(user.id, {

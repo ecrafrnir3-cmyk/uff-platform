@@ -36,9 +36,9 @@ function FactionTag({ faction }: { faction: "hero" | "villain" | null }) {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; code?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, code } = await searchParams;
   const supabase = await createClient();
 
   const {
@@ -243,6 +243,7 @@ export default async function DashboardPage({
                 name="joinCode"
                 type="text"
                 required
+                defaultValue={(code ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12)}
                 placeholder="Join code (e.g. AB12CD)"
                 className="rounded-md border px-3 py-2 text-sm uppercase"
                 style={{ borderColor: "#2a2a40", background: "#15151f", color: "#f4f4f8" }}

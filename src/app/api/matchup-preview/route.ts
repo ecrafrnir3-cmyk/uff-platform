@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
     if (!me) return NextResponse.json({ error: "Not a member" }, { status: 403 });
 
-    const rl = checkRateLimit(`${user.id}:matchup-preview`, 5);
+    const rl = await checkRateLimit(`${user.id}:matchup-preview`, 5);
     if (!rl.allowed) return NextResponse.json({ error: "Rate limit exceeded — try again in a minute." }, { status: 429 });
 
     // Fetch matchup rows

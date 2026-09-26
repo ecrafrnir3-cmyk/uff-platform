@@ -2,6 +2,17 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 const FROM = process.env.EMAIL_FROM ?? "UFF <onboarding@resend.dev>";
 const RESEND_URL = "https://api.resend.com/emails";
+// One origin for every link in every template (audit A3-11); the brand is playuff.com.
+const APP_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "https://playuff.com").replace(/\/$/, "");
+const APP_HOST = APP_URL.replace(/^https?:\/\//, "");
+// Daily send budget (audit A3-04): the provider's free tier is 100/day and Supabase auth
+// mail shares it, so low-priority fan-out (newsletters, waiver results, announcements)
+// stops once fewer than EMAIL_LOW_PRIORITY_FLOOR sends are left; normal mail (invites,
+// trade notices, on-the-clock) can use the rest.
+const EMAIL_DAILY_BUDGET = Number(process.env.EMAIL_DAILY_BUDGET ?? 90);
+const EMAIL_LOW_PRIORITY_FLOOR = 20;
+
+export type SendEmailResult = { ok: boolean; status: number; reason?: string };
 
 // User-controlled strings (team names, league names, veto reasons, announcement
 // text) are interpolated into email HTML — unescaped, a member could send
@@ -19,16 +30,39 @@ export async function sendEmail({
   to,
   subject,
   html,
+  priority = "normal",
 }: {
   to: string | string[];
   subject: string;
   html: string;
-}) {
+  /** "low" = fan-out that may be dropped when the daily budget is nearly spent */
+  priority?: "normal" | "low";
+}): Promise<SendEmailResult> {
   const key = process.env.RESEND_API_KEY;
   if (!key) {
     console.warn("[email] RESEND_API_KEY not set — skipping");
-    return;
+    return { ok: false, status: 0, reason: "no api key" };
   }
+
+  // Reserve today's sends before calling the provider (audit A3-04). If the counter itself
+  // is unreachable the send proceeds — the budget is a guard, not a dependency.
+  const recipients = Array.isArray(to) ? to.length : 1;
+  try {
+    const admin = createAdminClient();
+    const { data: granted, error } = await admin.rpc("email_budget_reserve", {
+      p_count: recipients,
+      p_limit: EMAIL_DAILY_BUDGET,
+      p_floor: priority === "low" ? EMAIL_LOW_PRIORITY_FLOOR : 0,
+    });
+    if (!error && Number(granted ?? 0) < recipients) {
+      console.warn(`[email] daily budget reached (${EMAIL_DAILY_BUDGET}/day) — dropping ${priority} mail: ${subject}`);
+      return { ok: false, status: 0, reason: "daily email budget" };
+    }
+    if (error) console.error("[email] budget counter unavailable:", error.message);
+  } catch (err) {
+    console.error("[email] budget check threw:", err);
+  }
+
   try {
     const res = await fetch(RESEND_URL, {
       method: "POST",
@@ -41,10 +75,13 @@ export async function sendEmail({
     if (!res.ok) {
       const text = await res.text();
       console.error("[email] Resend API error:", res.status, text);
+      return { ok: false, status: res.status, reason: text.slice(0, 200) };
     }
+    return { ok: true, status: res.status };
   } catch (err) {
     // Email failures must never crash the calling action
     console.error("[email] send failed:", err);
+    return { ok: false, status: 0, reason: String(err) };
   }
 }
 
@@ -108,7 +145,7 @@ export function tradeProposedHtml({
   receiverPlayers: string[];
   aiAnalysis?: string;
 }) {
-  const url = `https://uff-platform.vercel.app/dashboard/league/${leagueId}/trade`;
+  const url = `${APP_URL}/dashboard/league/${leagueId}/trade`;
   const oracleBlock = aiAnalysis
     ? `<div style="margin:20px 0;padding:14px 16px;border-left:3px solid #FFD700;background:rgba(255,215,0,0.05);">
         <p style="margin:0 0 6px;font-size:11px;font-weight:700;letter-spacing:0.1em;color:#FFD700;text-transform:uppercase;">🔮 Oracle&apos;s Trade Analysis</p>
@@ -140,7 +177,7 @@ export function tradeRespondedHtml({
   accepted: boolean;
   pendingReview?: boolean;
 }) {
-  const url = `https://uff-platform.vercel.app/dashboard/league/${leagueId}/trade`;
+  const url = `${APP_URL}/dashboard/league/${leagueId}/trade`;
   const color = accepted ? "#3DDC84" : "#CC0000";
   const status = pendingReview
     ? "accepted (pending commissioner review)"
@@ -164,7 +201,7 @@ export function tradeVetoedHtml({
   leagueName: string;
   reason?: string | null;
 }) {
-  const url = `https://uff-platform.vercel.app/dashboard/league/${leagueId}/trade`;
+  const url = `${APP_URL}/dashboard/league/${leagueId}/trade`;
   return `<div style="${baseStyle}">
     <p style="${goldStyle}">⚡ Ultimate Fantasy Football</p>
     <h2 style="color:#CC0000;margin:8px 0 16px;">Trade Vetoed</h2>
@@ -188,7 +225,7 @@ export function waiverResultsHtml({
   awarded: { playerName: string; bidAmount: number }[];
   rejected: { playerName: string; bidAmount: number }[];
 }) {
-  const url = `https://uff-platform.vercel.app/dashboard/league/${leagueId}/free-agents`;
+  const url = `${APP_URL}/dashboard/league/${leagueId}/free-agents`;
   const awardedRows = awarded.map(
     (b) => `<tr><td style="padding:6px 0;color:#3DDC84;font-weight:700;">✓ Won</td><td style="padding:6px 12px;color:#f4f4f8;">${esc(b.playerName)}</td><td style="padding:6px 0;color:#f4f4f8;text-align:right;">$${b.bidAmount}</td></tr>`
   ).join("");
@@ -219,7 +256,7 @@ export function newsletterHtml({
   week: number;
   content: string;
 }) {
-  const url = `https://uff-platform.vercel.app/dashboard/league/${leagueId}`;
+  const url = `${APP_URL}/dashboard/league/${leagueId}`;
   const body = content
     .split(/\n\n+/)
     .map((p) => `<p style="line-height:1.7;margin:0 0 16px;">${esc(p.trim())}</p>`)
@@ -245,7 +282,7 @@ export function announcementHtml({
   title: string;
   body: string;
 }) {
-  const url = `https://uff-platform.vercel.app/dashboard/league/${leagueId}/announcements`;
+  const url = `${APP_URL}/dashboard/league/${leagueId}/announcements`;
   const bodyHtml = body
     .split(/\n\n+/)
     .map((p) => `<p style="line-height:1.7;margin:0 0 14px;">${esc(p.trim())}</p>`)
@@ -283,7 +320,7 @@ export function onTheClockHtml({
     <div style="border: 1px solid #2a2a40; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
       <p style="margin: 0 0 4px;"><span style="${goldStyle}">Round ${round}</span> &mdash; Pick <strong style="color: #f4f4f8;">${pickNo}</strong> of ${totalPicks}</p>
     </div>
-    <a href="https://uff-platform.vercel.app/dashboard/league/${leagueId}/draft"
+    <a href="${APP_URL}/dashboard/league/${leagueId}/draft"
        style="display: inline-block; background: #FFD700; color: #0d0d1a; font-weight: 700; padding: 12px 24px; border-radius: 8px; text-decoration: none;">
       Make Your Pick →
     </a>
@@ -310,13 +347,13 @@ export function leagueInviteHtml({
       <p style="color: #a0a0b8; font-size: 13px; margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.1em;">Your Join Code</p>
       <p style="font-size: 28px; font-weight: 800; color: #FFD700; letter-spacing: 0.15em; margin: 0;">${esc(joinCode)}</p>
     </div>
-    <a href="https://uff-platform.vercel.app/join?code=${encodeURIComponent(joinCode)}"
+    <a href="${APP_URL}/join?code=${encodeURIComponent(joinCode)}"
        style="display: inline-block; background: #0057FF; color: #f4f4f8; font-weight: 700; padding: 12px 24px; border-radius: 8px; text-decoration: none;">
       Join the League →
     </a>
     <p style="${mutedStyle}; margin-top: 24px;">
       Already have an account? Sign in first, then enter the join code. Don't have one? Create a free account at
-      <a href="https://uff-platform.vercel.app" style="${linkStyle}">uff-platform.vercel.app</a>.
+      <a href="${APP_URL}" style="${linkStyle}">${APP_HOST}</a>.
     </p>
   </div>`;
 }

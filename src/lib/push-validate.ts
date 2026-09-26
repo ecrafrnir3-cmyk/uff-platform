@@ -14,12 +14,16 @@ export const ENDPOINT_MAX = 1024;
 export const KEY_MAX = 512;
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
 
-// Public vendor push-service domains only — never internal/arbitrary hosts.
+// Public vendor push-service hosts only — exact hosts, not suffixes (audit A3-10): a suffix
+// match let any https URL on *.googleapis.com or *.apple.com be registered as a target.
+const ALLOWED_HOSTS = new Set([
+  "fcm.googleapis.com", // FCM (Chrome/Android)
+  "android.googleapis.com",
+  "updates.push.services.mozilla.com", // Firefox
+  "web.push.apple.com", // Safari/iOS 16.4+
+]);
 const ALLOWED_HOST_SUFFIXES = [
-  ".googleapis.com", // FCM (Chrome/Android): fcm.googleapis.com, android.googleapis.com
-  ".mozilla.com", // Firefox: updates.push.services.mozilla.com
-  ".windows.com", // Edge/WNS: *.notify.windows.com
-  ".apple.com", // Safari/iOS 16.4+: web.push.apple.com
+  ".notify.windows.com", // Edge/WNS: regional hosts under this suffix only
 ];
 
 export function isAllowedPushEndpoint(endpoint: string): boolean {
@@ -34,7 +38,7 @@ export function isAllowedPushEndpoint(endpoint: string): boolean {
   // and blocking custom ports closes off internal-service targeting.
   if (url.port !== "" && url.port !== "443") return false;
   const host = url.hostname.toLowerCase();
-  return ALLOWED_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
+  return ALLOWED_HOSTS.has(host) || ALLOWED_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
 }
 
 export type ValidatedSubscription = {

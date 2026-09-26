@@ -191,6 +191,8 @@ ${receiverTeam} [${receiverMember?.faction ?? "?"}] (${receiverRecord.wins}W-${r
   }
 
   revalidatePath(`/dashboard/league/${leagueId}/roster`);
+  revalidatePath(`/dashboard/league/${leagueId}/trade`);
+  revalidatePath(`/dashboard/league/${leagueId}`, "layout");
   redirect(`/dashboard/league/${leagueId}/roster?trade=proposed`);
 }
 
@@ -313,6 +315,8 @@ export async function respondToTrade(formData: FormData) {
   }
 
   revalidatePath(`/dashboard/league/${leagueId}/roster`);
+  revalidatePath(`/dashboard/league/${leagueId}/trade`);
+  revalidatePath(`/dashboard/league/${leagueId}`, "layout");
   if (!accept) {
     redirect(`/dashboard/league/${leagueId}/roster?trade=rejected`);
   }
@@ -374,6 +378,8 @@ export async function approveTrade(formData: FormData) {
   }
 
   revalidatePath(`/dashboard/league/${leagueId}/roster`);
+  revalidatePath(`/dashboard/league/${leagueId}/trade`);
+  revalidatePath(`/dashboard/league/${leagueId}`, "layout");
   revalidatePath(`/dashboard/league/${leagueId}/settings`);
   redirect(`/dashboard/league/${leagueId}/settings?approved=1`);
 }
@@ -431,6 +437,8 @@ export async function vetoTrade(formData: FormData) {
   }
 
   revalidatePath(`/dashboard/league/${leagueId}/roster`);
+  revalidatePath(`/dashboard/league/${leagueId}/trade`);
+  revalidatePath(`/dashboard/league/${leagueId}`, "layout");
   revalidatePath(`/dashboard/league/${leagueId}/settings`);
   redirect(`/dashboard/league/${leagueId}/settings?vetoed=1`);
 }
@@ -452,5 +460,7 @@ export async function cancelTrade(formData: FormData) {
   }
 
   revalidatePath(`/dashboard/league/${leagueId}/roster`);
+  revalidatePath(`/dashboard/league/${leagueId}/trade`);
+  revalidatePath(`/dashboard/league/${leagueId}`, "layout");
   redirect(`/dashboard/league/${leagueId}/roster?trade=cancelled`);
 }

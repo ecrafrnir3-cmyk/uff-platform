@@ -334,6 +334,7 @@ export async function POST(req: NextRequest) {
               toAddresses.map((email) =>
                 sendEmail({
                   to: email,
+                  priority: "low",
                   subject: `${league.name} · Week ${week} Newsletter`,
                   html: newsletterHtml({
                     leagueId: league.id,

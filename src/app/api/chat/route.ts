@@ -1,4 +1,6 @@
 import { checkRateLimit } from "@/lib/rate-limit";
+import { getRecord } from "@/lib/get-record";
+import { getCurrentNFLWeek } from "@/lib/nfl-utils";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
@@ -32,67 +34,97 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
     if (!me) return NextResponse.json({ error: "Not a member" }, { status: 403 });
 
-    const rl = checkRateLimit(`${user.id}:chat`, 10);
+    const rl = await checkRateLimit(`${user.id}:chat`, 10);
     if (!rl.allowed) return NextResponse.json({ error: "Rate limit exceeded — try again in a minute." }, { status: 429 });
 
     // ── Gather league context ─────────────────────────────────────────────────
+    // Only columns that exist (audit A3-02): records come from uff_matchups through
+    // getRecord like every other page, the transaction feed from uff_roster_players,
+    // and the rulebook's draft powers from the draft_powers table (audit A3-03).
     const [
       { data: league },
       { data: members },
-      { data: matchups },
-      { data: recentTx },
+      { data: matchupRows },
+      { data: rosterRows },
+      { data: powerRows },
     ] = await Promise.all([
       supabase
         .from("uff_leagues")
-        .select("name, current_week, waiver_type, median_scoring, commissioner_id")
+        .select("name, waiver_type, median_scoring, commissioner_id")
         .eq("id", leagueId)
         .maybeSingle(),
       supabase
         .from("league_members")
-        .select("id, team_name, faction, wins, losses, points_for, waiver_priority")
-        .eq("league_id", leagueId)
-        .order("wins", { ascending: false }),
+        .select("id, team_name, faction, waiver_priority")
+        .eq("league_id", leagueId),
       supabase
         .from("uff_matchups")
-        .select("member_id, opponent_id, week, member_score, opponent_score, is_complete, median_win")
+        .select("matchup_id, member_id, week, points, is_complete")
         .eq("league_id", leagueId)
-        .order("week", { ascending: false })
-        .limit(30),
+        .order("week", { ascending: false }),
       supabase
-        .from("uff_transactions")
-        .select("type, player_name, member_id, created_at")
+        .from("uff_roster_players")
+        .select("member_id, player_id, added_at, dropped_at, week_added, players(full_name)")
         .eq("league_id", leagueId)
-        .order("created_at", { ascending: false })
-        .limit(10),
+        .order("added_at", { ascending: false })
+        .limit(60),
+      supabase
+        .from("draft_powers")
+        .select("name, category, description")
+        .order("id"),
     ]);
 
     // Build member map
     const memberMap: Record<string, string> = {};
     for (const m of members ?? []) memberMap[m.id] = m.team_name;
 
-    // Standings summary
+    type Row = { matchup_id: number; member_id: string; week: number; points: number; is_complete: boolean };
+    const completed = ((matchupRows ?? []) as Row[]).filter((m) => m.is_complete);
+    const pointsFor: Record<string, number> = {};
+    for (const m of completed) pointsFor[m.member_id] = (pointsFor[m.member_id] ?? 0) + (m.points ?? 0);
+
+    // Standings summary, derived exactly as the standings page derives them
     const standings = (members ?? [])
-      .map((m, i) => `${i + 1}. ${m.team_name} (${m.wins ?? 0}-${m.losses ?? 0}, ${(m.points_for ?? 0).toFixed(1)} PF)${m.faction ? ` [${m.faction}]` : ""}`)
+      .map((m) => ({ team_name: m.team_name, faction: m.faction, ...getRecord(m.id, completed), pf: pointsFor[m.id] ?? 0 }))
+      .sort((a, b) => b.wins - a.wins || b.pf - a.pf)
+      .map((m, i) => `${i + 1}. ${m.team_name} (${m.wins}-${m.losses}, ${m.pf.toFixed(1)} PF)${m.faction ? ` [${m.faction}]` : ""}`)
       .join("\n");
 
-    // Recent matchups
-    const recentMatchups = (matchups ?? [])
-      .filter(m => m.is_complete)
+    // Recent completed matchups, paired by matchup_id
+    const pairs: Record<string, Row[]> = {};
+    for (const m of completed) (pairs[`${m.week}-${m.matchup_id}`] ??= []).push(m);
+    const recentMatchups = Object.values(pairs)
+      .filter((p) => p.length === 2)
+      .sort((a, b) => b[0].week - a[0].week)
       .slice(0, 6)
-      .map(m => `Week ${m.week}: ${memberMap[m.member_id] ?? "?"} ${m.member_score?.toFixed(1)} vs ${memberMap[m.opponent_id] ?? "?"} ${m.opponent_score?.toFixed(1)}`)
+      .map(([a, b]) => `Week ${a.week}: ${memberMap[a.member_id] ?? "?"} ${(a.points ?? 0).toFixed(1)} vs ${memberMap[b.member_id] ?? "?"} ${(b.points ?? 0).toFixed(1)}`)
       .join("\n");
 
-    // Recent transactions
-    const txFeed = (recentTx ?? [])
-      .map(t => `${t.type.toUpperCase()}: ${t.player_name ?? "?"} (${memberMap[t.member_id] ?? "?"})`)
+    // Recent adds (week_added is set by add_player, never by the draft) and drops
+    type RosterRow = { member_id: string; player_id: string; added_at: string; dropped_at: string | null; week_added: number | null; players: { full_name: string } | { full_name: string }[] | null };
+    const nameOf = (r: RosterRow) => (Array.isArray(r.players) ? r.players[0]?.full_name : r.players?.full_name) ?? r.player_id;
+    const events: { at: string; line: string }[] = [];
+    for (const r of (rosterRows ?? []) as RosterRow[]) {
+      if (r.week_added != null) events.push({ at: r.added_at, line: `ADD: ${nameOf(r)} (${memberMap[r.member_id] ?? "?"})` });
+      if (r.dropped_at) events.push({ at: r.dropped_at, line: `DROP: ${nameOf(r)} (${memberMap[r.member_id] ?? "?"})` });
+    }
+    const txFeed = events
+      .sort((a, b) => (a.at < b.at ? 1 : -1))
+      .slice(0, 10)
+      .map((e) => e.line)
       .join("\n");
+
+    // The draft powers exactly as the database describes them (audit A3-03)
+    const draftPowersBlock = ((powerRows ?? []) as { name: string; category: string | null; description: string | null }[])
+      .map((p) => `• ${p.name}${p.category ? ` [${p.category.replace(/_/g, " ")}]` : ""} — ${p.description ?? ""}`)
+      .join("\n") + "\nNote: Draft Heist is disabled this season.";
 
     const systemPrompt = `You are the League Assistant for Ultimate Fantasy Football (UFF) — ${league?.name ?? "this league"}.
 You are a knowledgeable, witty fantasy football advisor embedded directly in the league platform.
 
 You know everything about this league and all of UFF's custom rules. Here is the current state:
 
-WEEK: ${league?.current_week ?? "unknown"}
+WEEK: ${getCurrentNFLWeek()}
 WAIVER TYPE: ${league?.waiver_type ?? "faab"}
 MEDIAN SCORING: ${league?.median_scoring ? "Yes — each team also plays the league median score as a second matchup each week, earning a bonus win/loss." : "No"}
 CURRENT USER: ${me.team_name} (${me.faction ?? "no faction"})
@@ -125,7 +157,7 @@ Every manager receives ONE token per week (assigned by the commissioner or rando
 10. Air Raid — Each of your starting QBs earns an extra +1 point per passing touchdown they throw.
 11. Insurance — If you lose your matchup this week, the loss is voided — it does not count against your record. (Win still counts if you win.)
 12. Last Stand — If you are trailing your opponent by 20 or more points, ALL of your bench players' scores are added to your total.
-13. Quick Feet — Lets you make lineup changes past the per-player game-time lock deadline. You can swap players even after their NFL game has started, as long as the player hasn't yet played a snap.
+13. Quick Feet — A late injury swap: once per week you may take ONE locked starter (his game has started) out of your lineup. The player coming in must not have kicked off yet. The token is spent when that save goes through.
 14. Momentum — If you are currently on a 2+ game winning streak, you get +1.5 bonus points added to your total.
 15. Underdog — If you lose the matchup, you receive a +3 point consolation bonus. This does not flip the result — it just softens the loss.
 16. Iron Will — Your lowest-projected starting player has their actual score doubled.
@@ -133,27 +165,8 @@ Every manager receives ONE token per week (assigned by the commissioner or rando
 18. Second Wind — Replay any token you have already used this season. You pick which past token to re-activate.
 
 ── DRAFT POWERS ──────────────────────────────────
-Draft powers are one-time abilities assigned to specific players during the draft. They are permanent for the season (unless otherwise noted) and either boost that player's weekly scoring or affect draft-room mechanics.
-
-SCORING BOOST POWERS (affect the attached player's points every week):
-• Gunslinger — The player earns an extra +1 point per passing touchdown.
-• Berserker Rage — The player earns an extra +0.1 points per rushing yard.
-• Reception Specialist — The player earns an extra +0.5 points per reception.
-• Iron Defense — The player's score is floored at 0 — they can never score negative points.
-• Red Zone Menace — The player earns an extra +1 point per receiving touchdown.
-• Goal Line Hammer — The player earns an extra +1 point per rushing touchdown.
-• Seam Buster — The player earns an extra +1 point per receiving touchdown.
-• Sniper — Kicker earns bonus points for 50+ yard field goals (applied on top of standard scoring).
-• Power Negation — Reduces the attached player's score by 50% (used to debuff an opponent's player or weaken one of your own low-value starters to activate a counter-strategy).
-
-SPECIAL MECHANICS POWERS (unique rules, not simple stat boosts):
-• Vampire Bite — During the draft, you target an opponent's specific player. Each week, you siphon 10% of that player's score into your own total. (The targeted player's score is unchanged — you just copy 10%.)
-• Time Stone — If the attached player suffers an injury, their score is frozen at their last healthy week's performance (or current week's score if it's ≥ 8 pts). Once healthy, they resume scoring normally. The freeze breaks if they go to bench while injured.
-• Hero's Shield — Protects one of your players from being targeted by an opponent's Vampire Bite. (Defensive power.)
-• Draft Heist — During the draft, steal a player off another team's roster. The target team must pick a replacement.
-• Telepathy — During the draft, see your opponents' draft boards and queued picks in real time.
-• Cloak — During the draft, hide your own draft board and queue from all opponents.
-• Foresight Coin — During the draft, flip the coin to peek at upcoming available players before they appear in the draft pool.
+Draft powers are one-time abilities dealt per round during the draft. Here is every power exactly as the platform defines it:
+${draftPowersBlock}
 
 ── FACTION WAR ──────────────────────────────────
 Every manager is assigned to either the Hero faction or the Villain faction. Every NFL team is also tagged as Hero or Villain. Each week, you earn +0.5 bonus points for every starting player on your roster whose NFL team's faction matches yours. The Faction Surge token (token 6) doubles this bonus for one week. Faction standings track cumulative faction wins across all matchups in the league.

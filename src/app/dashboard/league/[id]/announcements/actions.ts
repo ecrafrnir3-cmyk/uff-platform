@@ -61,6 +61,7 @@ export async function createAnnouncement(formData: FormData) {
             if (!email) return;
             await sendEmail({
               to: email,
+              priority: "low",
               subject: `📢 ${leagueName}: ${title}`,
               html: announcementHtml({ leagueId, leagueName, title, body }),
             });

@@ -19,7 +19,7 @@ import { getRawNFLWeek } from "@/lib/nfl-utils";
 // what the player would score in THEIR league, not a generic PPR figure.
 
 const POSITIONS = ["QB", "RB", "WR", "TE", "K", "DEF"];
-const SEASON = 2026;
+import { SEASON } from "@/lib/nfl-utils";
 
 export async function POST(req: NextRequest) {
   // Fail closed if the secret was never configured (audit M1).

@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
     if (!me) return NextResponse.json({ error: "Not a member" }, { status: 403 });
 
-    const rl = checkRateLimit(`${user.id}:token-advisor`, 5);
+    const rl = await checkRateLimit(`${user.id}:token-advisor`, 5);
     if (!rl.allowed) return NextResponse.json({ error: "Rate limit exceeded — try again in a minute." }, { status: 429 });
 
     // Fetch this week's token
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
     let oppProjected: number | null = null;
     let oppTeamName: string | null = null;
     let oppFaction: string | null = null;
-    let myProjected: number | null = myMatchupRow?.projected ?? null;
+    const myProjected: number | null = myMatchupRow?.projected ?? null;
 
     if (myMatchupRow) {
       const { data: oppRow } = await supabase

@@ -164,6 +164,7 @@ export async function GET(req: NextRequest) {
               if (email) {
                 await sendEmail({
                   to: email,
+                  priority: "low",
                   subject: `${league.name} · Week ${week} Waiver Results`,
                   html: waiverResultsHtml({
                     leagueId: league.id,

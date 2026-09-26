@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
   // (audit + this repo's own prior silent-cron incident). Each call is idempotent:
   // the RPC's per-league loop no-ops any week already fully finalized, so
   // re-running 1..target every Wednesday is safe and cheap.
-  const perWeek: { week: number; finalized: number; skipped: number }[] = [];
+  const perWeek: { week: number; finalized: number; skipped: number; skippedLeagues: { id: string; error: string }[] }[] = [];
   const weeksFinalized: number[] = [];
   for (let w = 1; w <= target; w++) {
     const { data, error } = await supabase.rpc("finalize_all_active_leagues", { p_week: w });
@@ -54,7 +54,9 @@ export async function POST(req: NextRequest) {
     }
     const finalized = Number((data as { finalized?: number } | null)?.finalized ?? 0);
     const skipped   = Number((data as { skipped?: number } | null)?.skipped ?? 0);
-    perWeek.push({ week: w, finalized, skipped });
+    const skippedLeagues = ((data as { skipped_leagues?: { id: string; error: string }[] } | null)?.skipped_leagues ?? []);
+    if (skippedLeagues.length > 0) console.error(`finalize week ${w} skipped:`, JSON.stringify(skippedLeagues));
+    perWeek.push({ week: w, finalized, skipped, skippedLeagues });
     if (finalized > 0) weeksFinalized.push(w);
   }
   console.log(`Finalize catch-up 1..${target}:`, JSON.stringify(perWeek));
@@ -89,12 +91,14 @@ export async function POST(req: NextRequest) {
 
   const totalSkipped = perWeek.reduce((s, p) => s + p.skipped, 0);
   // Note: finalize_all_active_leagues already marks tokens used internally (step 2).
+  // A skipped league is a failure, not a footnote (audit A3-05): answer 207 so the scheduler
+  // run shows it, with the reason from the RPC beside each league id.
   return NextResponse.json({
-    ok: true,
+    ok: totalSkipped === 0,
     week: target,
     perWeek,
     weeksFinalized,
-    ...(totalSkipped > 0 ? { warning: `${totalSkipped} league-week(s) were skipped during finalize (errored) — investigate` } : {}),
+    ...(totalSkipped > 0 ? { warning: `${totalSkipped} league-week(s) were skipped during finalize (errored) — see perWeek[].skippedLeagues` } : {}),
     storyLeagues,
-  });
+  }, { status: totalSkipped > 0 ? 207 : 200 });
 }

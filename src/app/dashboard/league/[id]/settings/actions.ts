@@ -140,6 +140,19 @@ export async function saveLeagueSettings(formData: FormData) {
   const pickClockRaw        = formData.get("pick_clock_seconds") as string;
   const pickClockSeconds    = pickClockRaw && parseInt(pickClockRaw, 10) > 0 ? parseInt(pickClockRaw, 10) : null;
 
+  // advance_playoff_bracket handles 4/6/8 teams only, and the bracket must fit in the
+  // season (audit A2-09): validate before anything reaches the database.
+  if (![4, 6, 8].includes(playoffTeams)) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=` + encodeURIComponent("Playoff teams must be 4, 6 or 8."));
+  }
+  if (!Number.isInteger(playoffStartWeek) || !Number.isInteger(championshipWeek) ||
+      playoffStartWeek < 2 || championshipWeek > 18 || championshipWeek <= playoffStartWeek) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=` + encodeURIComponent("Playoff start week must come before the championship week, within weeks 2-18."));
+  }
+  if (tradeDeadlineWeek !== null && (!Number.isInteger(tradeDeadlineWeek) || tradeDeadlineWeek < 1 || tradeDeadlineWeek > 18)) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=` + encodeURIComponent("Trade deadline must be a week from 1 to 18, or blank."));
+  }
+
   const { error } = await supabase
     .from("uff_leagues")
     .update({
@@ -378,6 +391,21 @@ export async function saveDraftOrder(formData: FormData) {
     return;
   }
 
+  // The order must be exactly the league's members, each once (audit A2-07): force_autopick
+  // and commissioner_draft_pick index into this array and a stray entry stalls the draft.
+  const { data: memberRows } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", leagueId);
+  const memberIds = new Set((memberRows ?? []).map((m) => m.id as string));
+  const isPermutation =
+    order.length === memberIds.size &&
+    new Set(order).size === order.length &&
+    order.every((id) => memberIds.has(id));
+  if (!isPermutation) {
+    redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("Draft order must list every manager exactly once.")}`);
+  }
+
   const { error } = await supabase
     .from("uff_leagues")
     .update({ draft_order: order })
@@ -387,6 +415,7 @@ export async function saveDraftOrder(formData: FormData) {
     redirect(`/dashboard/league/${leagueId}/settings?error=${encodeURIComponent("Failed to save draft order.")}`);
   }
 
+  revalidatePath(`/dashboard/league/${leagueId}/settings`);
   redirect(`/dashboard/league/${leagueId}/settings?saved=1`);
 }
 
@@ -499,7 +528,7 @@ export async function sendLeagueInvites(formData: FormData) {
   let sentCount = 0;
   for (const email of emails) {
     try {
-      await sendEmail({
+      const sent = await sendEmail({
         to: email,
         subject: `You've been invited to ${league.name as string} on UFF!`,
         html: leagueInviteHtml({
@@ -508,7 +537,10 @@ export async function sendLeagueInvites(formData: FormData) {
           joinCode: league.join_code as string,
         }),
       });
-      sentCount++;
+      // Count only what the provider accepted (audit A3-04): a refused send used to
+      // report as invited.
+      if (sent.ok) sentCount++;
+      else console.error(`[invites] not sent to ${email}:`, sent.reason ?? sent.status);
     } catch (err) {
       console.error(`[invites] Failed to send to ${email}:`, err);
     }

@@ -26,6 +26,13 @@ export default function LoginPage() {
     if (urlError) setError(decodeURIComponent(urlError));
   }, []);
 
+  // ?next= is a relative path to return to after auth (an invite link lands on /join,
+  // audit A2-03). Read at submit time; only same-origin paths are honoured.
+  function afterAuthPath(): string {
+    const n = new URLSearchParams(window.location.search).get("next");
+    return n && n.startsWith("/") && !n.startsWith("//") ? n : "/dashboard";
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -45,7 +52,7 @@ export default function LoginPage() {
 
         if (data.session) {
           // Email confirmation disabled — session is live immediately.
-          router.push("/dashboard");
+          router.push(afterAuthPath());
           router.refresh();
         } else {
           setInfo("Check your email to confirm your account, then sign in.");
@@ -58,7 +65,7 @@ export default function LoginPage() {
         });
         if (signInError) throw signInError;
 
-        router.push("/dashboard");
+        router.push(afterAuthPath());
         router.refresh();
       }
     } catch (err) {

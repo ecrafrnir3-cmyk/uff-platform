@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { scoreWithPower, POWER_LABELS } from "@/lib/scoring";
 
 interface LineupRow { slot: string; player_id: string; }
@@ -45,6 +46,10 @@ export async function POST(req: NextRequest) {
       .eq("user_id", user.id)
       .maybeSingle();
     if (!me) return NextResponse.json({ error: "Not a member" }, { status: 403 });
+
+    // The most expensive unlimited endpoint (audit A3-07): a full-week stat feed per call.
+    const rl = await checkRateLimit(`${user.id}:matchup-breakdown`, 10);
+    if (!rl.allowed) return NextResponse.json({ error: "Rate limit exceeded — try again in a minute." }, { status: 429 });
 
     const { data: league } = await supabase
       .from("uff_leagues")

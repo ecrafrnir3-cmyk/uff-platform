@@ -4,6 +4,10 @@
 // this Wednesday boundary is what the Wednesday-morning finalize/newsletter
 // crons' `week - 1` logic depends on. Do not change this anchor without also
 // changing those crons.
+// The one place the season is written (audit A2-05): the lineup lock, the scoring cron and
+// the projections sync all import it, so they can never disagree.
+export const SEASON = 2026;
+
 const SEASON_START_UTC = new Date("2026-09-09");
 
 // Raw (unclamped) week number: <= 0 before the season, > 18 after it ends.

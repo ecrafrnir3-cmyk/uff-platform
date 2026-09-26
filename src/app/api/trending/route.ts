@@ -1,4 +1,5 @@
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -19,8 +20,16 @@ interface PlayerRow {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const type = searchParams.get("type") === "drop" ? "drop" : "add";
-  const hours = Math.min(parseInt(searchParams.get("hours") ?? "24", 10), 168);
-  const limit = Math.min(parseInt(searchParams.get("limit") ?? "20", 10), 50);
+  // NaN passed straight into the Sleeper URL and guaranteed a 500 (audit A3-08)
+  const hoursRaw = parseInt(searchParams.get("hours") ?? "24", 10);
+  const limitRaw = parseInt(searchParams.get("limit") ?? "20", 10);
+  const hours = Number.isFinite(hoursRaw) ? Math.min(Math.max(hoursRaw, 1), 168) : 24;
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 50) : 20;
+
+  // Unauthenticated and public: a small per-IP ceiling keeps it from being a Sleeper relay.
+  const ip = (request.headers.get("x-forwarded-for") ?? "unknown").split(",")[0].trim();
+  const rl = await checkRateLimit(`ip:${ip}:trending`, 30);
+  if (!rl.allowed) return NextResponse.json({ error: "Rate limit exceeded — try again in a minute." }, { status: 429 });
 
   try {
     const res = await fetch(
@@ -34,7 +43,8 @@ export async function GET(request: Request) {
 
     if (playerIds.length === 0) return NextResponse.json([]);
 
-    const supabase = createAdminClient();
+    // players is publicly readable; no reason to hold the service role here
+    const supabase = await createClient();
     const { data: players } = await supabase
       .from("players")
       .select("id, full_name, position, team, injury_status")

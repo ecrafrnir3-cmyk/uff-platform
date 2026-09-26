@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Only the commissioner can use this" }, { status: 403 });
     }
 
-    const rl = checkRateLimit(`${user.id}:trade-veto-analysis`, 5);
+    const rl = await checkRateLimit(`${user.id}:trade-veto-analysis`, 5);
     if (!rl.allowed) return NextResponse.json({ error: "Rate limit exceeded — try again in a minute." }, { status: 429 });
 
     // Fetch trade

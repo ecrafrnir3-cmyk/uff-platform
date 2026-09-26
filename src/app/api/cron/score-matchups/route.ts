@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentNFLWeek, getRawNFLWeek } from "@/lib/nfl-utils";
 
-const SEASON = 2026;
+import { SEASON } from "@/lib/nfl-utils";
 
 // Has any game in this week actually started?
 //

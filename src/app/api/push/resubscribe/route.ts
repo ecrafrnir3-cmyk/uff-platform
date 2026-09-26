@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { validateSubscription, ENDPOINT_MAX } from "@/lib/push-validate";
+import { persistPushSubscription } from "@/lib/push-store";
 
 /**
  * Re-subscribe endpoint for the service worker's `pushsubscriptionchange`
@@ -45,17 +46,9 @@ export async function POST(req: NextRequest) {
   }
 
   const ua = req.headers.get("user-agent")?.slice(0, 512) ?? null;
-  const { error } = await admin.from("uff_push_subscriptions").upsert(
-    {
-      user_id: user.id,
-      endpoint: v.value.endpoint,
-      p256dh: v.value.p256dh,
-      auth: v.value.auth,
-      user_agent: ua,
-    },
-    { onConflict: "endpoint" }
-  );
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  // Same rate limit and device cap as the save action (audit A3-09)
+  const { error } = await persistPushSubscription(user.id, v.value, ua, "push-resubscribe");
+  if (error) return NextResponse.json({ error }, { status: error.startsWith("Too many") ? 429 : 500 });
 
   return NextResponse.json({ ok: true });
 }
