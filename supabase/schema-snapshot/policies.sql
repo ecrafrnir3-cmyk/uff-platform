@@ -2,6 +2,7 @@
 -- Generated 2026-08-17. NOT a migration — disaster-recovery source of truth (audit item 13).
 -- Hand-aligned 2026-09-26 with 20260926170000 (#77 / A1-02): the two player_draft_powers write
 -- policies; every other policy is as generated.
+-- Hand-aligned again 2026-09-26 with 20260926180000 (#77 / A1-01): league_members INSERT policy.
 -- 67 policies (65 @ 2026-08-17 + 2 push-subscription policies @ 2026-08-24).
 
 CREATE POLICY "authenticated read draft_power_assignments" ON public.draft_power_assignments FOR SELECT TO authenticated USING (true);
@@ -30,7 +31,21 @@ CREATE POLICY "commissioner manage league_members" ON public.league_members FOR 
    FROM uff_leagues ul
   WHERE ((ul.id = league_members.league_id) AND (ul.commissioner_id = ( SELECT auth.uid() AS uid))))));
 CREATE POLICY "members are viewable by authenticated users" ON public.league_members FOR SELECT TO public USING ((auth.role() = 'authenticated'::text));
-CREATE POLICY "users can join a league as themselves" ON public.league_members FOR INSERT TO public WITH CHECK ((( SELECT auth.uid() AS uid) = user_id));
+CREATE POLICY "commissioner seats themselves in their own league" ON public.league_members
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    user_id = (SELECT auth.uid())
+    AND EXISTS (
+      SELECT 1 FROM public.uff_leagues ul
+       WHERE ul.id = league_members.league_id
+         AND ul.commissioner_id = (SELECT auth.uid())
+    )
+    AND faab_balance    IS NULL
+    AND eliminated_at   IS NULL
+    AND waiver_priority IS NULL
+    AND season_title    IS NULL
+    AND character_id    IS NULL
+  );
 CREATE POLICY "users can update their own membership" ON public.league_members FOR UPDATE TO public USING ((( SELECT auth.uid() AS uid) = user_id)) WITH CHECK ((( SELECT auth.uid() AS uid) = user_id));
 -- NOTE (2026-08-25 harden): league_members table UPDATE revoked from anon/authenticated; only GRANT UPDATE (faction) TO authenticated. faab_balance/waiver_priority set via SECURITY DEFINER RPCs init_faab_balances/set_waiver_order; character_id via service role.
 CREATE POLICY "league members can read newsletters" ON public.league_newsletters FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1

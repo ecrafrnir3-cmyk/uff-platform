@@ -3219,3 +3219,77 @@ BEGIN
 END;
 $function$
 ;
+
+-- Added 2026-09-26 by 20260926180000 (#77 / A1-01 + A2-01).
+CREATE OR REPLACE FUNCTION public.join_league(p_join_code text, p_team_name text, p_faction text DEFAULT NULL)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_uid          uuid := auth.uid();
+  v_code         text := upper(btrim(coalesce(p_join_code, '')));
+  v_team_name    text := btrim(coalesce(p_team_name, ''));
+  v_league_id    uuid;
+  v_max_teams    int;
+  v_status       text;
+  v_draft_status text;
+  v_count        int;
+  v_side_count   int;
+  v_member_id    uuid;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+  IF v_code = '' OR v_team_name = '' THEN
+    RAISE EXCEPTION 'Join code and team name are required.';
+  END IF;
+  IF length(v_team_name) > 40 THEN
+    RAISE EXCEPTION 'Team name is too long (40 characters max).';
+  END IF;
+  IF p_faction IS NOT NULL AND p_faction NOT IN ('hero', 'villain') THEN
+    RAISE EXCEPTION 'Faction must be hero, villain, or left blank.';
+  END IF;
+
+  -- Lock the league row: concurrent joins to the last seat queue behind each other.
+  SELECT id, max_teams, status, draft_status
+    INTO v_league_id, v_max_teams, v_status, v_draft_status
+    FROM uff_leagues
+   WHERE join_code = v_code
+     FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'No league found with that join code.';
+  END IF;
+
+  IF v_draft_status <> 'not_started' OR v_status <> 'forming' THEN
+    RAISE EXCEPTION 'That league has already started its draft — new managers can''t join.';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM league_members WHERE league_id = v_league_id AND user_id = v_uid) THEN
+    RAISE EXCEPTION 'You''re already in that league.';
+  END IF;
+
+  SELECT count(*) INTO v_count FROM league_members WHERE league_id = v_league_id;
+  IF v_count >= v_max_teams THEN
+    RAISE EXCEPTION 'That league is already full.';
+  END IF;
+
+  IF p_faction IS NOT NULL THEN
+    SELECT count(*) INTO v_side_count
+      FROM league_members
+     WHERE league_id = v_league_id AND faction = p_faction::faction;
+    IF v_side_count >= v_max_teams / 2 THEN
+      RAISE EXCEPTION 'The % side is already full for that league. Pick the other side or "Decide later".',
+        CASE WHEN p_faction = 'hero' THEN 'Hero' ELSE 'Villain' END;
+    END IF;
+  END IF;
+
+  INSERT INTO league_members (league_id, user_id, team_name, is_commissioner, faction)
+  VALUES (v_league_id, v_uid, v_team_name, false, p_faction::faction)
+  RETURNING id INTO v_member_id;
+
+  RETURN jsonb_build_object('league_id', v_league_id, 'member_id', v_member_id);
+END;
+$function$
+;

@@ -132,61 +132,28 @@ export async function joinLeague(formData: FormData) {
     redirect("/dashboard?error=" + encodeURIComponent("Join code and team name are required."));
   }
 
-  const { data: league, error: leagueError } = await supabase
-    .from("uff_leagues")
-    .select("id, max_teams")
-    .eq("join_code", joinCode)
-    .maybeSingle();
+  // One transaction in the database: join code, draft not started, capacity,
+  // faction side and "already a member" are all checked under a row lock on the
+  // league (OPEN-LOOPS #77, audit A1-01 + A2-01). A joining manager can no longer
+  // insert into league_members directly; only join_league can seat them.
+  const { data: joined, error: joinError } = await supabase.rpc("join_league", {
+    p_join_code: joinCode,
+    p_team_name: teamName,
+    p_faction: faction,
+  });
 
-  if (leagueError || !league) {
-    redirect("/dashboard?error=" + encodeURIComponent("No league found with that join code."));
+  if (joinError || !joined) {
+    redirect("/dashboard?error=" + encodeURIComponent(joinError?.message ?? "Could not join that league."));
   }
 
-  const { data: members } = await supabase
-    .from("league_members")
-    .select("id, faction")
-    .eq("league_id", league.id);
+  const { league_id: leagueId, member_id: memberId } = joined as { league_id: string; member_id: string };
 
-  const memberCount = members?.length ?? 0;
-  if (memberCount >= league.max_teams) {
-    redirect("/dashboard?error=" + encodeURIComponent("That league is already full."));
-  }
-
-  if (faction) {
-    const capacity = league.max_teams / 2;
-    const currentInFaction = members?.filter((m) => m.faction === faction).length ?? 0;
-    if (currentInFaction >= capacity) {
-      const label = faction === "hero" ? "Hero" : "Villain";
-      redirect(
-        "/dashboard?error=" +
-          encodeURIComponent(`The ${label} side is already full for that league. Pick the other side or "Decide later".`)
-      );
-    }
-  }
-
-  const { data: member, error: memberError } = await supabase
-    .from("league_members")
-    .insert({
-      league_id: league.id,
-      user_id: user.id,
-      team_name: teamName,
-      is_commissioner: false,
-      faction,
-    })
-    .select("id")
-    .single();
-
-  if (memberError) {
-    const message = memberError.code === "23505" ? "You're already in that league." : memberError.message;
-    redirect("/dashboard?error=" + encodeURIComponent(message));
-  }
-
-  if (faction && member?.id) {
-    await syncCharacterForFaction(league.id, member.id as string, faction);
+  if (faction && memberId) {
+    await syncCharacterForFaction(leagueId, memberId, faction);
   }
 
   revalidatePath("/dashboard");
-  redirect(`/dashboard/league/${league.id}`);
+  redirect(`/dashboard/league/${leagueId}`);
 }
 
 export async function signOut() {
