@@ -1,32 +1,85 @@
 name: Score Matchups (Live)
 
-# Runs every 15 min, every day. The route decides whether there is anything to
-# score; this schedule no longer tries to.
+# Declares every 15 minutes. GitHub does not deliver that, and never did.
 #
-# It used to skip Wednesday (DOW mask 0,1,2,4,5,6) because Wednesday has no NFL
-# games. That guarded the calendar, not the scheduler: GitHub delays scheduled
-# runs, and on 2026-09-23 the tick scheduled for Tuesday 23:45 UTC executed at
-# 00:25 UTC Wednesday — past the 00:00 UTC week rollover — so it scored the NEW
-# week, two days before its first kickoff, and wrote phantom points onto an
-# unplayed board (OPEN-LOOPS #54). A day mask cannot prevent that; only checking
-# the schedule can.
+# Measured 2026-09-26 over the last 20 runs: 7 runs on 09-26, 6 on 09-25, 6 on
+# 09-24 — against 96 declared. Consecutive ticks sat 2h-5h apart (01:42Z, then
+# 06:36Z, then 11:44Z). GitHub throttles and drops high-frequency scheduled
+# workflows; a `*/15` cron on a free public repo is a request, not a promise.
+# Every run was green, which is why this went unnoticed for weeks: a green run
+# only means one curl got a 2xx, not that scoring happened on time.
 #
-# /api/cron/score-matchups now skips unless a game in the target week has kicked
-# off, so the extra Wednesday ticks cost one cheap query each and nothing else —
-# and a week that ever does open on a Wednesday gets scored live instead of
-# waiting until Thursday.
+# The consequence is only visible on a game day, which is why it surfaced the
+# night before a Sunday slate: managers watching a live board would see it
+# freeze for hours at a stretch.
+#
+# THE FIX: stop depending on GitHub firing 96 times a day. Each run now LOOPS
+# for 5h30m, calling the route every 15 minutes itself, and `concurrency` with
+# cancel-in-progress means a newly scheduled run replaces the looping one. So
+# there is always exactly one active looper, it ticks on time because `sleep`
+# is not a scheduler, and each fire simply restarts the window. The longest gap
+# observed (~5h) is shorter than the window, so coverage is continuous.
+#
+# Rejected alternatives, recorded so they are not re-litigated:
+#   * Vercel Cron — the route already authenticates on `Authorization: Bearer
+#     $CRON_SECRET`, which is exactly what Vercel Cron injects, so this needs no
+#     code change and no secret handling. But sub-daily cron is a Pro feature
+#     and this account is Hobby. It is the cleanest fix and costs $20/mo.
+#   * Supabase pg_cron + pg_net — both extensions ARE installed and there is
+#     already a working precedent (`sync-players-nightly` posts to an edge
+#     function with no auth header). It fails here because score-matchups DOES
+#     enforce CRON_SECRET: an unauthenticated pg_net POST returns 401, proven
+#     2026-09-26. Wiring it would mean copying the production secret into the
+#     database (Vault is empty), which is worse than this.
+#
+# Free on public repos, so a 5h30m job costs nothing.
 on:
   schedule:
     - cron: "0,15,30,45 * * * *"
   workflow_dispatch: {}   # allow manual trigger for testing
 
+# One looper at a time. A new scheduled run cancels the old one and starts a
+# fresh 5h30m window — that is the intended behaviour, not a collision.
+concurrency:
+  group: score-matchups
+  cancel-in-progress: true
+
 jobs:
   score:
     runs-on: ubuntu-latest
+    timeout-minutes: 345   # loop is 330; the ceiling for a job is 360
     steps:
-      - name: Trigger score-matchups cron route
-        # --fail-with-body: non-200 fails the step AND prints the response body,
-        # so a broken edge function shows up as a red run with the actual error
-        # (previously the body was discarded and failures stayed green)
+      - name: Score every 15 minutes for 5h30m
+        env:
+          APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          curl -sS --fail-with-body -X POST             "${{ secrets.NEXT_PUBLIC_APP_URL }}/api/cron/score-matchups"             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"             -H "Content-Type: application/json"
+          set -u
+          END=$(( $(date +%s) + 19800 ))   # 5h30m
+          TICK=0
+          FAILED=0
+          while [ "$(date +%s)" -lt "$END" ]; do
+            TICK=$((TICK + 1))
+            echo "--- tick $TICK at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            # --fail-with-body keeps the original behaviour: a non-2xx prints the
+            # real response body instead of discarding it. A failed tick must NOT
+            # kill the loop — the next NFL scoring window matters more than this
+            # iteration — so it is counted and the job fails at the end instead.
+            if curl -sS --fail-with-body -X POST \
+                 "${APP_URL}/api/cron/score-matchups" \
+                 -H "Authorization: Bearer ${CRON_SECRET}" \
+                 -H "Content-Type: application/json"; then
+              echo ""
+            else
+              FAILED=$((FAILED + 1))
+              echo ""
+              echo "tick $TICK FAILED (continuing; $FAILED so far)"
+            fi
+            # Don't sleep past the window
+            [ "$(( $(date +%s) + 900 ))" -lt "$END" ] || break
+            sleep 900
+          done
+          echo "=== finished: $TICK ticks, $FAILED failed"
+          # Preserve the signal the previous version added deliberately: a broken
+          # route/edge function shows up as a RED run, not a silent green one.
+          [ "$FAILED" -eq 0 ]
