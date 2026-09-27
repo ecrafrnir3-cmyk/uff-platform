@@ -1,4 +1,4 @@
-# ✅ SENT — league announcement, 2026-09-26
+# ✅ SENT + POSTED IN-APP — league announcement, 2026-09-26
 
 **Status: SENT 2026-09-26** to all 14 managers, individually (the Gmail tool rejects `bcc` as both a
 comma-string and an array, and `to` must be a single raw address). Written 2026-09-24 and held until
@@ -15,6 +15,20 @@ rows**, so "it says 0 now" and "the line is where it started" were both still tr
 **One line was corrected before sending.** The draft closed with *"Week 3 kicks off tonight"* — true
 on the 24th, stale by the 26th. At send time Week 3 was mid-flight: 0 of 14 matchups complete, points
 2.00-41.00, Thursday played and the Sunday slate still ahead. The closing line says that instead.
+
+**📱 Also POSTED IN-APP on 2026-09-26** (Nate: "post it in the app too"). Row in `uff_announcements`,
+**pinned**, author = the commissioner (Reveille), body 1,914 chars verified intact after insert. Plus **13
+`uff_notifications` rows** of type `announcement` — every member except the commissioner, which is exactly
+what the app's own `createAnnouncement` does. Surfaces that show it: `/dashboard/league/<id>/announcements`
+and the league dashboard home, which both read the table; `body` renders under `whitespace-pre-wrap`, so the
+paragraph breaks survive.
+
+⚠️ **Why this was NOT done through the app's own form.** `createAnnouncement` in
+`src/app/dashboard/league/[id]/announcements/actions.ts` inserts the row **and then emails every member**
+(and `createNotification` additionally fans out a Web Push). Since all 14 had already received the email
+earlier the same day, using that path would have sent a **second copy** to everyone. The row and the
+notifications were therefore written directly and the email leg deliberately skipped. **If you ever need to
+re-post this, do not use the form — it will re-mail the league.**
 
 Recipients (14): Angel in Disguise, Bengals Heroes, Blake's Bad Boys, BoneSnapp, Creedontop,
 Elizabeth, Gridiron Guardian, Pillars of Light, Reveille, Thanos, The Blessed Defender,
