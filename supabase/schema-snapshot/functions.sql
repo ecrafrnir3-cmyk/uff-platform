@@ -1,4 +1,4 @@
--- UFF function snapshot: generated 2026-09-26 by scripts/snapshot-schema.mjs from the live DB
+-- UFF function snapshot: generated 2026-09-27 by scripts/snapshot-schema.mjs from the live DB
 -- (project synfuvgdamhjboobjmls). NOT a migration — disaster-recovery source of truth. Regenerate after
 -- every migration; never hand-edit.
 
@@ -3659,12 +3659,19 @@ DECLARE
   v_trade           uff_trades%ROWTYPE;
   v_commissioner_id uuid;
 BEGIN
+  -- Layer 1: an absent identity is refused before anything else happens.
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+
   SELECT * INTO v_trade FROM uff_trades WHERE id = p_trade_id FOR UPDATE;
   IF v_trade.id IS NULL THEN RAISE EXCEPTION 'Trade not found'; END IF;
   IF v_trade.status != 'pending_review' THEN RAISE EXCEPTION 'Trade is not awaiting commissioner review'; END IF;
 
   SELECT commissioner_id INTO v_commissioner_id FROM uff_leagues WHERE id = v_trade.league_id;
-  IF v_commissioner_id != auth.uid() THEN
+  -- Layer 2: IS DISTINCT FROM is NULL-safe, so a NULL on either side still
+  -- refuses instead of evaluating to NULL and skipping the RAISE.
+  IF v_commissioner_id IS DISTINCT FROM auth.uid() THEN
     RAISE EXCEPTION 'Only the commissioner can veto trades';
   END IF;
 

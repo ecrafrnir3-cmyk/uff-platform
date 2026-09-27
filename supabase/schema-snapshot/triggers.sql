@@ -1,4 +1,4 @@
--- UFF trigger snapshot: generated 2026-09-26 by scripts/snapshot-schema.mjs from the live DB
+-- UFF trigger snapshot: generated 2026-09-27 by scripts/snapshot-schema.mjs from the live DB
 -- (project synfuvgdamhjboobjmls). NOT a migration — disaster-recovery source of truth. Regenerate after
 -- every migration; never hand-edit.
 
