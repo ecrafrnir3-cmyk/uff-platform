@@ -906,6 +906,12 @@ export default async function RosterPage({
             unsaved={carriedPreviewWeek !== null || autoPickPending}
             engineSource={engineLineupSource}
             locked={viewWeek < currentWeek || (!haveKickoffs && isLineupLocked(week))}
+            // Tell the board WHICH lock it is. A past week is history; a missing
+            // schedule is the fallback. They used to render identical copy, and a
+            // manager read a finished week's "no changes after Thu ..." as this
+            // week's deadline (OPEN-LOOPS #70, 2026-09-27).
+            lockReason={viewWeek < currentWeek ? "past_week" : "no_schedule"}
+            currentWeek={currentWeek}
             lockTime={getWeekLockTime(week).toISOString()}
             gameTimes={Object.keys(gameTimes).length > 0 ? gameTimes : undefined}
             seasonPts={seasonPts}

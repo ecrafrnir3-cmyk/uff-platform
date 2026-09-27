@@ -206,6 +206,8 @@ export default function DragDropLineup({
   currentLineup,
   locked,
   lockTime,
+  lockReason,
+  currentWeek,
   seasonPts,
   projectedPts,
   gameTimes,
@@ -230,6 +232,18 @@ export default function DragDropLineup({
   engineSource?: "auto" | "carried" | null;
   locked: boolean;
   lockTime: string;
+  /**
+   * WHY the board is locked, so the copy can say which. Without this every lock
+   * read as "you missed a deadline": on 2026-09-27 a manager with an empty WR_2
+   * she could still legally fill was looking at a finished week, saw "No changes
+   * allowed after Thu ...", and concluded the league had shut her out. The server
+   * would have accepted her save (set_lineup locks per player, at his own kickoff).
+   * 'past_week'   — the week is over; its lineup is history.
+   * 'no_schedule' — fallback only: uff_game_schedule has no kickoffs for the week.
+   */
+  lockReason?: "past_week" | "no_schedule";
+  /** The live NFL week, so a past-week lock can point at the one that IS editable. */
+  currentWeek?: number;
   seasonPts?: Record<string, number>;
   projectedPts?: Record<string, number>;
   gameTimes?: Record<string, string>;
@@ -470,6 +484,17 @@ export default function DragDropLineup({
     timeZone: "America/New_York",
   });
 
+  // A finished week and a missing schedule are different facts and must not share
+  // wording. Each string names the week, because the pill and the counter did not.
+  const lockedPast  = lockReason === "past_week";
+  const lockPill    = lockedPast ? `Week ${week} final` : `Week ${week} locked`;
+  const lockCounter = lockedPast ? `Week ${week} is final` : `Week ${week} locked ${lockDisplay}`;
+  const lockHint    = lockedPast
+    ? `Week ${week} is over, so its lineup is final — this is a record of what you started, not a deadline you missed.${
+        currentWeek && currentWeek !== week ? ` Switch to Week ${currentWeek} to set your current starters.` : ""
+      }`
+    : `Lineup locked for Week ${week} — no changes after ${lockDisplay}.`;
+
   const nextKickoff = gameTimes
     ? Object.values(gameTimes)
         .map((t) => new Date(t))
@@ -521,7 +546,7 @@ export default function DragDropLineup({
               className="rounded-full px-2 py-0.5 text-xs font-bold"
               style={{ background: "rgba(204,0,0,0.15)", color: VILLAIN_COLOR }}
             >
-              &#128274; Locked
+              &#128274; {lockPill}
             </span>
           )}
           {/* Lineup score total */}
@@ -565,7 +590,7 @@ export default function DragDropLineup({
           )}
           <span className="text-xs" style={{ color: unsaved && !locked ? "#FFD700" : "#f4f4f8" }}>
             {locked
-              ? `Locked ${lockDisplay}`
+              ? lockCounter
               : unsaved
                 ? `${filledCount} / ${slots.length} shown — none saved yet`
                 : `${filledCount} / ${slots.length} starters set`}
@@ -594,7 +619,7 @@ export default function DragDropLineup({
           className="px-4 py-1.5 text-xs"
           style={{ background: "#1a0e16", color: "#ff8a8a", borderBottom: "1px solid rgba(204,0,0,0.2)" }}
         >
-          Lineup locked for Week {week}. No changes allowed after {lockDisplay}.
+          {lockHint}
         </div>
       )}
 
