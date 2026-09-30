@@ -4,6 +4,13 @@ import { withSentryConfig } from "@sentry/nextjs";
 const nextConfig: NextConfig = {
   // Explicitly enable Turbopack (Next 16 default) to silence Sentry's webpack conflict warning
   turbopack: {},
+  // lore/issues/*.md live OUTSIDE src/, so Next does not trace them into the
+  // serverless bundle: the Comics pages would work on localhost and 404 in
+  // production. This forces them in. Added 2026-09-30 with /story.
+  outputFileTracingIncludes: {
+    "/dashboard/league/[id]/story": ["./lore/issues/**"],
+    "/dashboard/league/[id]/story/[slug]": ["./lore/issues/**"],
+  },
   async headers() {
     return [
       {

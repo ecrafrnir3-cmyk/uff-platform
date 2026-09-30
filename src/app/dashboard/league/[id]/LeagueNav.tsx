@@ -22,6 +22,13 @@ const BASE_NAV = [
   { label: "Trade Block",   href: "/trade-block" },
   { label: "Playoffs",      href: "/playoffs" },
   { label: "Schedule",        href: "/schedule" },
+  // The war map and the written issues. /war has existed and been rendering the
+  // Story Engine since August with NO link anywhere in the nav — the only way in
+  // was one underlined word on the Character page, so effectively nobody could
+  // reach it. Added 2026-09-30 along with /story, which is the first time the
+  // comic issues have been readable inside the product at all.
+  { label: "The War",         href: "/war" },
+  { label: "Comics",          href: "/story" },
   { label: "Bulletin Board",  href: "/announcements" },
   { label: "Chat",             href: "/chat" },
 ];
