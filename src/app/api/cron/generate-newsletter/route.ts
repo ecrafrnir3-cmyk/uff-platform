@@ -301,6 +301,12 @@ export async function POST(req: NextRequest) {
   const weekParam = parseInt(qp.get("week") ?? "");
   const force     = qp.get("force") === "1";
   const noEmail   = qp.get("noEmail") === "1";
+  // ?emailOnly=1 — mail the newsletter ALREADY STORED for this week, without
+  // regenerating. This is the repair path for a week whose first send went out
+  // broken: regenerating would write different prose than the copy people can
+  // already read in the app, so the email would not match the record. It also
+  // skips the in-app/push notifications, which fired on the original send.
+  const emailOnly = qp.get("emailOnly") === "1";
 
   const week = Number.isFinite(weekParam) && weekParam > 0 ? weekParam : getRawNFLWeek() - 1;
   if (week < 1 || week > 18) {
@@ -333,19 +339,31 @@ export async function POST(req: NextRequest) {
       // Anthropic spend) or re-email members (audit C5).
       const { data: existing } = await supabase
         .from("league_newsletters")
-        .select("id")
+        .select("id, content")
         .eq("league_id", league.id)
         .eq("week", week)
         .maybeSingle();
-      if (existing && !force) {
+      if (emailOnly) {
+        if (!existing?.content) {
+          results.push({
+            league_id: league.id, name: league.name, ok: false,
+            error: `emailOnly: no stored newsletter for week ${week}`,
+          });
+          continue;
+        }
+      } else if (existing && !force) {
         results.push({ league_id: league.id, name: league.name, ok: true });
         continue;
       }
 
-      const content = await generateLeagueNewsletter(supabase, league, week);
+      const content = emailOnly
+        ? (existing!.content as string)
+        : await generateLeagueNewsletter(supabase, league, week);
 
-      // Upsert — if newsletter already exists for this league+week, overwrite it
-      const { error: upsertErr } = await supabase
+      // Upsert — if newsletter already exists for this league+week, overwrite it.
+      // Skipped entirely on emailOnly: the stored copy is the thing being sent, and
+      // rewriting it would change generated_at for a row that did not change.
+      const { error: upsertErr } = emailOnly ? { error: null } : await supabase
         .from("league_newsletters")
         .upsert(
           { league_id: league.id, week, content, generated_at: new Date().toISOString() },
@@ -377,7 +395,7 @@ export async function POST(req: NextRequest) {
                 sendEmail({
                   to: email,
                   priority: "low",
-                  subject: `${league.name} · Week ${week} Newsletter`,
+                  subject: `${league.name} · Week ${week} Newsletter${emailOnly ? " (corrected)" : ""}`,
                   html: newsletterHtml({
                     leagueId: league.id,
                     leagueName: league.name,
@@ -398,6 +416,11 @@ export async function POST(req: NextRequest) {
       // In-app + push notification per member. Sits inside the idempotency
       // guard above, so it fires exactly once per league+week — same
       // double-send protection the emails get. createNotification never throws.
+      // Skipped on emailOnly: those notifications fired on the original send, and
+      // a second bell for the same week would read as a second newsletter.
+      if (emailOnly) {
+        console.log(`newsletter: week ${week} re-sent for ${league.name}, notifications skipped (emailOnly=1)`);
+      } else
       try {
         const { data: notifMembers } = await supabase
           .from("league_members")

@@ -20,6 +20,10 @@ on:
         description: "Write it but do NOT email the league (1 = yes)"
         required: false
         default: ""
+      email_only:
+        description: "Email the ALREADY STORED newsletter, no regeneration (1 = yes)"
+        required: false
+        default: ""
 
 jobs:
   generate:
@@ -33,6 +37,7 @@ jobs:
           [ -n "${{ github.event.inputs.week }}" ]     && Q="${Q}&week=${{ github.event.inputs.week }}"
           [ -n "${{ github.event.inputs.force }}" ]    && Q="${Q}&force=${{ github.event.inputs.force }}"
           [ -n "${{ github.event.inputs.no_email }}" ] && Q="${Q}&noEmail=${{ github.event.inputs.no_email }}"
+          [ -n "${{ github.event.inputs.email_only }}" ] && Q="${Q}&emailOnly=${{ github.event.inputs.email_only }}"
           [ -n "$Q" ] && Q="?${Q#&}"
           echo "query: ${Q:-<none>}"
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
