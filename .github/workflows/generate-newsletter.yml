@@ -6,7 +6,20 @@ name: Generate Weekly Newsletter (Auto)
 on:
   schedule:
     - cron: "30 7 * * 3"
-  workflow_dispatch: {}   # allow manual trigger for testing
+  workflow_dispatch:      # manual trigger — also how a week is repaired
+    inputs:
+      week:
+        description: "Week to generate (blank = the week just finalized)"
+        required: false
+        default: ""
+      force:
+        description: "Regenerate even if that week already exists (1 = yes)"
+        required: false
+        default: ""
+      no_email:
+        description: "Write it but do NOT email the league (1 = yes)"
+        required: false
+        default: ""
 
 jobs:
   generate:
@@ -14,8 +27,16 @@ jobs:
     steps:
       - name: Generate weekly newsletter
         run: |
+          # Query string from the dispatch inputs. The scheduled run passes none,
+          # so its URL stays byte-identical to what it has always sent.
+          Q=""
+          [ -n "${{ github.event.inputs.week }}" ]     && Q="${Q}&week=${{ github.event.inputs.week }}"
+          [ -n "${{ github.event.inputs.force }}" ]    && Q="${Q}&force=${{ github.event.inputs.force }}"
+          [ -n "${{ github.event.inputs.no_email }}" ] && Q="${Q}&noEmail=${{ github.event.inputs.no_email }}"
+          [ -n "$Q" ] && Q="?${Q#&}"
+          echo "query: ${Q:-<none>}"
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-            "${{ secrets.NEXT_PUBLIC_APP_URL }}/api/cron/generate-newsletter" \
+            "${{ secrets.NEXT_PUBLIC_APP_URL }}/api/cron/generate-newsletter${Q}" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             -H "Content-Type: application/json")
           BODY=$(echo "$RESPONSE" | head -n -1)

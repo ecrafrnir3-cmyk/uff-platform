@@ -222,7 +222,13 @@ Voice: bold, witty, dramatic — like a fantasy sports columnist who takes the O
     },
     body: JSON.stringify({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 700,
+      // 700 was the ceiling until 2026-09-30, against a prompt that asks for "under
+      // 450 words" (~600 tokens) — about 40 characters of margin. Week 1 landed at
+      // 2,768 chars and week 2 at 2,759; both were near-misses, not successes. Week 3
+      // ran to 2,811 and was cut mid-sentence ("...it asks"), stored and emailed to
+      // the league that way. The target stays 450 words so the model does not simply
+      // expand to fill; this is headroom, not a longer newsletter.
+      max_tokens: 1200,
       messages: [{ role: "user", content: prompt }],
     }),
   });
@@ -235,6 +241,26 @@ Voice: bold, witty, dramatic — like a fantasy sports columnist who takes the O
   const resData = await anthropicRes.json();
   const content: string = resData.content?.[0]?.text ?? "";
   if (!content) throw new Error("Anthropic returned empty content");
+
+  // A newsletter that stops mid-sentence must never reach the table or the league.
+  // Two independent checks, because either alone can miss:
+  //   1. stop_reason — the API says plainly when it ran out of room. This is the
+  //      authoritative signal and it was being discarded.
+  //   2. terminal punctuation — catches a truncation that stop_reason does not
+  //      explain (a refusal, a trailing partial word, a mangled response).
+  // Throwing here is deliberate: the caller records the league as failed and the
+  // NEXT run retries. A missing newsletter is recoverable; a published half
+  // sentence is not (it is already in fourteen inboxes).
+  if (resData.stop_reason === "max_tokens") {
+    throw new Error(
+      `Newsletter was cut off by max_tokens (${content.length} chars). Raise max_tokens or shorten the prompt target.`,
+    );
+  }
+  if (!/[.!?"'’”]\s*$/.test(content)) {
+    throw new Error(
+      `Newsletter does not end in terminal punctuation (stop_reason=${resData.stop_reason}); refusing to store a truncated newsletter. Tail: ${JSON.stringify(content.slice(-60))}`,
+    );
+  }
 
   return content;
 }
@@ -263,7 +289,20 @@ export async function POST(req: NextRequest) {
   // is raw - 1. Unclamped so week 18 gets a newsletter and off-season
   // Wednesdays no-op instead of regenerating + re-emailing week 17 forever
   // (audit C5).
-  const week = getRawNFLWeek() - 1;
+  // Operator overrides, all CRON_SECRET-protected like the rest of the route.
+  //   ?week=N     regenerate a specific week instead of the one just finalized
+  //   ?force=1    bypass the idempotency guard (otherwise an existing week is skipped)
+  //   ?noEmail=1  write the newsletter but do NOT mail the league
+  // Added 2026-09-30 to repair the truncated week-3 newsletter. The default path is
+  // unchanged: no params = exactly the old behaviour, so the Wednesday cron is safe.
+  // noEmail matters — the members had already received the broken one, and a silent
+  // second send is not a decision this route should make on its own.
+  const qp        = req.nextUrl.searchParams;
+  const weekParam = parseInt(qp.get("week") ?? "");
+  const force     = qp.get("force") === "1";
+  const noEmail   = qp.get("noEmail") === "1";
+
+  const week = Number.isFinite(weekParam) && weekParam > 0 ? weekParam : getRawNFLWeek() - 1;
   if (week < 1 || week > 18) {
     return NextResponse.json({ ok: true, skipped: "out of season", week, results: [] });
   }
@@ -298,7 +337,7 @@ export async function POST(req: NextRequest) {
         .eq("league_id", league.id)
         .eq("week", week)
         .maybeSingle();
-      if (existing) {
+      if (existing && !force) {
         results.push({ league_id: league.id, name: league.name, ok: true });
         continue;
       }
@@ -316,6 +355,9 @@ export async function POST(req: NextRequest) {
       if (upsertErr) throw new Error(`Upsert failed: ${upsertErr.message}`);
 
       // ── Email newsletter to all league members ──────────────────────────────
+      if (noEmail) {
+        console.log(`newsletter: week ${week} written for ${league.name}, email suppressed (noEmail=1)`);
+      } else
       try {
         const { data: members } = await supabase
           .from("league_members")
