@@ -48,3 +48,12 @@ graphify-out/
 
 # supabase CLI scratch (was untracked in a PUBLIC repo)
 supabase/.temp/
+
+# generator diagnostics (may contain prompt text / API error bodies)
+_portraits-*.json
+
+# Portrait variants and the picking sheet are working files: only the chosen
+# keeper (<slug>.png) is committed. Regenerate with scripts/generate-portraits.mjs.
+public/art/characters/*-v[0-9].png
+public/art/characters/manifest.json
+art/contact-sheet.html

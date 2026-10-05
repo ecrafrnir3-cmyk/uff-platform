@@ -157,12 +157,23 @@ async function loadRefs(paths) {
   return out;
 }
 
-function buildRequest({ model, prompt, negative, size, refs }) {
-  const text = negative ? `${prompt}\n\nAvoid: ${negative}` : prompt;
+function buildRequest({ prompt, negative, size, refs }) {
+  // Shape confirmed against the LIVE API on 2026-10-05, not from the docs page.
+  // Every image model reports supportedGenerationMethods = generateContent; the
+  // "interactions" endpoint the documentation described does not apply to them.
+  // Listing models first is free and caught this before a single billed call —
+  // do that again if this ever starts 404ing.
+  const text = negative ? prompt + String.fromCharCode(10,10) + "Avoid: " + negative : prompt;
+  const parts = [
+    ...refs.map((r) => ({ inline_data: { mime_type: r.mime_type, data: r.data } })),
+    { text },
+  ];
   return {
-    model,
-    input: [...refs, { type: "text", text }],
-    response_format: { type: "image", mime_type: "image/png", aspect_ratio: "1:1", image_size: size },
+    contents: [{ role: "user", parts }],
+    generationConfig: {
+      responseModalities: ["IMAGE"],
+      imageConfig: { aspectRatio: "1:1", imageSize: size },
+    },
   };
 }
 
@@ -232,7 +243,7 @@ async function main() {
 
   if (!args.yes || args.dryRun) {
     console.log(`\nDRY RUN — nothing called, nothing spent. Add --yes to generate.`);
-    const sample = buildRequest({ model: args.model, prompt: picked[0].prompt, negative, size: args.size, refs: [] });
+    const sample = buildRequest({ prompt: picked[0].prompt, negative, size: args.size, refs: [] });
     console.log(`\nFirst request body (${picked[0].slug}), truncated:`);
     console.log(JSON.stringify(sample, null, 2).slice(0, 900) + "\n  ...");
     return;
@@ -260,10 +271,11 @@ async function main() {
         try { await fs.access(file); console.log(`  skip  ${rel} (exists)`); skipped++; continue; } catch { /* generate it */ }
       }
 
-      const body = buildRequest({ model: args.model, prompt: c.prompt, negative, size: args.size, refs });
+      const body = buildRequest({ prompt: c.prompt, negative, size: args.size, refs });
       let res, json;
       try {
-        res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${args.model}:generateContent`;
+        res = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-goog-api-key": key },
           body: JSON.stringify(body),
@@ -277,7 +289,7 @@ async function main() {
 
       if (!res.ok) {
         console.error(`  FAIL  ${rel}: HTTP ${res.status} ${json?.error?.message ?? ""}`);
-        const dump = path.join(ROOT, args.out, "_last-error.json");
+        const dump = path.join(ROOT, "_portraits-last-error.json"); // NOT in public/, which is web-served
         await fs.writeFile(dump, JSON.stringify(json, null, 2));
         console.error(`  Raw response written to ${path.relative(ROOT, dump)}. Stopping so this does not bill in a loop.`);
         process.exitCode = 1;
@@ -286,7 +298,7 @@ async function main() {
 
       const b64 = extractImage(json);
       if (!b64) {
-        const dump = path.join(ROOT, args.out, "_unexpected-response.json");
+        const dump = path.join(ROOT, "_portraits-unexpected-response.json"); // NOT in public/
         await fs.writeFile(dump, JSON.stringify(json, null, 2));
         console.error(`  FAIL  ${rel}: 200 OK but no image found in the response.`);
         console.error(`  Raw response written to ${path.relative(ROOT, dump)} — the API shape likely moved; fix extractImage().`);
