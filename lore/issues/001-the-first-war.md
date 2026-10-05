@@ -1,4 +1,6 @@
-# Season One — The First War (the opening saga)
+# THE FIRST WAR
+## ISSUE #001 — "THE OPENING SAGA"
+### Before Week One · Six beats that set the board
 
 This is the Season 1 opening of The First War, told in six beats.
 
