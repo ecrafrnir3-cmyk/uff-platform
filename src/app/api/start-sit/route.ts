@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
 
     const week = getCurrentNFLWeek();
 
-    const [{ data: rosterRows }, { data: lineupRows }] = await Promise.all([
+    const [{ data: rosterRows }, { data: lineupRows }, { data: scheduleRows }] = await Promise.all([
       supabase
         .from("uff_roster_players")
         .select("player_id, slot, players(full_name, position, team, injury_status)")
@@ -55,6 +55,15 @@ export async function POST(req: NextRequest) {
         .select("slot, player_id")
         .eq("member_id", me.id)
         .eq("week", week),
+      // BYE weeks: a team ABSENT from this week's schedule is on bye. The advisor was
+      // blind to this until 2026-10-10 — a bye player arrived in the prompt with no
+      // projection token, which is indistinguishable from "Sleeper had no number for
+      // him", so the model could not tell "scores exactly zero" from "unknown".
+      supabase
+        .from("uff_game_schedule")
+        .select("team")
+        .eq("season", Number(league.season))
+        .eq("week", week),
     ]);
 
     const activeRoster = (rosterRows ?? []).filter(r => r.slot === "active" && r.players?.position);
@@ -63,6 +72,15 @@ export async function POST(req: NextRequest) {
     }
 
     const startingPlayerIds = new Set((lineupRows ?? []).map((l: { player_id: string }) => l.player_id));
+
+    // 🛑 The inverse failure matters more than the one being fixed: if the schedule has
+    // NO rows for this week (a week not yet loaded by sync-projections, or the table
+    // empty), then "absent from the schedule" is true of all 32 teams and EVERY player
+    // would be reported on bye. Only trust the bye derivation when the week looks whole.
+    const playingTeams = new Set((scheduleRows ?? []).map((g: { team: string }) => g.team));
+    const byeDataUsable = playingTeams.size >= 20;
+    const isOnBye = (team: string | null) =>
+      byeDataUsable && !!team && !playingTeams.has(team);
 
     // Fetch projections from Sleeper
     const scoringSettings: Record<string, number> = (league.scoring_settings as Record<string, number>) ?? {};
@@ -97,7 +115,7 @@ export async function POST(req: NextRequest) {
       .join(", ");
 
     // Group players by position for the prompt
-    const byPos: Record<string, { name: string; team: string; injury: string | null; proj: number; isStarting: boolean }[]> = {};
+    const byPos: Record<string, { name: string; team: string; injury: string | null; proj: number; isStarting: boolean; onBye: boolean; noTeam: boolean }[]> = {};
     for (const r of activeRoster) {
       const pos = r.players!.position!.toUpperCase();
       if (!byPos[pos]) byPos[pos] = [];
@@ -107,6 +125,11 @@ export async function POST(req: NextRequest) {
         injury: r.players!.injury_status,
         proj: projMap[r.player_id] ?? 0,
         isStarting: startingPlayerIds.has(r.player_id),
+        onBye: isOnBye(r.players!.team),
+        // A free agent cannot score either and has no bye to detect: the Dan Bailey
+        // case in OPEN-LOOPS #70, started three straight weeks because the UI's BYE
+        // badge needs player.team and silently renders nothing without one.
+        noTeam: !r.players!.team,
       });
     }
 
@@ -123,8 +146,15 @@ export async function POST(req: NextRequest) {
           .map(p => {
             const tag = p.isStarting ? "[START]" : "[BENCH]";
             const inj = p.injury ? ` ⚠️${p.injury}` : "";
-            const proj = p.proj > 0 ? ` proj ${p.proj.toFixed(1)}` : "";
-            return `    ${tag} ${p.name} (${p.team})${proj}${inj}`;
+            const dead = p.noTeam
+              ? " ❌ NO NFL TEAM — SCORES 0"
+              : p.onBye
+                ? " ❌ ON BYE THIS WEEK — SCORES 0"
+                : "";
+            const proj = p.proj > 0
+              ? ` proj ${p.proj.toFixed(1)}`
+              : (p.noTeam || p.onBye ? "" : " (no projection available)");
+            return `    ${tag} ${p.name} (${p.team})${proj}${dead}${inj}`;
           }).join("\n");
         return `  ${pos}:\n${lines}`;
       }).join("\n");
@@ -140,7 +170,9 @@ ${hasLineup ? "Lineup is already set — flag any urgent changes." : "No lineup 
 Roster:
 ${rosterStr}
 
-Give 3-5 direct recommendations. Flag any BENCH player projecting higher than their STARTER at the same position, call out injury risks, and note obvious FLEX upgrades. Under 130 words — no fluff, just moves.`;
+Any player marked ❌ scores EXACTLY ZERO this week — on bye, or not on an NFL roster at all. If one is in a [START] slot that is the most urgent problem on the board: name it first, say it scores 0, and name the specific bench player to replace it with. Do not soften it and do not bury it below other advice.${byeDataUsable ? "" : " (Bye data was unavailable for this week, so no player could be checked for a bye — say so in one short line.)"}
+
+Then give 3-5 direct recommendations. Flag any BENCH player projecting higher than their STARTER at the same position, call out injury risks, and note obvious FLEX upgrades. A player shown as "(no projection available)" is NOT on bye — the number is simply missing, so judge him on his own merits rather than treating the blank as zero. Under 150 words — no fluff, just moves.`;
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "Advisor not configured" }, { status: 500 });
