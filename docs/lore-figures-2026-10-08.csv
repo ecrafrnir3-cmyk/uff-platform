@@ -1,0 +1,115 @@
+issue,file,line,week,kind,figure,subject_as_printed,opponent_as_printed,quote,note
+001,lore/issues/001-the-first-war.md,,,none,,,,,"Pre-season fiction; prints no score, record or figure paired with a name. Character names only."
+002,lore/issues/002-first-blood.md,3,1,week_number,1,,,"Week One of the Inaugural War · Seven fronts, one Sunday",
+002,lore/issues/002-first-blood.md,13,1,count,14,,,"Fourteen champions take the field","14 managers, 7 matchups"
+002,lore/issues/002-first-blood.md,13,1,count,7,,,"Seven fronts open at once",
+002,lore/issues/002-first-blood.md,35,1,feat_count,4,Rook Callahan,Silas Vane,"Four feats. One man.",
+002,lore/issues/002-first-blood.md,37,1,score,172.86,Rook Callahan,Silas Vane,"Panel 4 — 172.86 to 88.37",
+002,lore/issues/002-first-blood.md,37,1,score,88.37,Silas Vane,Rook Callahan,"Panel 4 — 172.86 to 88.37",
+002,lore/issues/002-first-blood.md,39,1,feat_count,1,Silas Vane,Rook Callahan,"earned exactly one thing all afternoon: a Stonewall",
+002,lore/issues/002-first-blood.md,43,1,score,172.86,Rook Callahan,Silas Vane,"Won the game 172.86–88.37 · Won the Battle","cross-faction; front moved for Vanguard"
+002,lore/issues/002-first-blood.md,43,1,margin,84.49,Rook Callahan,Silas Vane,"The margin was eighty-four and a half points","172.86-88.37 = 84.49; prose rounds"
+002,lore/issues/002-first-blood.md,63,1,feat_count,3,Eli Thorne,Roman Slate,"Three feats, and the throne never got to compound anything",
+002,lore/issues/002-first-blood.md,65,1,score,167.50,Eli Thorne,Roman Slate,"Panel 7 — 167.50 to 87.97",
+002,lore/issues/002-first-blood.md,65,1,score,87.97,Roman Slate,Eli Thorne,"Panel 7 — 167.50 to 87.97",
+002,lore/issues/002-first-blood.md,67,1,feat_count,0,Roman Slate,Eli Thorne,"No feat. No moment.",
+002,lore/issues/002-first-blood.md,67,1,margin,79.53,Eli Thorne,Roman Slate,"Seventy-nine and a half points of daylight","167.50-87.97 = 79.53"
+002,lore/issues/002-first-blood.md,69,1,score,167.50,Eli Thorne,Roman Slate,"Won the game 167.50–87.97 · Won the Battle","cross-faction"
+002,lore/issues/002-first-blood.md,85,1,feat_count,3,Dr. Orin Pyre,Ezra Cain,"Stonewall, Breakaway, Twist of Fate — three of them",
+002,lore/issues/002-first-blood.md,85,1,feat_count,2,Ezra Cain,Dr. Orin Pyre,"Stonewall, Twist of Fate, two marks in the ledger",
+002,lore/issues/002-first-blood.md,87,1,score,127.15,Dr. Orin Pyre,Ezra Cain,"127.15 to 107.32",
+002,lore/issues/002-first-blood.md,87,1,score,107.32,Ezra Cain,Dr. Orin Pyre,"127.15 to 107.32",
+002,lore/issues/002-first-blood.md,87,1,margin,19.83,Dr. Orin Pyre,Ezra Cain,"Nineteen points and change","127.15-107.32 = 19.83"
+002,lore/issues/002-first-blood.md,89,1,score,127.15,Dr. Orin Pyre,Ezra Cain,"Won the game 127.15–107.32 · Won the Duel","same-faction (Dominion); front did not move"
+002,lore/issues/002-first-blood.md,101,1,rank,lowest-scoring front,Saint Vega,Juno Reyes,"won the lowest-scoring front of the week","88.97+69.68 = 158.65, the lowest matchup total printed"
+002,lore/issues/002-first-blood.md,103,1,feat_count,2,Saint Vega,Juno Reyes,"Stonewall ... Then Twist of Fate",
+002,lore/issues/002-first-blood.md,105,1,score,88.97,Saint Vega,Juno Reyes,"88.97 to 69.68",
+002,lore/issues/002-first-blood.md,105,1,score,69.68,Juno Reyes,Saint Vega,"88.97 to 69.68",
+002,lore/issues/002-first-blood.md,105,1,margin,19.29,Saint Vega,Juno Reyes,"Nineteen points","88.97-69.68 = 19.29"
+002,lore/issues/002-first-blood.md,105,1,feat_count,0,Juno Reyes,Saint Vega,"No feats for the Skybreaker at all",
+002,lore/issues/002-first-blood.md,107,1,score,69.68,Juno Reyes,Saint Vega,"Lost the game 69.68–88.97 · Lost the Battle","cross-faction; Dominion took ground"
+002,lore/issues/002-first-blood.md,111,1,count,2,,,"Two teams under a hundred points","Vega 88.97 and Reyes 69.68"
+002,lore/issues/002-first-blood.md,125,1,score,176.71,Countess Mave,Vesper Kane,"put up 176.71 — the highest number any champion, of either order, reached in the opening week","claims week-1 league high"
+002,lore/issues/002-first-blood.md,125,1,score,153.37,Vesper Kane,Countess Mave,"who put up 153.37, which would have won three of the other six fronts","153.37 beats the winners of 3 other fronts: 127.15, 88.97, 124.59"
+002,lore/issues/002-first-blood.md,129,1,feat_count,3,Countess Mave,Vesper Kane,"Mave took Explosion, Stonewall, Twist of Fate",
+002,lore/issues/002-first-blood.md,129,1,feat_count,4,Vesper Kane,Countess Mave,"four feats, the same count as Rook Callahan, the best individual haul on the villain side",
+002,lore/issues/002-first-blood.md,129,1,margin,23.34,Countess Mave,Vesper Kane,"still lost by 23.34","176.71-153.37 = 23.34"
+002,lore/issues/002-first-blood.md,133,1,rank,2nd in Dominion / 5th in league,Vesper Kane,,"the second-best week anyone in the Dominion had all Sunday (fifth-best in the league)","league order printed: 176.71, 172.86, 167.50, 162.68, 153.37"
+002,lore/issues/002-first-blood.md,135,1,score,176.71,Countess Mave,Vesper Kane,"Won the game 176.71–153.37 · Won the Duel","same-faction (Dominion)"
+002,lore/issues/002-first-blood.md,147,1,score,162.68,Cassia Dawn,Titus Vale,"The founder took it 162.68 to 120.09","same-faction (Vanguard)"
+002,lore/issues/002-first-blood.md,147,1,score,120.09,Titus Vale,Cassia Dawn,"The founder took it 162.68 to 120.09",
+002,lore/issues/002-first-blood.md,147,1,feat_count,2,Cassia Dawn,Titus Vale,"Explosion and Twist of Fate for the First Light",
+002,lore/issues/002-first-blood.md,147,1,feat_count,1,Titus Vale,Cassia Dawn,"a lone Twist of Fate for the Sentinel",
+002,lore/issues/002-first-blood.md,151,1,score,124.59,Brother Amos,Marcus Kell,"124.59 to 97.14","same-faction (Vanguard)"
+002,lore/issues/002-first-blood.md,151,1,score,97.14,Marcus Kell,Brother Amos,"124.59 to 97.14",
+002,lore/issues/002-first-blood.md,153,1,feat_count,2,Brother Amos,Marcus Kell,"Amos brought Explosion and Twist of Fate",
+002,lore/issues/002-first-blood.md,153,1,feat_count,2,Marcus Kell,Brother Amos,"Marcus brought Stonewall and Twist of Fate",
+002,lore/issues/002-first-blood.md,163,1,count,7 fronts / 3 cross-faction,,,"Seven fronts. Only three of them were war.",
+002,lore/issues/002-first-blood.md,167,1,record,Vanguard 2 – Dominion 1,Vanguard,Dominion,"Vanguard two. Dominion one.","week-1 cross-faction record"
+002,lore/issues/002-first-blood.md,171,1,feat_count,29,league,,"Twenty-nine feats were earned across the league","sum of the per-name counts printed in this issue is 29"
+002,lore/issues/002-first-blood.md,171,1,feat_count,0,Ice Water (league),,"Not one of them was Ice Water","no result within 5 points"
+002,lore/issues/002-first-blood.md,179,1,margin,84.49,Rook Callahan,Silas Vane,"won by eighty-four and a half points",
+002,lore/issues/002-first-blood.md,179,1,margin,79.53,Roman Slate,Eli Thorne,"lost by seventy-nine","prose rounds 79.53 down"
+002,lore/issues/002-first-blood.md,187,1,count,7 fronts / 3 counted,,,"Seven fronts fought. Three of them counted.",
+003,lore/issues/003-the-throne-answers.md,1,,week_number,,,,"THE FIRST WAR — ISSUE #003","the issue header prints no week; README.md:7 assigns it Week 2; lines 14, 88 and 136 say 'second week' / 'week two'"
+003,lore/issues/003-the-throne-answers.md,10,1,score,87.97,Roman Slate,Eli Thorne,"Week one had put 87.97 points on his name and taken 167.50 from a boy called Eli Thorne","week-1 recap; matches issue 002 line 65"
+003,lore/issues/003-the-throne-answers.md,10,1,score,167.50,Eli Thorne,Roman Slate,"taken 167.50 from a boy called Eli Thorne",
+003,lore/issues/003-the-throne-answers.md,20,1,score,173,Rook Callahan,,"still riding a hundred and seventy-three points","rounded form of 172.86"
+003,lore/issues/003-the-throne-answers.md,22,1,score,172.86,Rook Callahan,Silas Vane,"He had put 172.86 on Silas Vane's rust and walked off with 88.37 left behind him","week-1 recap"
+003,lore/issues/003-the-throne-answers.md,22,1,score,88.37,Silas Vane,Rook Callahan,"with 88.37 left behind him",
+003,lore/issues/003-the-throne-answers.md,22,1,feat_count,4,Rook Callahan,,"Four feats in one week ... Nobody had done more. One villain had done exactly as much.",
+003,lore/issues/003-the-throne-answers.md,40,2,score,170.18,Roman Slate,Rook Callahan,"ROMAN SLATE 170.18 — ROOK CALLAHAN 105.28","cross-faction"
+003,lore/issues/003-the-throne-answers.md,40,2,score,105.28,Rook Callahan,Roman Slate,"ROMAN SLATE 170.18 — ROOK CALLAHAN 105.28",
+003,lore/issues/003-the-throne-answers.md,44,2,feat_count,4,Roman Slate,Rook Callahan,"All four stat feats",
+003,lore/issues/003-the-throne-answers.md,46,2,feat_count,2,Rook Callahan,Roman Slate,"Rook got his hands on two of them — a wall of his own, an omen of his own",
+003,lore/issues/003-the-throne-answers.md,46,2,margin,64.90,Roman Slate,Rook Callahan,"Sixty-four points and ninety hundredths of a point","170.18-105.28 = 64.90"
+003,lore/issues/003-the-throne-answers.md,54,2,score,105.28,Rook Callahan,Roman Slate,"Lost the game 105.28–170.18 · Lost the Battle",
+003,lore/issues/003-the-throne-answers.md,62,2,score,132.16,Eli Thorne,Saint Vega,"ELI THORNE 132.16 — SAINT VEGA 69.31","cross-faction"
+003,lore/issues/003-the-throne-answers.md,62,2,score,69.31,Saint Vega,Eli Thorne,"ELI THORNE 132.16 — SAINT VEGA 69.31",
+003,lore/issues/003-the-throne-answers.md,64,2,margin,62.85,Eli Thorne,Saint Vega,"Sixty-two points and eighty-five hundredths","132.16-69.31 = 62.85"
+003,lore/issues/003-the-throne-answers.md,66,1,margin,19.29,Saint Vega,Juno Reyes,"beaten Juno Reyes in week one by nineteen and change","week-1 recap"
+003,lore/issues/003-the-throne-answers.md,66,2,score,69,Saint Vega,Eli Thorne,"He put up sixty-nine against the Oathkeeper","rounded 69.31"
+003,lore/issues/003-the-throne-answers.md,66,2,feat_count,0,Saint Vega,Eli Thorne,"He recorded nothing — not a strike, not a wall, not one turn of fate",
+003,lore/issues/003-the-throne-answers.md,68,2,feat_count,2,Eli Thorne,Saint Vega,"Eli took the Breakaway and the Twist of Fate",
+003,lore/issues/003-the-throne-answers.md,74,2,record,2–0,Eli Thorne,,"Two weeks. Two wins. Both of them routs.",
+003,lore/issues/003-the-throne-answers.md,76,2,score,132.16,Eli Thorne,Saint Vega,"Won the game 132.16–69.31 · Won the Battle",
+003,lore/issues/003-the-throne-answers.md,88,2,feat_count,3,Marcus Kell,Countess Mave,"the Explosion, the Breakaway, the Twist of Fate. Three feats.",
+003,lore/issues/003-the-throne-answers.md,88,2,score,116.29,Marcus Kell,Countess Mave,"A hundred and sixteen points and twenty-nine hundredths",
+003,lore/issues/003-the-throne-answers.md,88,2,margin,19,Marcus Kell,,"nineteen more than he'd managed the week before","116.29-97.14 = 19.15; week-1 figure from issue 002 line 151"
+003,lore/issues/003-the-throne-answers.md,90,2,margin,14.33,Countess Mave,Marcus Kell,"It was not enough by fourteen points and thirty-three hundredths","130.62-116.29 = 14.33"
+003,lore/issues/003-the-throne-answers.md,92,2,score,130.62,Countess Mave,Marcus Kell,"COUNTESS MAVE 130.62 — MARCUS KELL 116.29","cross-faction"
+003,lore/issues/003-the-throne-answers.md,92,2,score,116.29,Marcus Kell,Countess Mave,"COUNTESS MAVE 130.62 — MARCUS KELL 116.29",
+003,lore/issues/003-the-throne-answers.md,96,2,count,6 cross-faction fights / 4 routs / 2 close,,,"Six fights, and four of them were routs. Only two stayed close","through week 2"
+003,lore/issues/003-the-throne-answers.md,96,1,margin,19.29,Saint Vega,Juno Reyes,"Saint Vega over Juno Reyes by 19.29",
+003,lore/issues/003-the-throne-answers.md,100,2,margin,14,Marcus Kell,Countess Mave,"Fourteen. I'll remember fourteen.","rounded 14.33"
+003,lore/issues/003-the-throne-answers.md,102,2,score,116.29,Marcus Kell,Countess Mave,"Lost the game 116.29–130.62 · Lost the Battle",
+003,lore/issues/003-the-throne-answers.md,110,2,score,134.80,Ezra Cain,Silas Vane,"Ezra Cain took the Rust King down 134.80–98.50","same-faction (Dominion)"
+003,lore/issues/003-the-throne-answers.md,110,2,score,98.50,Silas Vane,Ezra Cain,"134.80–98.50",
+003,lore/issues/003-the-throne-answers.md,110,2,feat_count,3,Ezra Cain,Silas Vane,"a strike, a wall and a break in the same afternoon",
+003,lore/issues/003-the-throne-answers.md,110,2,feat_count,1,Silas Vane,Ezra Cain,"Silas Vane managed one Explosion",
+003,lore/issues/003-the-throne-answers.md,114,2,score,118.92,Vesper Kane,Dr. Orin Pyre,"Vesper Kane beat Dr. Orin Pyre 118.92–104.51","same-faction (Dominion)"
+003,lore/issues/003-the-throne-answers.md,114,2,score,104.51,Dr. Orin Pyre,Vesper Kane,"118.92–104.51",
+003,lore/issues/003-the-throne-answers.md,114,2,margin,14.41,Vesper Kane,Dr. Orin Pyre,"fourteen points and forty-one hundredths, the tightest thing in the Dominion's own house","118.92-104.51 = 14.41"
+003,lore/issues/003-the-throne-answers.md,114,2,feat_count,1,Vesper Kane,Dr. Orin Pyre,"lost to a single Twist of Fate","the feat is Kane's"
+003,lore/issues/003-the-throne-answers.md,118,2,score,110.32,Juno Reyes,Titus Vale,"Juno Reyes took Titus Vale 110.32–103.00","same-faction (Vanguard)"
+003,lore/issues/003-the-throne-answers.md,118,2,score,103.00,Titus Vale,Juno Reyes,"110.32–103.00",
+003,lore/issues/003-the-throne-answers.md,118,2,margin,7.32,Juno Reyes,Titus Vale,"Seven points and thirty-two hundredths — the narrowest margin anywhere in two weeks of war","110.32-103.00 = 7.32"
+003,lore/issues/003-the-throne-answers.md,118,2,feat_count,1,Juno Reyes,Titus Vale,"one Twist of Fate",
+003,lore/issues/003-the-throne-answers.md,118,2,feat_count,1,Titus Vale,Juno Reyes,"Titus held a Stonewall",
+003,lore/issues/003-the-throne-answers.md,122,2,score,126.78,Brother Amos,Cassia Dawn,"Brother Amos beat Cassia Dawn 126.78–102.16","same-faction (Vanguard)"
+003,lore/issues/003-the-throne-answers.md,122,2,score,102.16,Cassia Dawn,Brother Amos,"126.78–102.16",
+003,lore/issues/003-the-throne-answers.md,126,2,feat_count,2,Brother Amos,Cassia Dawn,"The Shepherd took a wall and an omen",
+003,lore/issues/003-the-throne-answers.md,126,2,feat_count,2,Cassia Dawn,Brother Amos,"the founder took a strike and an omen",
+003,lore/issues/003-the-throne-answers.md,126,2,margin,24,Brother Amos,Cassia Dawn,"the worse end of twenty-four points","126.78-102.16 = 24.62; prose rounds down"
+003,lore/issues/003-the-throne-answers.md,136,2,count,3,,,"Three fights crossed the line in week two.",
+003,lore/issues/003-the-throne-answers.md,140,2,record,Dominion 2 – Vanguard 1,Dominion,Vanguard,"Dominion 2 — Vanguard 1.","week-2 cross-faction record"
+003,lore/issues/003-the-throne-answers.md,144,1,record,Vanguard 2 – Dominion 1,Vanguard,Dominion,"Vanguard 2 — Dominion 1.","week-1 cross-faction record; matches issue 002 line 167"
+003,lore/issues/003-the-throne-answers.md,148,2,record,3–3,Vanguard,Dominion,"SIX FIGHTS. THREE EACH. THE LINE HAS NOT MOVED AN INCH.","cumulative through week 2; matches README.md:19 and season-1-spine.md:30"
+003,lore/issues/003-the-throne-answers.md,160,,score,173,Rook Callahan,,"A 173-point week.","rounded 172.86"
+003,lore/issues/003-the-throne-answers.md,160,,score,88,,,"An 88-point week.","ambiguous: 88.37 (Silas Vane, week 1) or 87.97 (Roman Slate, week 1); not a contradiction"
+003,lore/issues/003-the-throne-answers.md,160,,record,3 unbeaten,,,"Three who have not been beaten once","season-1-spine.md:56 names them: Eli Thorne, Brother Amos, Countess Mave"
+003,lore/issues/003-the-throne-answers.md,160,2,margin,64,Rook Callahan,Roman Slate,"a man who has been beaten by sixty-four","rounded 64.90"
+003,lore/issues/003-the-throne-answers.md,160,2,margin,14.33,Countess Mave,Marcus Kell,"The tightest margin in the war, fourteen points and thirty-three hundredths","tightest cross-faction"
+003,lore/issues/003-the-throne-answers.md,160,2,margin,7.32,Juno Reyes,Titus Vale,"the tightest margin anywhere, seven and thirty-two",
+003,lore/issues/003-the-throne-answers.md,166,2,margin,64,Rook Callahan,Roman Slate,"sixty-four points short",
+003,lore/issues/003-the-throne-answers.md,176,3,week_number,3,,,"NEXT: WEEK THREE. THE TIEBREAKER.",
