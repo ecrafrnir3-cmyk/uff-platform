@@ -56,4 +56,9 @@ _portraits-*.json
 # keeper (<slug>.png) is committed. Regenerate with scripts/generate-portraits.mjs.
 public/art/characters/*-v[0-9].png
 public/art/characters/manifest.json
+# Panel variants are regenerable from art/panels-brief.md; only a chosen keeper
+# (<slug>.png, no -vN) is committed. The glob is [0-9] on purpose: a bare *-v*
+# swallowed lyra-vann / saint-vega / silas-vane / titus-vale on 2026-10-05.
+public/art/panels/*-v[0-9].png
+public/art/panels/manifest.json
 art/contact-sheet.html

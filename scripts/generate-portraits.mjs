@@ -40,7 +40,7 @@ import path from "node:path";
 import process from "node:process";
 
 const ROOT = process.cwd();
-const BRIEF = path.join(ROOT, "art", "higgsfield-brief.md");
+const DEFAULT_BRIEF = path.join(ROOT, "art", "higgsfield-brief.md");
 
 // Per-image USD, from ai.google.dev/gemini-api/docs/pricing (checked 2026-10-05).
 // Used only for the estimate and the --max-cost guard; it bills what it bills.
@@ -55,6 +55,7 @@ function parseArgs(argv) {
     only: null, variants: 3, model: "gemini-3.1-flash-image", size: "1K",
     out: path.join("public", "art", "characters"), maxCost: 2, yes: false,
     dryRun: false, list: false, force: false, refs: [], delayMs: 1200,
+    brief: DEFAULT_BRIEF, aspect: "1:1",
   };
   for (let i = 2; i < argv.length; i++) {
     const k = argv[i];
@@ -67,6 +68,8 @@ function parseArgs(argv) {
     else if (k === "--max-cost") a.maxCost = parseFloat(next());
     else if (k === "--ref") a.refs.push(next());
     else if (k === "--delay") a.delayMs = parseInt(next(), 10);
+    else if (k === "--brief") a.brief = next();
+    else if (k === "--aspect") a.aspect = next();
     else if (k === "--yes") a.yes = true;
     else if (k === "--dry-run") a.dryRun = true;
     else if (k === "--list") a.list = true;
@@ -98,8 +101,8 @@ const slugify = (name) =>
  * grading. So the prompt is taken verbatim — never re-assembled here, because the
  * brief is the source of truth and a paraphrase would drift the style.
  */
-async function parseBrief() {
-  const text = await fs.readFile(BRIEF, "utf8");
+async function parseBrief(briefPath) {
+  const text = await fs.readFile(briefPath, "utf8");
   const lines = text.split("\n");
 
   let negative = "";
@@ -157,7 +160,7 @@ async function loadRefs(paths) {
   return out;
 }
 
-function buildRequest({ prompt, negative, size, refs }) {
+function buildRequest({ prompt, negative, size, refs, aspect = "1:1" }) {
   // Shape confirmed against the LIVE API on 2026-10-05, not from the docs page.
   // Every image model reports supportedGenerationMethods = generateContent; the
   // "interactions" endpoint the documentation described does not apply to them.
@@ -172,7 +175,7 @@ function buildRequest({ prompt, negative, size, refs }) {
     contents: [{ role: "user", parts }],
     generationConfig: {
       responseModalities: ["IMAGE"],
-      imageConfig: { aspectRatio: "1:1", imageSize: size },
+      imageConfig: { aspectRatio: aspect, imageSize: size },
     },
   };
 }
@@ -200,7 +203,7 @@ async function main() {
     return;
   }
 
-  const { chars, negative } = await parseBrief();
+  const { chars, negative } = await parseBrief(args.brief);
   const picked = select(chars, args.only);
 
   if (!picked.length) {
@@ -210,14 +213,16 @@ async function main() {
   }
 
   if (args.list) {
-    console.log(`Parsed ${chars.length} characters from art/higgsfield-brief.md\n`);
+    console.log(`Parsed ${chars.length} subjects from ${path.relative(ROOT, args.brief)}\n`);
     for (const c of chars) {
-      console.log(`  ${String(c.number).padStart(2)}. ${c.slug.padEnd(16)} ${c.faction.padEnd(8)} ${c.name} — "${c.epithet}" (${c.prompt.length} chars)`);
+      console.log(`  ${String(c.number).padStart(2)}. ${c.slug.padEnd(16)} ${(c.faction ?? "-").padEnd(8)} ${c.name} — "${c.epithet}" (${c.prompt.length} chars)`);
     }
     console.log(`\nShared negative prompt: ${negative.length} chars`);
     return;
   }
 
+  // NOTE: list price, image OUTPUT only. Real invoices have run ~5% higher
+  // ($2.55 estimated vs $2.69 billed on 2026-10-05). Treat as a floor.
   const perImage = PRICING[args.model]?.[args.size];
   if (perImage == null) {
     console.error(`No price on file for ${args.model} @ ${args.size}. Known: ${Object.keys(PRICING).join(", ")}`);
@@ -243,7 +248,12 @@ async function main() {
 
   if (!args.yes || args.dryRun) {
     console.log(`\nDRY RUN — nothing called, nothing spent. Add --yes to generate.`);
-    const sample = buildRequest({ prompt: picked[0].prompt, negative, size: args.size, refs: [] });
+    const sample = buildRequest({ prompt: picked[0].prompt, negative, size: args.size, refs: [], aspect: args.aspect });
+    // generationConfig in FULL, and first: it is small, it decides the shape of
+    // every image, and the truncated body below cuts it off entirely whenever the
+    // prompt is long (a 1600-char prompt pushes aspectRatio past the 900-char
+    // slice, so a wrong ratio stayed invisible until after the money was spent).
+    console.log("generationConfig (full): " + JSON.stringify(sample.generationConfig));
     console.log(`\nFirst request body (${picked[0].slug}), truncated:`);
     console.log(JSON.stringify(sample, null, 2).slice(0, 900) + "\n  ...");
     return;
@@ -271,7 +281,7 @@ async function main() {
         try { await fs.access(file); console.log(`  skip  ${rel} (exists)`); skipped++; continue; } catch { /* generate it */ }
       }
 
-      const body = buildRequest({ prompt: c.prompt, negative, size: args.size, refs });
+      const body = buildRequest({ prompt: c.prompt, negative, size: args.size, refs, aspect: args.aspect });
       let res, json;
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${args.model}:generateContent`;
