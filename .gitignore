@@ -61,4 +61,7 @@ public/art/characters/manifest.json
 # swallowed lyra-vann / saint-vega / silas-vane / titus-vale on 2026-10-05.
 public/art/panels/*-v[0-9].png
 public/art/panels/manifest.json
+# Scratch comparison renders (underscore-prefixed dirs under public/art) are
+# throwaway proofs, never shipped.
+public/art/_*/
 art/contact-sheet.html
