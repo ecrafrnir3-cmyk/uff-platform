@@ -7,6 +7,10 @@
 //   format(...)  whether the reply parses the way the route and its page expect
 //   limit        the length the site's own prompt asks for, in words
 //   voice        the register the site's own prompt asks for (for the grader)
+//   cap          the site's max_tokens in the ORIGINAL code (b01a33f, Haiku 4.5); check-parity maps the
+//                harness request back to it when it compares against the original files
+// shown() uses the route's own reader, so it measures whatever the code reads: first block before the
+// swap commit, every text block after it.
 // tools/qa/check-parity.mjs proves assemble() builds byte-for-byte what each handler sends.
 import { registerLoader } from './loader/register.mjs';
 import { createClient } from './fakes/supabase.mjs';

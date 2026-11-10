@@ -37,7 +37,10 @@ gitignored `tools/qa/fixtures/` and `tools/qa/results/`.
   the draft advisor's Jacksonville bug, and several prompt defects. It does fix two live defects of today's model:
   Power Rankings is cut off on 8 of 8 calls at its 600-token cap (the card shows 8 to 13 of 14 teams), and the Trade
   Evaluator's verdict is wrapped in markdown on 17 of 18 calls, so the page never colours it.
-- **Spend: $4.67** of the $15 credit cap (answers $2.07, grading $2.14, Opus cross-check $0.40, grader self-test $0.05).
+- **The swap as shipped was run on all 130 cases** (each route's request exactly as the last commit builds it, read
+  with the new reader): **130 of 130 replies shown and parsed, none cut off**, the longest using 54% of its cap.
+- **Spend: $4.93** of the $15 credit cap (answers $2.07, grading $2.14, Opus cross-check $0.40, the as-built check of
+  the swap $0.26, grader self-test $0.05).
 
 ## 2. What was measured, and how
 
@@ -359,6 +362,27 @@ a week the mix is about $0.31. Either way the change is about quality and workin
 - No route, query, prompt text or page changes. `node tools/qa/check-parity.mjs --all` still passes on the swap commit:
   the routes send exactly what the harness builds, and against `b01a33f` every prompt byte is unchanged once the model,
   the cap and the effort are mapped back (the four reply shapes are checked against the original first-block reader).
+  `tsc --noEmit` and eslint are clean on it.
+- **As-built check** (`node tools/qa/eval.mjs run --cap built`, all 130 cases, each request exactly as the swapped
+  builders make it, read by the swapped readers):
+
+  | site | model | cap | shown and parsed | cut off | longest reply (tokens) | $ per call |
+  |---|---|---|---|---|---|---|
+  | start-sit | Haiku 5.5 | 3,700 | 15/15 | 0 | 1,407 | $0.00065 |
+  | chat | Haiku 5.5 | 1,900 | 18/18 | 0 | 918 | $0.00055 |
+  | oracle | Haiku 5.5 | 1,000 | 12/12 | 0 | 462 | $0.00014 |
+  | matchup-preview | Haiku 5.5 | 600 | 10/10 | 0 | 263 | $0.00014 |
+  | power-rankings | Sonnet 5.5 | 2,900 | 8/8 | 0 | 1,287 | $0.01460 |
+  | draft-advisor | Haiku 5.5 | 1,100 | 10/10 | 0 | 469 | $0.00030 |
+  | token-advisor | Haiku 5.5 | 1,500 | 12/12 | 0 | 806 | $0.00034 |
+  | trade-eval | Haiku 5.5 | 2,300 | 9/9 | 0 | 1,129 | $0.00043 |
+  | trade-veto | Haiku 5.5 | 1,900 | 9/9 | 0 | 892 | $0.00028 |
+  | trade-actions | Haiku 5.5 | 1,400 | 9/9 | 0 | 733 | $0.00029 |
+  | waiver-intel | Haiku 5.5 | 900 | 10/10 | 0 | 378 | $0.00015 |
+  | newsletter | Sonnet 5.5 | 3,000 | 8/8 (all would be stored) | 0 | 1,518 | $0.01333 |
+
+  These replies were not graded again; their quality is the measuring-cap run's above (same models, same effort, same
+  prompts; only the cap differs, and no reply came near it).
 
 ## 9. Deploy path
 

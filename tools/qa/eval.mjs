@@ -110,11 +110,15 @@ const usageOf = (u = {}) => ({ input_tokens: u.input_tokens || 0, output_tokens:
 
 // The request a site would send on model mk: the route's own body with only the model, the cap and
 // (on the 5.x models) output_config.effort changed. No temperature, top_p or top_k anywhere.
+// cap 'built' sends the body exactly as the route builds it (model, cap and effort included).
 export function variant(body, mk, cap) {
-  const b = { ...body, model: MODELS[mk].id, max_tokens: cap === 'today' ? body.max_tokens : cap === 'raised' ? RAISED_CAP : Number(cap) };
-  if (MODELS[mk].effort) b.output_config = { effort: MODELS[mk].effort };
+  if (cap === 'built') return body;
+  const { output_config, ...rest } = body;
+  const b = { ...rest, model: MODELS[mk].id, max_tokens: cap === 'today' ? body.max_tokens : cap === 'raised' ? RAISED_CAP : Number(cap) };
+  if (MODELS[mk].effort) b.output_config = { effort: MODELS[mk].effort }; // Haiku 4.5 takes no effort setting
   return b;
 }
+const modelKeyOf = (id) => Object.keys(MODELS).find((k) => MODELS[k].id === id);
 
 // A streamed (chat) call, read the way ChatInterface.tsx reads it.
 function readStream(sse) {
@@ -135,18 +139,19 @@ async function answerOne(F, c, mk, cap) {
   const a = await assemble(F, c);
   if (a.refused) return { refused: a.refused };
   const body = variant(a.body, mk, cap);
+  if (mk === 'built') mk = modelKeyOf(body.model);
   const t0 = Date.now();
   if (body.stream) {
     const sse = await withRetries(() => post('/v1/messages', body, { raw: true }));
     const r = readStream(sse);
-    return { ...r, max_tokens: body.max_tokens, ms: Date.now() - t0, meta: a };
+    return { ...r, modelKey: mk, max_tokens: body.max_tokens, ms: Date.now() - t0, meta: a };
   }
   const d = await withRetries(() => post('/v1/messages', body));
   return {
     types: (d.content || []).map((b) => b.type), stop: d.stop_reason, usage: usageOf(d.usage),
     shownToday: SITES[c.site].shown(d) || '', shownFixed: joinedText(d),
     raw: d.content?.some((b) => b.type !== 'text' && b.type !== 'thinking') ? d.content : undefined,
-    max_tokens: body.max_tokens, ms: Date.now() - t0, meta: a,
+    modelKey: mk, max_tokens: body.max_tokens, ms: Date.now() - t0, meta: a,
   };
 }
 
@@ -190,7 +195,8 @@ async function cmdRun() {
   needKey();
   const F = loadFixture();
   const cap = args.cap || 'today';
-  const models = (args.models || RUN_MODELS.join(',')).split(',');
+  // --cap built: one run per case on the model the route itself names (the swap as shipped).
+  const models = cap === 'built' ? ['built'] : (args.models || RUN_MODELS.join(',')).split(',');
   let cases = loadCases();
   if (args.sites) { const s = new Set(String(args.sites).split(',')); cases = cases.filter((c) => s.has(c.site)); }
   if (args.ids) { const s = new Set(String(args.ids).split(',')); cases = cases.filter((c) => s.has(c.id)); }
@@ -207,7 +213,7 @@ async function cmdRun() {
       try {
         const r = await answerOne(F, c, mk, cap);
         if (r.refused) { console.log(`${c.id} refused by the route logic: ${r.refused}`); continue; }
-        const row = rowFor(c, mk, cap, r);
+        const row = rowFor(c, r.modelKey, cap, r);
         append(FILES.answers, row);
         addSpend(row.cost);
         done++;

@@ -44,7 +44,11 @@ node tools/qa/summary.mjs
 
 `--budget USD` stops a command when the job's running total (summed from the cost on every saved row)
 reaches it; nothing goes past $15. Runs resume: finished (case, model, cap) rows are skipped unless
-`--redo`.
+`--redo`. `--cap built` sends each route's request exactly as the code builds it (model, cap and effort
+included) and reads it with the route's own reader: after the swap commit, that is the swap as shipped
+(`QA_RESULTS_DIR=tools/qa/results/built` keeps those rows apart). `SITES[site].cap` in `sites.mjs` is the
+site's cap in the original code; `shown()` uses whatever reader the code has, so the 2026-11-10 results
+were taken with the first-block readers of `b01a33f`.
 
 ## What parity proves
 
