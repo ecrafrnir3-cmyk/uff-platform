@@ -2,6 +2,7 @@
 // 2026-11-10 so the model evaluation in tools/qa builds exactly what the route sends. The route
 // gathers the rows and calls these; tools/qa/check-parity.mjs proves the two agree byte for byte.
 // Pure: no database, no network, no clock (the week is passed in).
+import { MODEL_SONNET, OUTPUT_LOW, replyText } from "@/lib/ai-prompts/anthropic";
 
 export interface PowerRankingsMatchupRow {
   matchup_id: number;
@@ -107,15 +108,19 @@ No intro text, no outro text. Just the numbered rankings.`;
     return prompt;
 }
 
+// Sonnet 5.5 at effort low: 6/8 passed FACT (Haiku 5.5: 1/8, misread ranks; Haiku 4.5: 0/8). At the old
+// 600-token cap every reply was cut off and the card showed 8 to 13 of 14 teams. Longest reply 1,412
+// tokens, so the cap is 2,900.
 export function powerRankingsRequest(prompt: string) {
   return {
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 600,
+        model: MODEL_SONNET,
+        max_tokens: 2900,
         messages: [{ role: "user", content: prompt }],
+        output_config: OUTPUT_LOW,
       };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function readPowerRankingsReply(resData: any): string {
-  return resData.content?.[0]?.text ?? "";
+  return replyText(resData);
 }

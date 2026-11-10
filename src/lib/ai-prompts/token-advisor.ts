@@ -3,6 +3,7 @@
 // route gathers the rows and calls these; tools/qa/check-parity.mjs proves the two agree byte for
 // byte. Pure: no database, no network, no clock.
 import { getRecord, type CompletedMatchupRow } from "@/lib/get-record";
+import { MODEL_HAIKU, OUTPUT_LOW, replyText } from "@/lib/ai-prompts/anthropic";
 
 export const TOKEN_INFO: Record<number, { name: string; effect: string }> = {
   1:  { name: "Power Surge",      effect: "+2.0 flat points added to your score this week." },
@@ -90,15 +91,18 @@ Give concise, actionable advice in 3-4 sentences. Should they use it this week o
     return prompt;
 }
 
+// Haiku 5.5 at effort low: 10/12 passed FACT (Haiku 4.5: 7/12, Sonnet 5.5: 7/12). Longest reply 734
+// tokens, so the cap is 1,500.
 export function tokenAdvisorRequest(prompt: string) {
   return {
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 200,
+        model: MODEL_HAIKU,
+        max_tokens: 1500,
         messages: [{ role: "user", content: prompt }],
+        output_config: OUTPUT_LOW,
       };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function readTokenAdvisorReply(resData: any): string {
-  return resData.content?.[0]?.text ?? "";
+  return replyText(resData);
 }

@@ -3,6 +3,7 @@
 // The route gathers the rows and calls these; tools/qa/check-parity.mjs proves the two agree.
 // Pure: no database, no network, no clock.
 import { TOKEN_NAMES } from "@/lib/token-names";
+import { MODEL_HAIKU, OUTPUT_LOW, replyText } from "@/lib/ai-prompts/anthropic";
 
 export interface OracleMatchupRow {
   id: string;
@@ -59,15 +60,18 @@ Write a 3-4 sentence dramatic recap of this matchup in the Oracle's voice. Refer
     return prompt;
 }
 
+// Haiku 5.5 at effort low: 12/12 passed FACT and voice (Haiku 4.5: 7/12). Longest reply 468 tokens, so the
+// cap is 1,000. The recap is stored for good, so a cut-off reply must never get through: hence the headroom.
 export function oracleRequest(prompt: string) {
   return {
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 200,
+        model: MODEL_HAIKU,
+        max_tokens: 1000,
         messages: [{ role: "user", content: prompt }],
+        output_config: OUTPUT_LOW,
       };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function readOracleReply(anthropicData: any): string {
-  return anthropicData.content?.[0]?.text ?? "";
+  return replyText(anthropicData);
 }

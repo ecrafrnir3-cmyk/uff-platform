@@ -2,6 +2,7 @@
 // 2026-11-10 so the model evaluation in tools/qa builds exactly what the route sends. The route
 // gathers the rows and calls these; tools/qa/check-parity.mjs proves the two agree byte for byte.
 // Pure: no database, no network, no clock.
+import { MODEL_HAIKU, OUTPUT_LOW, replyText } from "@/lib/ai-prompts/anthropic";
 
 // AFC and NFC team lookup for faction-alignment advice
 const AFC_TEAMS = new Set([
@@ -100,15 +101,18 @@ No intro, just advice + PICK line.`;
     return { prompt, currentRound, available };
 }
 
+// Haiku 5.5 at effort low: 9/10 passed FACT (Haiku 4.5: 6/10), every PICK line parsed. Longest reply 524
+// tokens, so the cap is 1,100.
 export function draftAdvisorRequest(prompt: string) {
   return {
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 200,
+        model: MODEL_HAIKU,
+        max_tokens: 1100,
         messages: [{ role: "user", content: prompt }],
+        output_config: OUTPUT_LOW,
       };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function readDraftAdvisorReply(resData: any): string {
-  return resData.content?.[0]?.text ?? "";
+  return replyText(resData);
 }

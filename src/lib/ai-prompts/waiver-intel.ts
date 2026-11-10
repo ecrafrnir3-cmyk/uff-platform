@@ -2,6 +2,7 @@
 // 2026-11-10 so the model evaluation in tools/qa builds exactly what the route sends. The route
 // gathers the rows and calls these; tools/qa/check-parity.mjs proves the two agree byte for byte.
 // Pure: no database, no network, no clock.
+import { MODEL_HAIKU, OUTPUT_LOW, replyText } from "@/lib/ai-prompts/anthropic";
 
 export interface WaiverRosterRow {
   players: { full_name: string; position: string | null } | null;
@@ -45,15 +46,17 @@ Is this player worth adding given my roster needs? Be direct and specific. 1-2 s
     return prompt;
 }
 
+// Haiku 5.5 at effort low: 9/10 passed FACT (Haiku 4.5: 8/10). Longest reply 450 tokens, so the cap is 900.
 export function waiverIntelRequest(prompt: string) {
   return {
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 120,
+        model: MODEL_HAIKU,
+        max_tokens: 900,
         messages: [{ role: "user", content: prompt }],
+        output_config: OUTPUT_LOW,
       };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function readWaiverIntelReply(resData: any): string {
-  return resData.content?.[0]?.text?.trim() ?? "";
+  return replyText(resData).trim();
 }

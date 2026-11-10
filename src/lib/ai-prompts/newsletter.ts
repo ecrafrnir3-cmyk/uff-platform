@@ -5,6 +5,7 @@
 // these; tools/qa/check-parity.mjs proves the two agree byte for byte.
 // Pure: no database, no network, no clock.
 import { TOKEN_NAMES } from "@/lib/token-names";
+import { MODEL_SONNET, OUTPUT_LOW, replyText } from "@/lib/ai-prompts/anthropic";
 
 export interface NewsletterMatchupRow {
   matchup_id: number;
@@ -174,21 +175,26 @@ Voice: bold, witty, dramatic — like a fantasy sports columnist who takes the O
 
 export function newsletterRequest(prompt: string) {
   return {
-      model: "claude-haiku-4-5-20251001",
+      // Sonnet 5.5 at effort low: 7/8 weeks passed FACT (Haiku 5.5: 4/8, inventing game flow and
+      // records; Haiku 4.5: 2/8). See docs/model-eval-2026-11-10.md.
+      model: MODEL_SONNET,
       // 700 was the ceiling until 2026-09-30, against a prompt that asks for "under
       // 450 words" (~600 tokens) — about 40 characters of margin. Week 1 landed at
       // 2,768 chars and week 2 at 2,759; both were near-misses, not successes. Week 3
       // ran to 2,811 and was cut mid-sentence ("...it asks"), stored and emailed to
       // the league that way. The target stays 450 words so the model does not simply
       // expand to fill; this is headroom, not a longer newsletter.
-      max_tokens: 1200,
+      // 2026-11-10: thinking now counts against this cap too; Sonnet 5.5's longest measured
+      // reply (thinking included) was 1,488 tokens, so the cap is 3,000.
+      max_tokens: 3000,
       messages: [{ role: "user", content: prompt }],
+      output_config: OUTPUT_LOW,
     };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function readNewsletterReply(resData: any): string {
-  return resData.content?.[0]?.text ?? "";
+  return replyText(resData);
 }
 
 // Why a reply must NOT be stored (the route throws this message), or null when it may be stored.

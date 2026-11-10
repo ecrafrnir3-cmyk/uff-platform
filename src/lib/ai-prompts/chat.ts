@@ -3,6 +3,7 @@
 // gathers the rows and calls these; tools/qa/check-parity.mjs proves the two agree byte for byte.
 // Pure: no database, no network, no clock (the week is passed in).
 import { getRecord } from "@/lib/get-record";
+import { MODEL_HAIKU, OUTPUT_LOW } from "@/lib/ai-prompts/anthropic";
 
 export interface ChatPromptInputs {
   week: number;
@@ -145,12 +146,16 @@ Answer questions about standings, matchups, transactions, roster decisions, trad
     return systemPrompt;
 }
 
+// Haiku 5.5 at effort low: 14/18 passed FACT (Haiku 4.5: 11/18), voice 18/18; longest reply 923 tokens,
+// so the cap is 1,900. The stream needs no reader change: ChatInterface.tsx appends every delta.text, and
+// thinking deltas carry no text field.
 export function chatRequest(systemPrompt: string, messages: unknown[]) {
   return {
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 400,
+        model: MODEL_HAIKU,
+        max_tokens: 1900,
         stream: true,
         system: systemPrompt,
         messages: messages.slice(-12), // last 12 turns for context window efficiency
+        output_config: OUTPUT_LOW,
       };
 }

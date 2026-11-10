@@ -4,6 +4,7 @@
 // the two agree byte for byte. Pure: no database, no network, no clock.
 import { TOKEN_NAMES } from "@/lib/token-names";
 import { getRecord, type CompletedMatchupRow } from "@/lib/get-record";
+import { MODEL_HAIKU, OUTPUT_LOW, replyText } from "@/lib/ai-prompts/anthropic";
 
 export interface PreviewMatchupRow {
   id: string;
@@ -71,15 +72,18 @@ Write a 3-4 sentence dramatic pre-game preview in the Oracle's voice. Reference 
     return prompt;
 }
 
+// Haiku 5.5 at effort low: 10/10 passed FACT and voice (Haiku 4.5: 8/10, voice 0/10). Longest reply
+// 264 tokens, so the cap is 600.
 export function matchupPreviewRequest(prompt: string) {
   return {
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 200,
+        model: MODEL_HAIKU,
+        max_tokens: 600,
         messages: [{ role: "user", content: prompt }],
+        output_config: OUTPUT_LOW,
       };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function readMatchupPreviewReply(resData: any): string {
-  return resData.content?.[0]?.text ?? "";
+  return replyText(resData);
 }

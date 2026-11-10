@@ -2,6 +2,7 @@
 // 2026-11-10 so the model evaluation in tools/qa builds exactly what the route sends. The route
 // gathers the rows and calls these; tools/qa/check-parity.mjs proves the two agree byte for byte.
 // Pure: no database, no network, no clock.
+import { MODEL_HAIKU, OUTPUT_LOW, replyText } from "@/lib/ai-prompts/anthropic";
 
 const FLAG_KEYS = new Set([
   "pts_allow_0","pts_allow_1_6","pts_allow_7_13","pts_allow_14_20",
@@ -128,15 +129,18 @@ Then give 3-5 direct recommendations. Flag any BENCH player projecting higher th
     return prompt;
 }
 
+// Haiku 5.5 at effort low: 13/15 cases passed FACT after review (Haiku 4.5: 6/15). It thinks before
+// answering here (median 1,246 output tokens, longest 1,831), so the cap is 3,700: twice the longest.
 export function startSitRequest(prompt: string) {
   return {
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 300,
+        model: MODEL_HAIKU,
+        max_tokens: 3700,
         messages: [{ role: "user", content: prompt }],
+        output_config: OUTPUT_LOW,
       };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function readStartSitReply(resData: any): string {
-  return resData.content?.[0]?.text ?? "";
+  return replyText(resData);
 }

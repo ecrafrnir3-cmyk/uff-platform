@@ -5,6 +5,7 @@
 // The callers gather the rows and call these; tools/qa/check-parity.mjs proves they agree byte for
 // byte. Pure: no database, no network, no clock.
 import { getRecord, type CompletedMatchupRow } from "@/lib/get-record";
+import { MODEL_HAIKU, OUTPUT_LOW, replyText } from "@/lib/ai-prompts/anthropic";
 
 type PlayerInfo = { full_name: string; position: string | null; team: string | null };
 
@@ -47,17 +48,20 @@ Evaluate this trade in 3-4 sentences. State who benefits more and why — consid
     return prompt;
 }
 
+// Haiku 5.5 at effort low: 8/9 passed FACT (Haiku 4.5: 1/9, and its **VERDICT** never got coloured).
+// Longest reply 1,110 tokens, so the cap is 2,300.
 export function tradeEvalRequest(prompt: string) {
   return {
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 250,
+        model: MODEL_HAIKU,
+        max_tokens: 2300,
         messages: [{ role: "user", content: prompt }],
+        output_config: OUTPUT_LOW,
       };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function readTradeEvalReply(resData: any): string {
-  return resData.content?.[0]?.text ?? "";
+  return replyText(resData);
 }
 
 // ── /api/trade-veto-analysis ──────────────────────────────────────────────────
@@ -101,17 +105,19 @@ VERDICT: VETO — [one-sentence reason]`;
     return prompt;
 }
 
+// Haiku 5.5 at effort low: 9/9 passed FACT (Haiku 4.5: 4/9). Longest reply 949 tokens, so the cap is 1,900.
 export function tradeVetoRequest(prompt: string) {
   return {
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 250,
+        model: MODEL_HAIKU,
+        max_tokens: 1900,
         messages: [{ role: "user", content: prompt }],
+        output_config: OUTPUT_LOW,
       };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function readTradeVetoReply(resData: any): string {
-  return resData.content?.[0]?.text ?? "";
+  return replyText(resData);
 }
 
 // Extract verdict
@@ -150,15 +156,19 @@ ${receiverTeam} [${receiverMember?.faction ?? "?"}] (${receiverRecord.wins}W-${r
         return prompt;
 }
 
+// Haiku 5.5 at effort low: 9/9 passed FACT (Haiku 4.5: 4/9, often reversing who sends whom). Longest
+// reply 689 tokens, so the cap is 1,400.
 export function proposeTradeAnalysisRequest(prompt: string) {
   return {
-            model: "claude-haiku-4-5-20251001",
-            max_tokens: 200,
+            model: MODEL_HAIKU,
+            max_tokens: 1400,
             messages: [{ role: "user", content: prompt }],
+            output_config: OUTPUT_LOW,
           };
 }
 
+// No text at all means no analysis block in the email (as before for a missing block).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function readProposeTradeAnalysisReply(aiData: any): string | undefined {
-  return aiData.content?.[0]?.text ?? undefined;
+  return replyText(aiData) || undefined;
 }
