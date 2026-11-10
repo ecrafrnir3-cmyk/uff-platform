@@ -2,17 +2,14 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentNFLWeek } from "@/lib/nfl-utils";
-
-const FLAG_KEYS = new Set([
-  "pts_allow_0","pts_allow_1_6","pts_allow_7_13","pts_allow_14_20",
-  "pts_allow_21_27","pts_allow_28_34","pts_allow_35p",
-]);
-
-interface RosterRow {
-  player_id: string;
-  slot: string;
-  players: { full_name: string; position: string | null; team: string | null; injury_status: string | null } | null;
-}
+import {
+  buildStartSitPrompt,
+  fillStartSitProjections,
+  readStartSitReply,
+  startSitActiveRoster,
+  startSitRequest,
+  type StartSitRosterRow as RosterRow,
+} from "@/lib/ai-prompts/start-sit";
 
 export async function POST(req: NextRequest) {
   try {
@@ -66,21 +63,10 @@ export async function POST(req: NextRequest) {
         .eq("week", week),
     ]);
 
-    const activeRoster = (rosterRows ?? []).filter(r => r.slot === "active" && r.players?.position);
+    const activeRoster = startSitActiveRoster(rosterRows);
     if (activeRoster.length === 0) {
       return NextResponse.json({ error: "No active roster found" }, { status: 400 });
     }
-
-    const startingPlayerIds = new Set((lineupRows ?? []).map((l: { player_id: string }) => l.player_id));
-
-    // 🛑 The inverse failure matters more than the one being fixed: if the schedule has
-    // NO rows for this week (a week not yet loaded by sync-projections, or the table
-    // empty), then "absent from the schedule" is true of all 32 teams and EVERY player
-    // would be reported on bye. Only trust the bye derivation when the week looks whole.
-    const playingTeams = new Set((scheduleRows ?? []).map((g: { team: string }) => g.team));
-    const byeDataUsable = playingTeams.size >= 20;
-    const isOnBye = (team: string | null) =>
-      byeDataUsable && !!team && !playingTeams.has(team);
 
     // Fetch projections from Sleeper
     const scoringSettings: Record<string, number> = (league.scoring_settings as Record<string, number>) ?? {};
@@ -94,85 +80,21 @@ export async function POST(req: NextRequest) {
         );
         if (projRes.ok) {
           const allProj: Record<string, Record<string, number>> = await projRes.json();
-          for (const r of activeRoster) {
-            const stats = allProj[r.player_id] ?? {};
-            let score = 0;
-            for (const [key, mult] of Object.entries(scoringSettings)) {
-              const val = stats[key];
-              if (val == null || val === 0) continue;
-              score += FLAG_KEYS.has(key) ? mult : val * mult;
-            }
-            projMap[r.player_id] = Math.round(score * 100) / 100;
-          }
+          fillStartSitProjections(projMap, activeRoster, allProj, scoringSettings);
         }
       } catch { /* projections unavailable — pre-season or API down */ }
     }
 
-    const slotsConfig: Record<string, number> =
-      (league.lineup_slots as Record<string, number>) ?? { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DEF: 1 };
-    const slotSummary = Object.entries(slotsConfig)
-      .map(([pos, n]) => `${n}x ${pos}`)
-      .join(", ");
-
-    // Group players by position for the prompt
-    const byPos: Record<string, { name: string; team: string; injury: string | null; proj: number; isStarting: boolean; onBye: boolean; noTeam: boolean }[]> = {};
-    for (const r of activeRoster) {
-      const pos = r.players!.position!.toUpperCase();
-      if (!byPos[pos]) byPos[pos] = [];
-      byPos[pos].push({
-        name: r.players!.full_name,
-        team: r.players!.team ?? "FA",
-        injury: r.players!.injury_status,
-        proj: projMap[r.player_id] ?? 0,
-        isStarting: startingPlayerIds.has(r.player_id),
-        onBye: isOnBye(r.players!.team),
-        // A free agent cannot score either and has no bye to detect: the Dan Bailey
-        // case in OPEN-LOOPS #70, started three straight weeks because the UI's BYE
-        // badge needs player.team and silently renders nothing without one.
-        noTeam: !r.players!.team,
-      });
-    }
-
-    const POSITION_ORDER = ["QB", "RB", "WR", "TE", "FLEX", "K", "DEF", "DST"];
-    const rosterStr = Object.entries(byPos)
-      .sort(([a], [b]) => {
-        const ai = POSITION_ORDER.indexOf(a);
-        const bi = POSITION_ORDER.indexOf(b);
-        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-      })
-      .map(([pos, players]) => {
-        const lines = players
-          .sort((a, b) => b.proj - a.proj)
-          .map(p => {
-            const tag = p.isStarting ? "[START]" : "[BENCH]";
-            const inj = p.injury ? ` ⚠️${p.injury}` : "";
-            const dead = p.noTeam
-              ? " ❌ NO NFL TEAM — SCORES 0"
-              : p.onBye
-                ? " ❌ ON BYE THIS WEEK — SCORES 0"
-                : "";
-            const proj = p.proj > 0
-              ? ` proj ${p.proj.toFixed(1)}`
-              : (p.noTeam || p.onBye ? "" : " (no projection available)");
-            return `    ${tag} ${p.name} (${p.team})${proj}${dead}${inj}`;
-          }).join("\n");
-        return `  ${pos}:\n${lines}`;
-      }).join("\n");
-
-    const hasLineup = startingPlayerIds.size > 0;
-
-    const prompt = `You are the UFF Start/Sit Advisor for Week ${week}.
-
-Team: ${me.team_name}${me.faction ? ` (${me.faction} faction)` : ""}
-Lineup format: ${slotSummary} | FLEX = RB/WR/TE eligible
-${hasLineup ? "Lineup is already set — flag any urgent changes." : "No lineup set yet — recommend who to start."}
-
-Roster:
-${rosterStr}
-
-Any player marked ❌ scores EXACTLY ZERO this week — on bye, or not on an NFL roster at all. If one is in a [START] slot that is the most urgent problem on the board: name it first, say it scores 0, and name the specific bench player to replace it with. Do not soften it and do not bury it below other advice.${byeDataUsable ? "" : " (Bye data was unavailable for this week, so no player could be checked for a bye — say so in one short line.)"}
-
-Then give 3-5 direct recommendations. Flag any BENCH player projecting higher than their STARTER at the same position, call out injury risks, and note obvious FLEX upgrades. A player shown as "(no projection available)" is NOT on bye — the number is simply missing, so judge him on his own merits rather than treating the blank as zero. Under 150 words — no fluff, just moves.`;
+    // The prompt (bye marks, projections, lineup tags) is built in @/lib/ai-prompts/start-sit.
+    const prompt = buildStartSitPrompt({
+      week,
+      me,
+      lineupSlots: league.lineup_slots,
+      activeRoster,
+      lineupRows,
+      scheduleRows,
+      projMap,
+    });
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "Advisor not configured" }, { status: 500 });
@@ -184,11 +106,7 @@ Then give 3-5 direct recommendations. Flag any BENCH player projecting higher th
         "anthropic-version": "2023-06-01",
         "content-type": "application/json",
       },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 300,
-        messages: [{ role: "user", content: prompt }],
-      }),
+      body: JSON.stringify(startSitRequest(prompt)),
     });
 
     if (!anthropicRes.ok) {
@@ -198,7 +116,7 @@ Then give 3-5 direct recommendations. Flag any BENCH player projecting higher th
     }
 
     const resData = await anthropicRes.json();
-    const advice: string = resData.content?.[0]?.text ?? "";
+    const advice: string = readStartSitReply(resData);
     if (!advice) return NextResponse.json({ error: "No advice returned" }, { status: 500 });
 
     return NextResponse.json({ advice, week });

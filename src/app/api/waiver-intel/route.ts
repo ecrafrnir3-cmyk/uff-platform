@@ -1,18 +1,13 @@
 import { checkRateLimit } from "@/lib/rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-
-interface RosterRow {
-  players: { full_name: string; position: string | null } | null;
-}
-
-interface PlayerRow {
-  id: string;
-  full_name: string;
-  position: string | null;
-  team: string | null;
-  status: string | null;
-}
+import {
+  buildWaiverIntelPrompt,
+  readWaiverIntelReply,
+  waiverIntelRequest,
+  type WaiverPlayerRow as PlayerRow,
+  type WaiverRosterRow as RosterRow,
+} from "@/lib/ai-prompts/waiver-intel";
 
 export async function POST(req: NextRequest) {
   try {
@@ -55,31 +50,8 @@ export async function POST(req: NextRequest) {
       .is("dropped_at", null)
       .returns<RosterRow[]>();
 
-    const rosterPlayers = (rosterRaw ?? []).map((r) => r.players).filter(Boolean);
-
-    // Summarize roster by position
-    const byPos: Record<string, string[]> = {};
-    for (const rp of rosterPlayers) {
-      if (!rp) continue;
-      const pos = rp.position ?? "UNK";
-      if (!byPos[pos]) byPos[pos] = [];
-      byPos[pos].push(rp.full_name);
-    }
-    const rosterStr = Object.entries(byPos)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([pos, names]) => `${pos}: ${names.join(", ")}`)
-      .join(" | ") || "empty roster";
-
-    const statusStr = player.status && player.status !== "Active"
-      ? ` — ⚠️ ${player.status}`
-      : "";
-
-    const prompt = `Fantasy football analyst. Give exactly 1-2 sentences on whether to add this waiver wire player.
-
-Target: ${player.full_name} (${player.position ?? "?"}, ${player.team ?? "FA"})${statusStr}
-My roster: ${rosterStr}
-
-Is this player worth adding given my roster needs? Be direct and specific. 1-2 sentences only.`;
+    // The roster summary and the prompt are built in @/lib/ai-prompts/waiver-intel.
+    const prompt = buildWaiverIntelPrompt(player, rosterRaw);
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "Oracle not configured" }, { status: 500 });
@@ -91,11 +63,7 @@ Is this player worth adding given my roster needs? Be direct and specific. 1-2 s
         "anthropic-version": "2023-06-01",
         "content-type": "application/json",
       },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 120,
-        messages: [{ role: "user", content: prompt }],
-      }),
+      body: JSON.stringify(waiverIntelRequest(prompt)),
     });
 
     if (!anthropicRes.ok) {
@@ -104,7 +72,7 @@ Is this player worth adding given my roster needs? Be direct and specific. 1-2 s
     }
 
     const resData = await anthropicRes.json();
-    const intel: string = resData.content?.[0]?.text?.trim() ?? "";
+    const intel: string = readWaiverIntelReply(resData);
     if (!intel) return NextResponse.json({ error: "No intel returned" }, { status: 500 });
 
     return NextResponse.json({ intel });

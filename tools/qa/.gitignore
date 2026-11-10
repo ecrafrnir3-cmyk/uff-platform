@@ -1,0 +1,5 @@
+# Everything read from the live database, and everything produced from it, stays local.
+# The repository is public: no names, no join code, nothing from the database is committed.
+fixtures/
+results/
+.parity-tmp/
