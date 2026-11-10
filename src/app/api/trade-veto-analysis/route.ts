@@ -1,7 +1,13 @@
 import { checkRateLimit } from "@/lib/rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getRecord, CompletedMatchupRow } from "@/lib/get-record";
+import type { CompletedMatchupRow } from "@/lib/get-record";
+import {
+  buildTradeVetoPrompt,
+  readTradeVetoReply,
+  tradeVetoRequest,
+  tradeVetoVerdict,
+} from "@/lib/ai-prompts/trades";
 
 export async function POST(req: NextRequest) {
   try {
@@ -61,32 +67,8 @@ export async function POST(req: NextRequest) {
         .returns<CompletedMatchupRow[]>(),
     ]);
 
-    const playerMap: Record<string, { full_name: string; position: string | null; team: string | null }> = {};
-    for (const p of playerRows ?? []) playerMap[p.id] = p;
-
-    const rows = allMatchups ?? [];
-    const proposerRecord = getRecord(trade.proposer_id, rows);
-    const receiverRecord = getRecord(trade.receiver_id, rows);
-
-    const formatPlayers = (ids: string[]) =>
-      ids.map(id => {
-        const p = playerMap[id];
-        return p ? `${p.full_name} (${p.position ?? "?"}, ${p.team ?? "FA"})` : id;
-      }).join(", ");
-
-    const proposerTeam = proposerMember?.team_name ?? "Team A";
-    const receiverTeam = receiverMember?.team_name ?? "Team B";
-
-    const prompt = `You are advising a fantasy football commissioner on whether to APPROVE or VETO this trade. Be direct and fair.
-
-${proposerTeam} [${proposerMember?.faction ?? "?"}] (${proposerRecord.wins}W-${proposerRecord.losses}L) SENDS: ${formatPlayers(trade.proposer_player_ids)}
-${receiverTeam} [${receiverMember?.faction ?? "?"}] (${receiverRecord.wins}W-${receiverRecord.losses}L) SENDS BACK: ${formatPlayers(trade.receiver_player_ids)}
-
-Evaluate in 2-3 sentences: Is this trade reasonably fair, or does one team clearly get fleeced? Consider position value, player quality, record context, and competitive balance. Then give your verdict on its own line:
-
-VERDICT: APPROVE — [one-sentence reason]
-or
-VERDICT: VETO — [one-sentence reason]`;
+    // Records, both sides and the prompt are built in @/lib/ai-prompts/trades.
+    const prompt = buildTradeVetoPrompt({ trade, playerRows, proposerMember, receiverMember, allMatchups });
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "Oracle not configured" }, { status: 500 });
@@ -98,11 +80,7 @@ VERDICT: VETO — [one-sentence reason]`;
         "anthropic-version": "2023-06-01",
         "content-type": "application/json",
       },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 250,
-        messages: [{ role: "user", content: prompt }],
-      }),
+      body: JSON.stringify(tradeVetoRequest(prompt)),
     });
 
     if (!anthropicRes.ok) {
@@ -112,12 +90,11 @@ VERDICT: VETO — [one-sentence reason]`;
     }
 
     const resData = await anthropicRes.json();
-    const analysis: string = resData.content?.[0]?.text ?? "";
+    const analysis: string = readTradeVetoReply(resData);
     if (!analysis) return NextResponse.json({ error: "No analysis returned" }, { status: 500 });
 
     // Extract verdict
-    const verdictMatch = analysis.match(/VERDICT:\s*(APPROVE|VETO)/i);
-    const verdict = verdictMatch ? verdictMatch[1].toUpperCase() as "APPROVE" | "VETO" : null;
+    const verdict = tradeVetoVerdict(analysis);
 
     return NextResponse.json({ analysis, verdict });
   } catch (err) {

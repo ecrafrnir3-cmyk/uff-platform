@@ -11,7 +11,12 @@ import {
   tradeRespondedHtml,
   tradeVetoedHtml,
 } from "@/lib/email";
-import { getRecord, CompletedMatchupRow } from "@/lib/get-record";
+import type { CompletedMatchupRow } from "@/lib/get-record";
+import {
+  buildProposeTradeAnalysisPrompt,
+  proposeTradeAnalysisRequest,
+  readProposeTradeAnalysisReply,
+} from "@/lib/ai-prompts/trades";
 import { createNotification } from "@/lib/notifications";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -123,19 +128,15 @@ export async function proposeTrade(formData: FormData) {
             .maybeSingle(),
         ]);
 
-        const rows = allMatchups ?? [];
-        const proposerRecord = getRecord(proposerInfo.data.id, rows);
-        const receiverRecord = getRecord(receiverId, rows);
-
-        const proposerTeam = proposerInfo.data.team_name ?? "Team A";
-        const receiverTeam = receiverMember?.team_name ?? "Team B";
-
-        const prompt = `You are the Oracle of Ultimate Fantasy Football. Evaluate this trade briefly.
-
-${proposerTeam} [${proposerInfo.data.faction ?? "?"}] (${proposerRecord.wins}W-${proposerRecord.losses}L) SENDS: ${pNames.join(", ")}
-${receiverTeam} [${receiverMember?.faction ?? "?"}] (${receiverRecord.wins}W-${receiverRecord.losses}L) SENDS BACK: ${rNames.join(", ")}
-
-2-3 sentence analysis only. Who benefits more and why? End with exactly one of: VERDICT: FAIR | VERDICT: SLIGHT EDGE TO [team name] | VERDICT: AVOID — [team name] is getting robbed`;
+        // Records and the prompt are built in @/lib/ai-prompts/trades.
+        const prompt = buildProposeTradeAnalysisPrompt({
+          proposer: proposerInfo.data,
+          receiverId,
+          receiverMember,
+          allMatchups,
+          pNames,
+          rNames,
+        });
 
         const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
@@ -144,16 +145,12 @@ ${receiverTeam} [${receiverMember?.faction ?? "?"}] (${receiverRecord.wins}W-${r
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
           },
-          body: JSON.stringify({
-            model: "claude-haiku-4-5-20251001",
-            max_tokens: 200,
-            messages: [{ role: "user", content: prompt }],
-          }),
+          body: JSON.stringify(proposeTradeAnalysisRequest(prompt)),
         });
 
         if (anthropicRes.ok) {
           const aiData = await anthropicRes.json();
-          aiAnalysis = aiData.content?.[0]?.text ?? undefined;
+          aiAnalysis = readProposeTradeAnalysisReply(aiData);
         }
       }
     } catch (aiErr) {

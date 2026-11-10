@@ -1,7 +1,8 @@
 import { checkRateLimit } from "@/lib/rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getRecord, CompletedMatchupRow } from "@/lib/get-record";
+import type { CompletedMatchupRow } from "@/lib/get-record";
+import { buildTradeEvalPrompt, readTradeEvalReply, tradeEvalRequest } from "@/lib/ai-prompts/trades";
 
 export async function POST(req: NextRequest) {
   try {
@@ -41,9 +42,6 @@ export async function POST(req: NextRequest) {
       .select("id, full_name, position, team")
       .in("id", allPlayerIds);
 
-    const playerMap: Record<string, { full_name: string; position: string | null; team: string | null }> = {};
-    for (const p of (playerRows ?? [])) playerMap[p.id] = p;
-
     // Compute both records
     const { data: allMatchups } = await supabase
       .from("uff_matchups")
@@ -52,26 +50,15 @@ export async function POST(req: NextRequest) {
       .eq("is_complete", true)
       .returns<CompletedMatchupRow[]>();
 
-    const rows = allMatchups ?? [];
-    const myRecord = getRecord(me.id, rows);
-    const partnerRecord = getRecord(partner.id, rows);
-
-    const formatPlayers = (ids: string[]) =>
-      ids.map((id) => {
-        const p = playerMap[id];
-        return p ? `${p.full_name} (${p.position ?? "?"}, ${p.team ?? "FA"})` : id;
-      }).join(", ");
-
-    const mySide = formatPlayers(proposer_player_ids);
-    const theirSide = formatPlayers(receiver_player_ids);
-
-    const prompt = `You are the Oracle of Ultimate Fantasy Football — a precise trade analyst who cuts through spin and tells it straight.
-
-Trade details:
-- ${me.team_name} [${me.faction ?? "?"}] (${myRecord.wins}W-${myRecord.losses}L) SENDS: ${mySide}
-- ${partner.team_name} [${partner.faction ?? "?"}] (${partnerRecord.wins}W-${partnerRecord.losses}L) SENDS BACK: ${theirSide}
-
-Evaluate this trade in 3-4 sentences. State who benefits more and why — consider position scarcity, roster construction, playoff implications given each team's record, and overall value balance. End your response with a single verdict line formatted exactly as one of: VERDICT: FAIR | VERDICT: SLIGHT EDGE TO [team name] | VERDICT: AVOID — [team being fleeced] is getting robbed`;
+    // Records, both sides and the prompt are built in @/lib/ai-prompts/trades.
+    const prompt = buildTradeEvalPrompt({
+      me,
+      partner,
+      playerRows,
+      allMatchups,
+      proposerPlayerIds: proposer_player_ids,
+      receiverPlayerIds: receiver_player_ids,
+    });
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "Oracle not configured" }, { status: 500 });
@@ -83,11 +70,7 @@ Evaluate this trade in 3-4 sentences. State who benefits more and why — consid
         "anthropic-version": "2023-06-01",
         "content-type": "application/json",
       },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 250,
-        messages: [{ role: "user", content: prompt }],
-      }),
+      body: JSON.stringify(tradeEvalRequest(prompt)),
     });
 
     if (!anthropicRes.ok) {
@@ -97,7 +80,7 @@ Evaluate this trade in 3-4 sentences. State who benefits more and why — consid
     }
 
     const resData = await anthropicRes.json();
-    const verdict: string = resData.content?.[0]?.text ?? "";
+    const verdict: string = readTradeEvalReply(resData);
     if (!verdict) return NextResponse.json({ error: "Oracle returned no verdict" }, { status: 500 });
 
     return NextResponse.json({ verdict });

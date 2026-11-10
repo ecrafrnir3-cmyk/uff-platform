@@ -2,24 +2,13 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
-import { TOKEN_NAMES } from "@/lib/token-names";
-
-interface MatchupDbRow {
-  id: string;
-  member_id: string;
-  week: number;
-  points: number;
-  token_bonus: number;
-  is_complete: boolean;
-  oracle_recap: string | null;
-  league_members: { team_name: string; faction: string | null } | null;
-}
-
-interface TokenRow {
-  member_id: string;
-  token_id: number;
-  status: string;
-}
+import {
+  buildOraclePrompt,
+  oracleRequest,
+  readOracleReply,
+  type OracleMatchupRow as MatchupDbRow,
+  type OracleTokenRow as TokenRow,
+} from "@/lib/ai-prompts/oracle";
 
 export async function POST(req: NextRequest) {
   try {
@@ -80,36 +69,8 @@ export async function POST(req: NextRequest) {
       .eq("week", week)
       .returns<TokenRow[]>();
 
-    const tokenMap: Record<string, { token_id: number; status: string }> = {};
-    for (const t of tokenRows ?? []) {
-      tokenMap[t.member_id] = { token_id: t.token_id, status: t.status };
-    }
-
-    // Build prompt context
-    const aWins = a.points > b.points;
-    const winner = aWins ? a : b;
-
-    const formatTeam = (row: MatchupDbRow) => {
-      const name = row.league_members?.team_name ?? "Unknown";
-      const faction = row.league_members?.faction ?? "unknown";
-      const token = tokenMap[row.member_id];
-      const tokenStr = token
-        ? ` | Token: ${TOKEN_NAMES[token.token_id] ?? `#${token.token_id}`} (${token.status})`
-        : "";
-      const bonusStr = row.token_bonus > 0 ? ` (+${row.token_bonus.toFixed(2)} token bonus)` : "";
-      return `${name} [${faction}] — ${row.points.toFixed(2)} pts${bonusStr}${tokenStr}`;
-    };
-
-    const prompt = `You are the Oracle of Ultimate Fantasy Football — a mystical, dramatic voice that delivers weekly matchup recaps as if they were ancient prophecies. You speak with gravitas and flair, referencing factions (Heroes vs Villains), power tokens, and the eternal struggle for fantasy supremacy.
-
-Week ${week} matchup:
-- ${formatTeam(a)}
-- ${formatTeam(b)}
-
-Winner: ${winner.league_members?.team_name} (${(aWins ? a : b).points.toFixed(2)} pts)
-Margin: ${Math.abs(a.points - b.points).toFixed(2)} pts
-
-Write a 3-4 sentence dramatic recap of this matchup in the Oracle's voice. Reference the teams, factions, scores, and if relevant, tokens used. Be vivid and theatrical but stay under 120 words. No headers or bullet points — pure flowing prose.`;
+    // The recap prompt is built in @/lib/ai-prompts/oracle from exactly these rows.
+    const prompt = buildOraclePrompt(rows, tokenRows);
 
     // Call Anthropic API
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -124,11 +85,7 @@ Write a 3-4 sentence dramatic recap of this matchup in the Oracle's voice. Refer
         "anthropic-version": "2023-06-01",
         "content-type": "application/json",
       },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 200,
-        messages: [{ role: "user", content: prompt }],
-      }),
+      body: JSON.stringify(oracleRequest(prompt)),
     });
 
     if (!anthropicRes.ok) {
@@ -138,7 +95,7 @@ Write a 3-4 sentence dramatic recap of this matchup in the Oracle's voice. Refer
     }
 
     const anthropicData = await anthropicRes.json();
-    const recap: string = anthropicData.content?.[0]?.text ?? "";
+    const recap: string = readOracleReply(anthropicData);
 
     if (!recap) {
       return NextResponse.json({ error: "Oracle returned no vision" }, { status: 500 });
